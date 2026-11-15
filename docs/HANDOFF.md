@@ -53,8 +53,8 @@ under Decisions with the reason.
 - `/events` decodes each body chunk on its own (`body += chunk`), so a multi-byte UTF-8
   character split across chunks becomes U+FFFD. Older than this branch; found by the review.
   Fix: `req.setEncoding("utf8")` or `Buffer.concat` before decoding.
-- v1 is done: the charter checks pass by hand. The 5-day real-use check moved to v2, because using
-  Funtown day to day needs typing into a session from it (parked: embedded terminal,
+- v1 is done with the hand checks above. The 5-day real-use check moved to v2, because
+  using Funtown day to day needs typing into a session from it (parked: embedded terminal,
   answering a waiting session from Funtown).
 
 ## Notes
