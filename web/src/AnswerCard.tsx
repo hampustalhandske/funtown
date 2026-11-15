@@ -77,8 +77,10 @@ export function AnswerCard({ card, who }: { card: Card; who?: string }) {
   async function send(body: object) {
     setError(null);
     setPending(true);
-    setError(await answer(card, body));
-    setPending(false);
+    const failed = await answer(card, body);
+    // Once answered, the buttons stay off until the next state removes the card.
+    setError(failed);
+    if (failed) setPending(false);
   }
   const plan = typeof card.input.plan === "string" ? card.input.plan : JSON.stringify(card.input, null, 2);
   const questions = Array.isArray(card.input.questions) ? (card.input.questions as Question[]) : [];
