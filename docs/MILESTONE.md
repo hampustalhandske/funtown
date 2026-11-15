@@ -1,129 +1,75 @@
-# Milestone 1: town
+# Milestone 2: cleanup
 
-Serves: charter items 1–3: sessions and subagents appear as named characters at their
-project's house, "needs you" stands out, and each shows its stage and current command.
-Estimate: ~650 net production lines of an 800 budget
+Serves: the should-fix items left in docs/HANDOFF.md after m1 (charter items 1–3 as built).
+Estimate: ~0 net production lines (about +30, -30) of a 400 budget
 Mode: away: open the PR after review and continue with the queue
 
 ## Done when
 
-1. `npm run install-hooks` adds Funtown's hook entries to `~/.claude/settings.json` and
-   leaves every other entry as it was; `npm run uninstall-hooks` removes exactly those
-   entries (tested on a temp copy: the file after install + uninstall equals the original).
-2. With `npm start` running, opening http://127.0.0.1:4777 shows the town; a newly started
-   `claude` in another project appears as `lead-1` at a house named after its folder within
-   5 s.
-3. A permission prompt or a finished turn turns that lead 🔴 "needs you" within 5 s; the
-   next prompt or tool call turns it back to 🟢 working.
-4. A subagent started by a lead appears next to it as `<agent type>-<n>` (for example
-   `Explore-1`) while it works and shows ⚪ done when it stops.
-5. Each character shows its current tool and, for Bash, the command (for example
-   `Bash: npm test`).
-6. After `SessionEnd` the lead shows as gone and disappears 10 min later.
-7. Each lead's state holds its terminal tty and `TERM_PROGRAM`, for the jump in m2.
-8. The test command passes.
+1. The Town types exist once, in `server/types.ts`: `grep -rn "type Lead =" server web tests`
+   prints one line; `web/src/` and `tests/` import them from there.
+2. `vite.config.ts` has no `server.proxy`, `package.json` has no `dev` script, and the page
+   shows no "live" / "connecting" text.
+3. A lead that gets `SessionEnd` and then any other event before `goneAfterMs` is still in
+   the Town after `goneAfterMs` has passed.
+4. `POST /events` with an `Origin` header returns 403 and leaves the Town unchanged; without
+   one it returns 204 as before.
+5. `.gitignore` ignores `/data/` (root only), `.claude/ui-review/` and `.playwright-mcp/`.
+6. The hook test asserts the posted `funtown.tty` equals the test process's own tty from
+   `ps -o tty= -p <pid>` (null when that prints `??`), not just that the key exists.
+7. When the page isn't built, `GET /` returns 503 with the text
+   `Funtown's page isn't built yet. Run: npm run build`.
+8. Loading the page logs no 404 (a favicon is served).
+9. The test command passes.
 
 ## Must not
 
-- Add a dependency, service or paid API without asking. Allowed: `react`, `react-dom`;
-  dev only: `typescript`, `vite`, `@vitejs/plugin-react`, `vitest`, `eslint`,
-  `typescript-eslint`, `@playwright/test`, `@types/react`, `@types/react-dom`, `@types/node`.
-- Change or reorder any entry in `~/.claude/settings.json` that Funtown didn't add, or touch
-  the real file from a test.
-- Listen on anything but 127.0.0.1, or send any data off the machine.
-- Slow Claude down: the hook script exits within 1 s, even when Funtown is not running.
-- Use a real project name, path or transcript in a test or fixture.
+- Add a dependency, service or paid API without asking.
+- Change the hook event or the Town state shapes from m1.
+- Touch `hooks/`, or the real home folder from a test.
+- Listen on anything but 127.0.0.1.
 
 ## Contracts
 
-### Hook event
+### startServer
 
-Produced by task 1 (hook script), consumed by task 2 (server).
-`POST http://127.0.0.1:4777/events`, body = the JSON Claude Code passes the hook on stdin,
-unchanged, plus one added key:
-
-```json
-{
-  "hook_event_name": "PreToolUse",
-  "session_id": "abc123",
-  "cwd": "/Users/someone/dev/demo-app",
-  "transcript_path": "/Users/someone/.claude/projects/.../abc123.jsonl",
-  "tool_name": "Bash",
-  "tool_input": { "command": "npm test" },
-  "agent_id": "optional, set inside a subagent",
-  "agent_type": "optional, set inside a subagent",
-  "funtown": { "tty": "ttys000", "term_program": "Apple_Terminal", "at": 1763112000000 }
-}
-```
-
-Reply `204`. `tty` comes from the hook's parent process (the `claude` session).
-
-### Town state
-
-Produced by task 2 (server), consumed by task 3 (page).
-`GET /stream`: Server-Sent Events; on connect and after every change, one `state` event:
+Produced by task 1, consumed by task 2.
 
 ```ts
-type Stage = "working" | "needs_you" | "done" | "gone";
-type Character = {
-  id: string;             // session_id for a lead, agent_id for a subagent
-  name: string;           // "lead-1", "Explore-1"
-  stage: Stage;           // leads: working | needs_you | gone; subagents: working | done
-  activity: string | null; // "Bash: npm test", "Edit", null when idle
-  needs?: string;         // why it needs you: "permission", "question", "turn ended"
-};
-type Lead = Character & { tty: string | null; termProgram: string | null; subagents: Character[] };
-type House = { project: string; cwd: string; leads: Lead[] };
-type Town = { houses: House[] };
+startServer(opts: {
+  port: number;
+  goneAfterMs?: number; // default 600000
+  distDir?: string;     // default <repo>/web/dist/; tests point it at an empty temp dir
+}): Promise<{ url: string; close(): Promise<void> }>
 ```
 
-The server also serves the built page from `web/dist/` at `/`.
+- `POST /events` with any `Origin` header → `403`, empty body, event not applied.
+- `GET /` when `<distDir>/index.html` is missing → `503`, `text/plain`, body
+  `Funtown's page isn't built yet. Run: npm run build`.
+- A gone lead that receives a non-`SessionEnd` event has its removal timer cancelled; a
+  later `SessionEnd` starts a fresh one.
 
-### Entry points
+### Shared types
 
-Produced by tasks 1 and 2, consumed by task 4 (tests) and `package.json`.
-
-- `server/app.ts`: `startServer(opts: { port: number; goneAfterMs?: number }): Promise<{ url: string; close(): Promise<void> }>`.
-  Port 0 picks a free port; `goneAfterMs` defaults to 600000 (10 min).
-- `server/main.ts`: calls `startServer` on `FUNTOWN_PORT` (default 4777).
-- `hooks/funtown-hook.ts`: run as `node <abs path>/hooks/funtown-hook.ts`, event JSON on
-  stdin; posts to `FUNTOWN_URL` (default `http://127.0.0.1:4777`); when nothing listens, it
-  appends one line to `FUNTOWN_LOG` (default `~/.funtown/hook.log`) and exits 0.
-- `hooks/install.ts install|uninstall [--settings <path>]` (default
-  `~/.claude/settings.json`). It installs one command hook, timeout 2 s, for SessionStart,
-  SessionEnd, UserPromptSubmit, PreToolUse, PostToolUse, PermissionRequest, Notification,
-  Stop, SubagentStart and SubagentStop. Funtown's entries are the ones whose command runs
-  `funtown-hook.ts`; uninstall removes only those.
-- Install records what it created in `FUNTOWN_STATE` (default `~/.funtown/installed.json`),
-  keyed by the settings file's absolute path: `{ "<settings path>": { "createdHooksKey":
-  boolean, "createdEvents": string[] } }`. Uninstall removes Funtown's entries, then deletes
-  an event or the `hooks` key only when the record says install created it and it is now
-  empty, then drops that record. Without a record it deletes no empty entry.
+`server/types.ts` keeps its m1 exports (`Stage`, `Character`, `Lead`, `House`, `Town`).
+`web/src/town.ts` and the type block in `tests/helpers.ts` are removed; both import
+`import type { ... } from "<relative>/server/types.ts"`.
 
 ## Tasks
 
 | # | Owner | Owned paths | Does | Done when |
 |---|---|---|---|---|
-| 1 | hooks | `hooks/` | Hook script (read stdin, add `funtown`, POST, exit fast) and install/uninstall of Funtown's entries in a given settings file | Done when 1 and 7 hold |
-| 2 | server | `server/` | HTTP server on 127.0.0.1:4777: `/events`, the event → Town reducer, `/stream`, static page, 10 min removal of gone leads | Done when 2–6 hold against fake events |
-| 3 | ui | `web/` | React page: houses, emoji characters, state rings, a loud 🔴 "needs you", subagents grouped under their lead, plain labels | Done when 2–5 are visible in the browser |
-| 4 | tests | `tests/` | Tests at the seams below | They run, and fail only where code is missing |
-
-Before dispatch I add the root config on the branch: `package.json` (scripts `start`,
-`build`, `install-hooks`, `uninstall-hooks`), `tsconfig.json`, `eslint.config.js`,
-`vite.config.ts`, `.gitignore`, and install the dependencies above. TypeScript runs
-directly on Node 22 (built-in type stripping), so no build step for the server or hook.
+| 1 | app | `server/`, `web/`, `vite.config.ts`, `package.json`, `.gitignore`, `tsconfig.json` | Shared types in web, drop proxy, `dev` script and live indicator, cancel the gone timer, reject `Origin`, `/data/` and tooling ignores, 503 for an unbuilt page, favicon | Done when 1–5, 7, 8 hold |
+| 2 | tests | `tests/` | Import types from `server/types.ts`; tests at the seams below; fix the tty assertion | Done when 1 and 6 hold; tests fail only where code is missing |
 
 ## Test seams
 
-- Install/uninstall on a temp settings file: catches Funtown clobbering or leaving behind
-  your own hooks.
-- Hook script with a fake stdin event and a local test server: catches a missing tty, a
-  changed payload, or a hook that hangs when Funtown is down.
-- `POST /events` → `GET /stream` on a running server: catches wrong stages, names
-  (`lead-2`, `Explore-1`), subagents attached to the wrong lead, and gone leads not removed.
-- Playwright on the page with a fake Town stream: catches "needs you" not showing or not
-  standing out, and subagents not shown under their lead.
+- `POST /events` → `GET /stream`: catches a returning lead still deleted by the old timer,
+  and an event with an `Origin` header changing the Town.
+- `startServer({ distDir: <empty dir> })` → `GET /`: catches a missing page showing as a
+  bare 404.
+- Hook script with a fake stdin event: catches a wrong or missing tty.
+- Playwright on the page: catches a favicon 404 in the console.
 
 ## Stop and ask
 
@@ -135,5 +81,8 @@ Every agent stops and reports BLOCKED when:
 
 ## Queue
 
-- m2-panel-jump: ~350: click panel (charter item 4), jump to the lead's Terminal tab (item
-  5), and rebuilding already-running sessions from transcripts when Funtown starts.
+- m3-panel-jump: ~250, after m2: click a character to open a panel with its current step
+  and subagents (charter item 4); a button focuses the lead's macOS Terminal tab by tty via
+  `osascript`, other terminal apps are brought to the front (item 5).
+- m4-rebuild: ~200, after m3: on start, rebuild already-running sessions from the
+  transcripts in `~/.claude/projects/`.
