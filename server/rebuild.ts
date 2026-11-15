@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { HookEvent, TownState } from "./town.ts";
 
 type Exec = (file: string, args: string[]) => Promise<string>;
-type Session = { pid: number; sessionId: string; cwd: string; startedAt: number; status?: string };
+export type Session = { pid: number; sessionId: string; cwd: string; startedAt: number; status?: string };
 type Line = { type?: string; timestamp?: string; message?: { content?: unknown } };
 type ToolUse = { name: string; input?: { command?: unknown } };
 
@@ -15,6 +15,11 @@ async function list(dir: string): Promise<string[]> {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw err;
   }
+}
+
+/** Writes one stderr line naming what rebuild skipped and why. */
+function warn(what: string, err: unknown): void {
+  console.error(`funtown: rebuild skipped ${what}: ${(err as Error).message}`);
 }
 
 /** The JSON objects on a transcript's lines; a line that is not JSON is skipped. */
@@ -32,7 +37,7 @@ async function readLines(file: string): Promise<Line[]> {
 
 /** The last tool call in a transcript, or null when it has none. */
 function lastToolUse(lines: Line[]): ToolUse | null {
-  for (const line of lines.reverse()) {
+  for (const line of lines.toReversed()) {
     const content = line.type === "assistant" ? line.message?.content : null;
     if (!Array.isArray(content)) continue;
     const tool = (content as (ToolUse & { type?: string })[]).findLast((c) => c?.type === "tool_use");
@@ -63,13 +68,19 @@ function isAlive(pid: number): boolean {
 /**
  * Applies to `town` the events that bring it to the state of the sessions already running
  * under `claudeDir`: live ones in `startedAt` order, with their step, subagents, tty and
- * terminal program. A missing `sessions/` folder changes nothing.
+ * terminal program. A missing `sessions/` folder changes nothing. Skipped, each with one line on
+ * stderr: a session file that can't be read or parsed, a session whose `ps` call fails, and a
+ * subagent whose `.meta.json` can't be read or parsed. A subagent without a transcript has no step.
  */
 export async function rebuild(town: TownState, claudeDir: string, exec: Exec): Promise<void> {
   const sessions: Session[] = [];
   for (const name of (await list(join(claudeDir, "sessions"))).filter((n) => n.endsWith(".json"))) {
-    const session = JSON.parse(await readFile(join(claudeDir, "sessions", name), "utf8")) as Session;
-    if (isAlive(session.pid)) sessions.push(session);
+    try {
+      const session = JSON.parse(await readFile(join(claudeDir, "sessions", name), "utf8")) as Session;
+      if (isAlive(session.pid)) sessions.push(session);
+    } catch (err) {
+      warn(`session file ${name}`, err);
+    }
   }
   sessions.sort((a, b) => a.startedAt - b.startedAt);
 
@@ -82,13 +93,21 @@ export async function rebuild(town: TownState, claudeDir: string, exec: Exec): P
       try {
         leadLines = await readLines(join(projectsDir, p, `${s.sessionId}.jsonl`));
         projectDir = join(projectsDir, p);
+        break;
       } catch (err) {
         const code = (err as NodeJS.ErrnoException).code;
         if (code !== "ENOENT" && code !== "ENOTDIR") throw err;
       }
     }
     const base: HookEvent = { session_id: s.sessionId, cwd: s.cwd };
-    const [tty, termProgram] = parsePs(await exec("ps", ["-wwE", "-o", "tty=,command=", "-p", String(s.pid)]));
+    let ps: string;
+    try {
+      ps = await exec("ps", ["-wwE", "-o", "tty=,command=", "-p", String(s.pid)]);
+    } catch (err) {
+      warn(`pid ${s.pid}`, err);
+      continue;
+    }
+    const [tty, termProgram] = parsePs(ps);
     town.apply({ ...base, hook_event_name: "SessionStart", funtown: { tty, term_program: termProgram } });
 
     if (projectDir) {
@@ -96,8 +115,17 @@ export async function rebuild(town: TownState, claudeDir: string, exec: Exec): P
       const agents: { id: string; type: string; finished: boolean; at: string; tool: ToolUse | null }[] = [];
       for (const name of (await list(subDir)).filter((n) => n.endsWith(".meta.json"))) {
         const id = name.slice("agent-".length, -".meta.json".length);
-        const meta = JSON.parse(await readFile(join(subDir, name), "utf8")) as { agentType: string; finished: boolean };
-        const lines = await readLines(join(subDir, `agent-${id}.jsonl`));
+        let meta: { agentType: string; finished: boolean };
+        try {
+          meta = JSON.parse(await readFile(join(subDir, name), "utf8"));
+        } catch (err) {
+          warn(`subagent file ${name}`, err);
+          continue;
+        }
+        const lines = await readLines(join(subDir, `agent-${id}.jsonl`)).catch((err) => {
+          if (err.code !== "ENOENT") throw err;
+          return [];
+        });
         agents.push({ id, type: meta.agentType, finished: meta.finished, at: String(lines[0]?.timestamp ?? ""), tool: lastToolUse(lines) });
       }
       agents.sort((a, b) => a.at.localeCompare(b.at));
@@ -107,9 +135,7 @@ export async function rebuild(town: TownState, claudeDir: string, exec: Exec): P
         for (const e of stepEvents(agent, a.tool)) town.apply(e);
         if (a.finished) town.apply({ ...agent, hook_event_name: "SubagentStop" });
       }
-      for (const e of stepEvents(base, lastToolUse(leadLines))) {
-        town.apply(e);
-      }
+      for (const e of stepEvents(base, lastToolUse(leadLines))) town.apply(e);
     }
     if (s.status === "idle") town.apply({ ...base, hook_event_name: "Stop" });
   }
