@@ -77,8 +77,15 @@ export async function rebuild(town: TownState, claudeDir: string, exec: Exec): P
   const projects = await list(projectsDir);
   for (const s of sessions) {
     let projectDir: string | null = null;
+    let leadLines: Line[] = [];
     for (const p of projects) {
-      if ((await list(join(projectsDir, p))).includes(`${s.sessionId}.jsonl`)) projectDir = join(projectsDir, p);
+      try {
+        leadLines = await readLines(join(projectsDir, p, `${s.sessionId}.jsonl`));
+        projectDir = join(projectsDir, p);
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT" && code !== "ENOTDIR") throw err;
+      }
     }
     const base: HookEvent = { session_id: s.sessionId, cwd: s.cwd };
     const [tty, termProgram] = parsePs(await exec("ps", ["-wwE", "-o", "tty=,command=", "-p", String(s.pid)]));
@@ -100,7 +107,7 @@ export async function rebuild(town: TownState, claudeDir: string, exec: Exec): P
         for (const e of stepEvents(agent, a.tool)) town.apply(e);
         if (a.finished) town.apply({ ...agent, hook_event_name: "SubagentStop" });
       }
-      for (const e of stepEvents(base, lastToolUse(await readLines(join(projectDir, `${s.sessionId}.jsonl`))))) {
+      for (const e of stepEvents(base, lastToolUse(leadLines))) {
         town.apply(e);
       }
     }

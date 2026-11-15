@@ -1,3 +1,5 @@
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ClaudeDir, deadPid, fakePs, leadsOf, post, start, toolUse, townWhere } from "./helpers.ts";
 
@@ -53,6 +55,15 @@ describe("rebuild on start", () => {
     rmSync(`${bare.dir}/sessions`, { recursive: true });
     const s = await start({ claudeDir: bare.dir, exec: fakePs({}).exec });
     expect((await townWhere(s.url, () => true)).houses).toEqual([]);
+  });
+
+  it("a_plain_file_next_to_the_project_folders_does_not_crash_the_rebuild", async () => {
+    const claude = new ClaudeDir()
+      .session({ pid: process.pid, sessionId: "s1", cwd: "/work/alpha", startedAt: 1, status: "busy" })
+      .transcript("s1", [toolUse("Bash", { command: "npm test" })]);
+    writeFileSync(join(claude.dir, "projects", ".DS_Store"), "x");
+    const { url } = await start({ claudeDir: claude.dir, exec: fakePs({}).exec });
+    expect(leadsOf(await townWhere(url, () => true))[0].step).toBe("Bash: npm test");
   });
 
   it("no_claudeDir_means_no_rebuild_and_no_exec", async () => {
