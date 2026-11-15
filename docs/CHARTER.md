@@ -27,6 +27,8 @@ one view and jumps to its terminal in one click.
 ## Not in v1
 
 - Embedded terminal inside Funtown (v1 jumps to the real terminal instead).
+- The 5-day real-use check (answering waiting sessions from Funtown for 5 working days):
+  it needs typing into a session from Funtown, which v1 leaves out. Moved to v2.
 - Recent transcript and session cost in the panel.
 - Exact-tab jump for terminal apps other than macOS Terminal (iTerm2, VS Code, others).
 - Notion intake from the phone and an MCP to-do feed per project.
@@ -45,7 +47,6 @@ one view and jumps to its terminal in one click.
 | Jump | One click in the panel focuses that session's tab in macOS Terminal. |
 | Rebuild | Restarted while sessions run, Funtown shows each at its house with its stage within 5 s. |
 | Gone | A session that exits or is killed (`kill -9`) shows "gone" within 5 s. |
-| Real use | For 5 working days you answer waiting sessions from Funtown without hunting through terminal tabs. |
 
 ## Constraints
 
