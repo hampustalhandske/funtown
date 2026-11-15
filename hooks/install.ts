@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const EVENTS = [
   "SessionStart",
@@ -20,11 +20,15 @@ type Command = { type?: string; command?: string; timeout?: number };
 type Group = { hooks?: Command[] };
 type Settings = { hooks?: Record<string, Group[]> };
 
-/** Removes Funtown's hook commands, dropping the groups and events that held only those. */
-function strip(settings: Settings): void {
+type InstallRecord = { createdHooksKey: boolean; createdEvents: string[] };
+
+/**
+ * Removes Funtown's hook commands and the groups that held only those. An event, or the
+ * `hooks` key, that ends up empty is deleted only when `created` says install made it.
+ */
+function strip(settings: Settings, created?: InstallRecord): void {
   const hooks = settings.hooks;
   if (!hooks) return;
-  let removed = false;
   for (const [event, groups] of Object.entries(hooks)) {
     const kept: Group[] = [];
     let touched = false;
@@ -36,11 +40,10 @@ function strip(settings: Settings): void {
       }
     }
     if (!touched) continue;
-    if (kept.length > 0) hooks[event] = kept;
+    if (kept.length > 0 || !created?.createdEvents.includes(event)) hooks[event] = kept;
     else delete hooks[event];
-    removed = true;
   }
-  if (removed && Object.keys(hooks).length === 0) delete settings.hooks;
+  if (created?.createdHooksKey && Object.keys(hooks).length === 0) delete settings.hooks;
 }
 
 const [action, flag, custom] = process.argv.slice(2);
@@ -50,16 +53,33 @@ if (action !== "install" && action !== "uninstall") {
 const path = flag === "--settings" ? custom : join(homedir(), ".claude", "settings.json");
 if (!path) throw new Error("--settings needs a path");
 
+const statePath = process.env.FUNTOWN_STATE ?? join(homedir(), ".funtown", "installed.json");
+const state: Partial<Record<string, InstallRecord>> = existsSync(statePath)
+  ? JSON.parse(readFileSync(statePath, "utf8"))
+  : {};
+const key = resolve(path);
+const previous = state[key];
+
 const settings: Settings = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {};
-strip(settings);
+strip(settings, previous);
 if (action === "install") {
   const command = `node "${join(import.meta.dirname, MARKER)}"`;
+  const createdHooksKey = settings.hooks === undefined || previous?.createdHooksKey === true;
   settings.hooks ??= {};
+  const createdEvents: string[] = [];
   for (const event of EVENTS) {
+    if (!(event in settings.hooks) || previous?.createdEvents.includes(event)) {
+      createdEvents.push(event);
+    }
     (settings.hooks[event] ??= []).push({ hooks: [{ type: "command", command, timeout: 2 }] });
   }
+  state[key] = { createdHooksKey, createdEvents };
+} else {
+  delete state[key];
 }
 if (action === "install" || existsSync(path)) {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`);
 }
+mkdirSync(dirname(statePath), { recursive: true });
+writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
