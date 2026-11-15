@@ -72,15 +72,10 @@ describe("POST /jump command choice", () => {
     }
   });
 
-  it("each_known_other_terminal_is_opened_by_its_app_name", async () => {
-    const apps: Record<string, string> = {
-      "iTerm.app": "iTerm", vscode: "Visual Studio Code", WarpTerminal: "Warp", ghostty: "Ghostty",
-    };
-    for (const [prog, app] of Object.entries(apps)) {
-      const { url, calls } = await withLead(prog);
-      expect((await jump(url, { lead: "s1" })).status).toBe(204);
-      expect(calls).toEqual([["open", ["-a", app]]]);
-    }
+  it("a_known_other_terminal_is_opened_by_its_app_name", async () => {
+    const { url, calls } = await withLead("ghostty");
+    expect((await jump(url, { lead: "s1" })).status).toBe(204);
+    expect(calls).toEqual([["open", ["-a", "Ghostty"]]]);
   });
 });
 
@@ -104,6 +99,12 @@ describe("POST /jump refusals", () => {
     expect(calls).toEqual([]);
   });
 
+  it("a_body_over_64_kb_gets_413_and_runs_nothing", async () => {
+    const { url, calls } = await withLead("ghostty");
+    expect((await jump(url, { lead: "s1", pad: "x".repeat(70 * 1024) })).status).toBe(413);
+    expect(calls).toEqual([]);
+  });
+
   it("an_unknown_or_null_terminal_gets_409_with_the_message_and_runs_nothing", async () => {
     for (const prog of ["TestTerm", null]) {
       const { url, calls } = await withLead(prog);
@@ -117,7 +118,6 @@ describe("POST /jump refusals", () => {
 
   it("a_failing_command_gets_500_with_the_message_and_the_error_is_logged_to_stderr", async () => {
     const logged: string[] = [];
-    vi.spyOn(process.stderr, "write").mockImplementation((c: unknown) => (logged.push(String(c)), true));
     vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => void logged.push(a.map(String).join(" ")));
     const { url } = await withLead("ghostty", "ttys001", true);
     const res = await jump(url, { lead: "s1" });

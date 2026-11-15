@@ -25,14 +25,19 @@ const town = {
 
 const sse = (t: unknown) => `retry: 50\nevent: state\ndata: ${JSON.stringify(t)}\n\n`;
 
-async function open(page: Page, jumpReply: { status: number; body?: string } = { status: 204 }) {
+async function open(
+  page: Page,
+  jumpReply: { status: number; body?: string; delayMs?: number } = { status: 204 },
+  initial: unknown = town,
+) {
   const jumps: unknown[] = [];
-  let current: unknown = town;
+  let current: unknown = initial;
   await page.route("**/stream", (r) =>
     r.fulfill({ status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-cache" }, body: sse(current) }),
   );
-  await page.route("**/jump", (r) => {
+  await page.route("**/jump", async (r) => {
     jumps.push(r.request().postDataJSON());
+    if (jumpReply.delayMs) await new Promise((done) => setTimeout(done, jumpReply.delayMs));
     return r.fulfill({ status: jumpReply.status, contentType: "text/plain", body: jumpReply.body ?? "" });
   });
   await page.goto("/");
@@ -48,8 +53,7 @@ test("clicking_a_lead_opens_a_panel_with_stage_step_need_and_its_subagents_and_e
   await expect(panel).toContainText("needs_you".replace("_", " "), { ignoreCase: true });
   await expect(panel).toContainText("Bash: npm test");
   await expect(panel).toContainText("waiting for you: permission");
-  await expect(panel).toContainText("Explore-1");
-  await expect(panel).toContainText(/working/i);
+  await expect(panel.getByRole("list", { name: "Subagents" })).toHaveText("Explore-1 🟢 working");
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
 });
@@ -94,4 +98,30 @@ test("an_open_panel_follows_new_states_and_closes_when_its_character_is_removed"
   stream.send(town);
   await expect(page.locator('section[aria-label="other-app"]')).toBeVisible();
   await expect(panel).toHaveCount(0);
+});
+
+test("a_second_click_while_a_jump_is_pending_posts_once", async ({ page }) => {
+  const { jumps } = await open(page, { status: 204, delayMs: 500 });
+  await page.locator('section[aria-label="other-app"] .character').filter({ hasText: "lead-2" }).click();
+  const button = page.getByRole("dialog", { name: "lead-2 details" }).getByRole("button", { name: "Go to terminal" });
+  await button.click();
+  await expect(button).toBeDisabled();
+  await button.click({ force: true });
+  await expect(button).toBeEnabled();
+  expect(jumps).toEqual([{ lead: "s2" }]);
+});
+
+test("equal_subagent_ids_under_two_leads_open_the_right_panel", async ({ page }) => {
+  const sub = (name: string) => ({ id: "x1", name, stage: "working", activity: null, step: null });
+  const lead = (id: string, name: string, subName: string) => ({
+    id, name, stage: "working", activity: null, step: null, tty: null, termProgram: null, subagents: [sub(subName)],
+  });
+  const { jumps } = await open(page, { status: 204 }, {
+    houses: [{ project: "demo-app", cwd: "/work/demo-app", leads: [lead("a", "lead-a", "Sub-A"), lead("b", "lead-b", "Sub-B")] }],
+  });
+  await page.locator('ul[aria-label="lead-b subagents"] .character').click();
+  const panel = page.getByRole("dialog", { name: "Sub-B details" });
+  await expect(panel).toBeVisible();
+  await panel.getByRole("button", { name: "Go to terminal" }).click();
+  await expect.poll(() => jumps).toEqual([{ lead: "b" }]);
 });
