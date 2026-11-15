@@ -1,5 +1,5 @@
 # S1: a hook that holds and returns a decision
-Claude Code: 2.1.325 (Claude Code)   Date: 2026-11-15   Verdict: partial
+Claude Code: 2.1.325   Date: 2026-11-15   Verdict: partial
 
 Model `haiku`, permission mode `manual` (shown as `default` in hook payloads), hooks given through `claude --settings <file>`. The hook is a command hook that POSTs its stdin to a local server and prints the reply; the server holds the request until a decision file appears.
 
@@ -14,8 +14,8 @@ Model `haiku`, permission mode `manual` (shown as `default` in hook payloads), h
 | ExitPlanMode approval applies (`--bg`) | pass | Same in a `--permission-mode plan` `--bg` session: "User approved Claude's plan"; it then went on to write the file |
 | A killed hook falls back to the normal dialog | pass | `kill` of the hook process while PermissionRequest was held: server saw the connection close, the dialog stayed on screen, pressing `1` ran the tool (`m2` exists). Tested interactive only |
 | What the terminal shows while held | pass | PermissionRequest: the normal permission dialog (Yes / always / auto mode / No), no marker that a hook is pending; answering it in the terminal works. PreToolUse (AskUserQuestion, ExitPlanMode): spinner line `running PreToolUse hooks… 1/2 · 11s`, no dialog. In `--bg`, `claude attach <id>` shows the same dialog |
-| Esc while held fires Stop | pass (it does not) | Esc on the held PermissionRequest dialog: terminal `Interrupted · What should Claude do instead?`, server saw the hook connection close, no `Stop` event reached the server within 8 s. Stop fired only after normal turn ends |
-| 2 h timeout honoured | not tested: moved to m8 | Hook with `"timeout": 7200` was still held (connection open, no `closed`) 1802 s (30 min) after its request, past the 600 s default, so the configured timeout is what applies. Not run to 7200 s. The hooks docs set the default at 600 s and state no upper cap for `command` hooks; the CLI has no hook-timeout option |
+| Esc while held fires Stop | pass: Esc does not fire Stop | Esc on the held PermissionRequest dialog: terminal `Interrupted · What should Claude do instead?`, server saw the hook connection close, no `Stop` event reached the server within 8 s. Stop fired only after normal turn ends |
+| 2 h timeout honoured | not tested: moved to m8, approved by the user 2026-11-15 | Hook with `"timeout": 7200` was still held (connection open, no `closed`) 1802 s (30 min) after its request, past the 600 s default, so the configured timeout is what applies. Not run to 7200 s. The hooks docs set the default at 600 s and state no upper cap for `command` hooks; the CLI has no hook-timeout option |
 | Answer typed in the terminal while held (extra) | finding | Pressing `1` in the dialog while the hook was held applied the choice, but the hook process and its server connection stayed open (`lsof` showed it ESTABLISHED) until the server replied; Esc closed it. The server must treat a later `Stop` / `PostToolUse` of the same session as "answered elsewhere" and release the request |
 
 ## Reproduce
@@ -53,7 +53,54 @@ const http=require('http');let b='';process.stdin.on('data',c=>b+=c).on('end',()
  "Stop":[{"hooks":[{"type":"command","command":"node <s1>/hook.js","timeout":10}]}],
  "SubagentStart":[{"hooks":[{"type":"command","command":"node <s1>/hook.js","timeout":10}]}]}}
 ```
-`drive.py <cwd> <cmd...>` (pty driver) forks the command on a 120x40 pty, feeds output to a `pyte.Screen`, writes the rendered screen to `$NAME.screen.txt` every 0.5 s and writes any text found in `ctl/$NAME/keys` to the pty (read with `unicode_escape`, so `\r` and `\x1b[B` work). It must subclass `pyte.Screen` with no-op `report_device_status(*a, **k)` or pyte raises on Claude Code's private DSR query. Name it anything but `pty.py`. In the child, delete every `CLAUDE*` environment variable first.
+`drive.py <cwd> <cmd...>` (pty driver) forks the command on a 120x40 pty, feeds output to a `pyte.Screen`, writes the rendered screen to `$NAME.screen.txt` every 0.5 s and writes any text found in `ctl/$NAME/keys` to the pty (read with `unicode_escape`, so `\r` and `\x1b[B` work). It must subclass `pyte.Screen` with no-op `report_device_status(*a, **k)` or pyte raises on Claude Code's private DSR query. Name it anything but `pty.py`. In the child, delete every `CLAUDE*` and `AI_AGENT` environment variable first. The script:
+`drive.py`:
+```python
+# usage: drive.py <cwd> <cmd...>   Control: files in ctl/: 'keys' (raw text written to the pty, then deleted), 'quit'.
+# Writes the rendered screen to screen.txt every 0.5 s and raw output to raw.log.
+import sys,os,pty,select,time,fcntl,termios,struct,signal
+sys.path.insert(0,os.path.join(os.path.dirname(__file__),'lib'))
+import pyte
+D=os.path.dirname(os.path.abspath(__file__));name=os.environ.get('NAME','t')
+ctl=os.path.join(D,'ctl',name);os.makedirs(ctl,exist_ok=True)
+cwd=sys.argv[1];cmd=sys.argv[2:]
+rows,cols=40,120
+pid,fd=pty.fork()
+if pid==0:
+    for e in [e for e in os.environ if e.startswith("CLAUDE") or e=="AI_AGENT"]: del os.environ[e]
+    os.chdir(cwd);os.execvp(cmd[0],cmd)
+fcntl.ioctl(fd,termios.TIOCSWINSZ,struct.pack('HHHH',rows,cols,0,0))
+class Scr(pyte.Screen):
+    def report_device_status(self,*a,**k):pass
+    def set_mode(self,*a,**k):
+        try:super().set_mode(*a,**k)
+        except Exception:pass
+    def reset_mode(self,*a,**k):
+        try:super().reset_mode(*a,**k)
+        except Exception:pass
+scr=Scr(cols,rows);st=pyte.ByteStream(scr)
+raw=open(os.path.join(D,name+'.raw.log'),'ab');last=0
+while True:
+    r,_,_=select.select([fd],[],[],0.3)
+    if r:
+        try:d=os.read(fd,65536)
+        except OSError:break
+        if not d:break
+        raw.write(d);raw.flush();st.feed(d)
+    k=os.path.join(ctl,'keys')
+    if os.path.exists(k):
+        s=open(k,'rb').read();os.unlink(k);os.write(fd,s.decode().encode().decode('unicode_escape').encode('latin1'))
+    if os.path.exists(os.path.join(ctl,'quit')):
+        os.unlink(os.path.join(ctl,'quit'));os.kill(pid,signal.SIGTERM);break
+    if time.time()-last>0.5:
+        open(os.path.join(D,name+'.screen.txt'),'w').write('\n'.join(l.rstrip() for l in scr.display).rstrip()+'\n');last=time.time()
+    try:
+        w,_=os.waitpid(pid,os.WNOHANG)
+        if w:break
+    except ChildProcessError:break
+open(os.path.join(D,name+'.screen.txt'),'a').write('\n[pty exited]\n')
+```
+
 
 Commands:
 ```
@@ -71,7 +118,7 @@ echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"be
 # AskUserQuestion / ExitPlanMode: touch decision/PreToolUse.hold, ask Claude to use the tool (plan mode: shift+tab to "plan mode on"),
 #   reply with hookSpecificOutput {hookEventName:"PreToolUse", permissionDecision:"allow", updatedInput:{...tool input..., answers:{...}}}
 # --bg: from <s1>/work/repo1
-env $(env | grep -o '^CLAUDE[A-Z_]*' | sed 's/^/-u /') claude --bg --settings <s1>/settings.json --model haiku --permission-mode manual -n s1-bg "Run this exact bash command and nothing else: touch bg1"
+env $(env | grep -oE '^(CLAUDE[A-Z_]*|AI_AGENT)' | sed 's/^/-u /') claude --bg --settings <s1>/settings.json --model haiku --permission-mode manual -n s1-bg "Run this exact bash command and nothing else: touch bg1"
 claude agents --json; claude stop <id>; claude rm <id>
 ```
 Long hold run: second server on `PORT=47932 SDIR=<s1>/t2h`, `touch <s1>/t2h/decision/PermissionRequest.hold` (after the folder exists), settings with `"command":"PORT=47932 node <s1>/hook.js","timeout":7200`, an interactive session in a second repo, one `touch` prompt, then nothing answered. Check that no `closed` line appears after 600 s; for the full 2 h, compare the `in` and `closed` timestamps in `<s1>/t2h/log.jsonl`.

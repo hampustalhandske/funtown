@@ -1,5 +1,5 @@
 # S6: AskUserQuestion from a --bg lead with a subagent running
-Claude Code: 2.1.325 (Claude Code)   Date: 2026-11-15   Verdict: pass
+Claude Code: 2.1.325   Date: 2026-11-15   Verdict: pass
 
 | Criterion | Result | Evidence |
 |---|---|---|
@@ -16,7 +16,7 @@ Set up the hold server and hook as in `s1-hook-hold.md`, then:
 cd <scratch>/spikes/s1
 touch decision/PreToolUse.hold
 cd work/repo1
-env $(env | grep -o '^CLAUDE[A-Z_]*' | sed 's/^/-u /') claude --bg \
+env $(env | grep -oE '^(CLAUDE[A-Z_]*|AI_AGENT)' | sed 's/^/-u /') claude --bg \
   --settings <scratch>/spikes/s1/settings.json --model haiku --permission-mode manual -n s6-lead \
   "First, use the Agent tool with run_in_background set to true to start a general-purpose subagent whose task is: read every file in the current directory one by one, then run the bash command sleep 60, then reply done. Do not wait for it. Immediately after launching it, use the AskUserQuestion tool to ask me one question: Which color? with options red and blue. Then state exactly what I answered and stop."
 sleep 40; cat <scratch>/spikes/s1/log.jsonl          # SubagentStart, then PreToolUse.AskUserQuestion held
@@ -27,7 +27,7 @@ claude logs <id>        # shows the answer reaching the lead
 claude stop <id>; claude rm <id>
 ```
 
-The `env -u CLAUDE*` wrapper is needed only when launching from inside another Claude Code session, whose inherited markers switch transcript saving off.
+The `env -u` wrapper (every `CLAUDE*` and `AI_AGENT` variable) is needed only when launching from inside another Claude Code session, whose inherited markers switch transcript saving off.
 
 ## Consequence
 None: pass. Cards can answer a lead's AskUserQuestion through a PreToolUse hook even while its subagents run.

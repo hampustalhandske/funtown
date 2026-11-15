@@ -1,5 +1,5 @@
 # S3: join `claude agents --json` with hook payloads (V3, V5, V7)
-Claude Code: 2.1.325   Date: 2026-11-15   Verdict: pass
+Claude Code: 2.1.325   Date: 2026-11-15   Verdict: partial
 
 | Criterion | Result | Evidence |
 |---|---|---|
@@ -19,6 +19,28 @@ Other findings:
 
 ## Reproduce
 Scratch: `<scratch>/spikes/s3` with `repo/` (new local git repo, trusted once by hand), `settings.json` (a command hook on SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, Notification, SessionEnd, PermissionRequest, SubagentStart, SubagentStop) and `hook.js`, which appends `{ev, sid, src, ...}` per payload to `hooks.jsonl`.
+`hook.js`:
+```js
+let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{
+ try{const j=JSON.parse(s);require('fs').appendFileSync(process.env.S3_LOG||__dirname+'/hooks.jsonl',JSON.stringify({t:Date.now(),ev:j.hook_event_name,sid:j.session_id,src:j.source,cwd:j.cwd,tool:j.tool_name,pid:process.ppid})+'\n')}catch(e){}
+});
+```
+`settings.json` (the same command hook on ten events):
+```json
+{"hooks":{
+ "SessionStart":[{"hooks":[{"type":"command","command":"node <scratch>/spikes/s3/hook.js"}]}],
+ "UserPromptSubmit":[{"hooks":[{"type":"command","command":"node <scratch>/spikes/s3/hook.js"}]}],
+ "PreToolUse":[{"hooks":[{"type":"command","command":"node <scratch>/spikes/s3/hook.js"}]}],
+ "PostToolUse":[{"hooks":[{"type":"command","command":"node <scratch>/spikes/s3/hook.js"}]}],
+ "Stop":[{"hooks":[{"type":"command","command":"node <scratch>/spikes/s3/hook.js"}]}],
+ "Notification":[{"hooks":[{"type":"command","command":"node <scratch>/spikes/s3/hook.js"}]}],
+ "SessionEnd":[{"hooks":[{"type":"command","command":"node <scratch>/spikes/s3/hook.js"}]}],
+ "PermissionRequest":[{"hooks":[{"type":"command","command":"node <scratch>/spikes/s3/hook.js"}]}],
+ "SubagentStart":[{"hooks":[{"type":"command","command":"node <scratch>/spikes/s3/hook.js"}]}],
+ "SubagentStop":[{"hooks":[{"type":"command","command":"node <scratch>/spikes/s3/hook.js"}]}]
+}}
+```
+
 ```
 cd <scratch>/spikes/s3/repo
 claude --bg --model haiku --settings ../settings.json --name s3bg "Reply with the single word ok, nothing else."
@@ -29,7 +51,42 @@ claude --bg --model haiku --permission-mode default --settings ../settings.json 
 claude agents --json                              # waiting / permission prompt
 claude stop <id>; claude rm <id>
 ```
-Interactive: a Python `pty.fork()` driver that removes `CLAUDE*`/`AI_AGENT` from the environment, sets a 45x150 window, runs `claude --model haiku --settings ../settings.json --name s3int`, sends a prompt, `/clear`, another prompt, `/exit`, and runs `claude agents --json` between steps. For the pending prompt: relaunch with `--resume <sessionId> --permission-mode default` and ask for a Write, then kill the process.
+Interactive: a Python `pty.fork()` driver, run as `python3 drive.py <scratch>/spikes/s3`, that removes `CLAUDE*`/`AI_AGENT` from the environment, sets a 45x150 window, runs `claude --model haiku --settings ../settings.json --name s3int`, sends a prompt, `/clear`, another prompt, `/exit`, and runs `claude agents --json` between steps:
+`drive.py`:
+```python
+import pty,os,sys,time,select,subprocess,json,re
+S=sys.argv[1]
+def snap(tag):
+    #print(tag,'files',[ (f,open(os.path.expanduser('~/.claude/sessions/'+f)).read()[:200]) for f in os.listdir(os.path.expanduser('~/.claude/sessions')) if f.startswith(str(cpid)+'.')],flush=True)
+    out=subprocess.run(['claude','agents','--json'],capture_output=True,text=True).stdout
+    for a in json.loads(out):
+        if a.get('name')=='s3int' or a['pid']==cpid: print(tag,{k:v for k,v in a.items() if k not in('cwd','startedAt')},flush=True)
+pid,fd=pty.fork()
+if pid==0:
+    for k in list(os.environ):
+        if k.startswith('CLAUDE') or k=='AI_AGENT': del os.environ[k]
+    os.chdir(S+'/repo')
+    os.execvp('claude',['claude','--model','haiku','--settings',S+'/settings.json','--name','s3int'])
+import fcntl,termios,struct
+fcntl.ioctl(fd,termios.TIOCSWINSZ,struct.pack('HHHH',45,150,0,0))
+def pump(t):
+    end=time.time()+t
+    while time.time()<end:
+        r,_,_=select.select([fd],[],[],0.3)
+        if r:
+            try: os.read(fd,65536)
+            except OSError: return
+def send(s): os.write(fd,s.encode())
+cpid=pid
+pump(6); send('Reply with the word one and nothing else.'); pump(1); send('\r'); pump(10)
+snap('before-clear')
+send('/clear'); pump(1); send('\r'); pump(4); snap('after-clear')
+send('Reply with the word two and nothing else.'); pump(1); send('\r'); pump(8); snap('after-prompt')
+send('/exit'); pump(1); send('\r'); pump(4)
+try: os.kill(pid,9)
+except: pass
+```
+ For the pending prompt: a copy of the driver that launches `claude --model haiku --settings <scratch>/spikes/s3/settings.json --resume <sessionId> --permission-mode default`, waits 8 s, runs the snapshot, sends `Use the Write tool to create perm3.txt containing hi` then `\r`, waits 10 s, runs the snapshot and kills the process.
 Cleanup check: `claude agents --json --all | grep -c spikes/s3` gives 0.
 
 ## Consequence

@@ -14,7 +14,7 @@ Mode: away: open the PR after review and continue with the queue
    answer path (held permission hook, timeout, fallback) and the minimum Claude Code
    version that passed.
 3. Every spike note lists the exact commands to reproduce it on Claude Code 2.1.325.
-4. After the spikes, `claude agents --json` lists no session a spike started.
+4. After the spikes, `claude agents --json --all` lists no session a spike started.
 5. `npx eslint . && npx vitest run && npx playwright test` passes, unchanged.
 
 ## Must not

@@ -6,7 +6,7 @@ Claude Code: 2.1.325   Date: 2026-11-15   Verdict: partial
 | Default `--bg`: each run gets its own worktree | pass | `git worktree list` after two runs: main plus `.claude/worktrees/run1-file` and `.claude/worktrees/run2-file`, branches `worktree-run1-file`, `worktree-run2-file` |
 | No extra worktree | pass | exactly one worktree per run, none beyond those two |
 | Each run's cwd | pass | `claude agents --json` `cwd` is `<repo>/.claude/worktrees/<name>`; the run's file exists only in its own worktree, main stays clean |
-| No push, no PR | not tested | the plan forbids a remote in spike repos, so nothing could have been pushed or opened as a PR; the runs made one local commit each (`chore: add run1.txt`) |
+| No push, no PR | not tested: moved to m11, approved by the user 2026-11-15 | the plan forbids a remote in spike repos, so nothing could have been pushed or opened as a PR; the runs made one local commit each (`chore: add run1.txt`) |
 | `--settings` with `bgIsolation: "none"` applies | pass | `--settings none.json` (`{"worktree":{"bgIsolation":"none"}}`): `git worktree list` shows only main, agents `cwd` is `<repo>`, `run3.txt` and `run4.txt` appear untracked in the main tree |
 
 Other findings:
