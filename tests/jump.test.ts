@@ -1,20 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { leadsOf, post, townWhere } from "./helpers.ts";
+import { leadsOf, post, start, townWhere } from "./helpers.ts";
 
-type Server = { url: string; close(): Promise<void> };
 type Call = [string, string[]];
-const open: Server[] = [];
-
-async function start(run: (file: string, args: string[]) => Promise<void>): Promise<Server> {
-  const { startServer } = await import("../server/app.ts");
-  const s = await (startServer as (o: unknown) => Promise<Server>)({ port: 0, run });
-  open.push(s);
-  return s;
-}
-afterEach(async () => {
-  vi.restoreAllMocks();
-  await Promise.all(open.splice(0).map((s) => s.close()));
-});
+afterEach(() => vi.restoreAllMocks());
 
 const ev = (name: string, extra: Record<string, unknown> = {}, termProgram: string | null = "Apple_Terminal", tty = "ttys001") => ({
   hook_event_name: name,
@@ -34,10 +22,10 @@ const jump = (url: string, body: unknown, origin: string | null = url) =>
 /** Starts a server whose `run` records its calls (or fails when `fail` is set), with lead s1 present. */
 async function withLead(termProgram: string | null, tty = "ttys001", fail = false) {
   const calls: Call[] = [];
-  const s = await start(async (f, a) => {
+  const s = await start({ run: async (f, a) => {
     calls.push([f, a]);
     if (fail) throw new Error("boom");
-  });
+  } });
   await post(s.url, ev("SessionStart", {}, termProgram, tty));
   await townWhere(s.url, (t) => leadsOf(t).length === 1);
   return { ...s, calls };
@@ -45,7 +33,7 @@ async function withLead(termProgram: string | null, tty = "ttys001", fail = fals
 
 describe("step in the Town state", () => {
   it("step_is_the_last_pretooluse_text_for_lead_and_subagent_and_survives_posttooluse_and_stop", async () => {
-    const { url } = await start(async () => {});
+    const { url } = await start({ run: async () => {} });
     await post(url, ev("SessionStart"));
     expect(leadsOf(await townWhere(url, (t) => leadsOf(t).length === 1))[0].step).toBeNull();
 
@@ -81,7 +69,6 @@ describe("POST /jump command choice", () => {
       const { url, calls } = await withLead("Apple_Terminal", tty);
       expect((await jump(url, { lead: "s1" })).status).toBe(204);
       expect(calls).toEqual([["open", ["-a", "Terminal"]]]);
-      await open.pop()!.close();
     }
   });
 
@@ -93,7 +80,6 @@ describe("POST /jump command choice", () => {
       const { url, calls } = await withLead(prog);
       expect((await jump(url, { lead: "s1" })).status).toBe(204);
       expect(calls).toEqual([["open", ["-a", app]]]);
-      await open.pop()!.close();
     }
   });
 });
@@ -126,7 +112,6 @@ describe("POST /jump refusals", () => {
       expect(res.headers.get("content-type")).toMatch(/^text\/plain/);
       expect(await res.text()).toBe("Funtown doesn't know how to open this session's terminal.");
       expect(calls).toEqual([]);
-      await open.pop()!.close();
     }
   });
 

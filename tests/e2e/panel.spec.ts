@@ -23,19 +23,21 @@ const town = {
   ],
 };
 
-const sse = (t: unknown) => `event: state\ndata: ${JSON.stringify(t)}\n\n`;
+const sse = (t: unknown) => `retry: 50\nevent: state\ndata: ${JSON.stringify(t)}\n\n`;
 
 async function open(page: Page, jumpReply: { status: number; body?: string } = { status: 204 }) {
   const jumps: unknown[] = [];
+  let current: unknown = town;
   await page.route("**/stream", (r) =>
-    r.fulfill({ status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-cache" }, body: sse(town) }),
+    r.fulfill({ status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-cache" }, body: sse(current) }),
   );
   await page.route("**/jump", (r) => {
     jumps.push(r.request().postDataJSON());
     return r.fulfill({ status: jumpReply.status, contentType: "text/plain", body: jumpReply.body ?? "" });
   });
   await page.goto("/");
-  return jumps;
+  /** Sets the state the stream sends on its next (quick) reconnect. */
+  return { jumps, send: (t: unknown) => void (current = t) };
 }
 
 test("clicking_a_lead_opens_a_panel_with_stage_step_need_and_its_subagents_and_escape_closes_it", async ({ page }) => {
@@ -62,7 +64,7 @@ test("a_lead_without_a_step_shows_nothing_yet_and_the_x_button_closes_the_panel"
 });
 
 test("a_subagent_panel_jumps_to_its_leads_id_not_its_own", async ({ page }) => {
-  const jumps = await open(page);
+  const { jumps } = await open(page);
   await page.locator('ul[aria-label="lead-1 subagents"] .character').filter({ hasText: "Explore-1" }).click();
   const panel = page.getByRole("dialog", { name: "Explore-1 details" });
   await expect(panel).toContainText("Read");
@@ -77,4 +79,19 @@ test("a_refused_jump_shows_the_servers_reply_text_in_the_panel", async ({ page }
   const panel = page.getByRole("dialog", { name: "lead-1 details" });
   await panel.getByRole("button", { name: "Go to terminal" }).click();
   await expect(panel).toContainText(msg);
+});
+
+test("an_open_panel_follows_new_states_and_closes_when_its_character_is_removed", async ({ page }) => {
+  const stream = await open(page);
+  await page.locator('section[aria-label="other-app"] .character').filter({ hasText: "lead-2" }).click();
+  const panel = page.getByRole("dialog", { name: "lead-2 details" });
+  await expect(panel).toContainText("nothing yet");
+  const lead2 = town.houses[1].leads[0];
+  stream.send({ houses: [town.houses[0], { ...town.houses[1], leads: [{ ...lead2, step: "Edit: a.ts" }] }] });
+  await expect(panel).toContainText("Edit: a.ts");
+  stream.send({ houses: [town.houses[0]] });
+  await expect(panel).toHaveCount(0);
+  stream.send(town);
+  await expect(page.locator('section[aria-label="other-app"]')).toBeVisible();
+  await expect(panel).toHaveCount(0);
 });

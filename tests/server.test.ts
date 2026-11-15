@@ -3,17 +3,8 @@ import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { leadsOf, post, townWhere } from "./helpers.ts";
+import { leadsOf, post, start, townWhere } from "./helpers.ts";
 
-type Server = { url: string; close(): Promise<void> };
-const open: Server[] = [];
-
-async function start(goneAfterMs?: number, distDir?: string): Promise<Server> {
-  const { startServer } = await import("../server/app.ts");
-  const s = await startServer({ port: 0, goneAfterMs, distDir });
-  open.push(s);
-  return s;
-}
 const tempDirs: string[] = [];
 const tempDir = (): string => {
   const d = mkdtempSync(join(tmpdir(), "funtown-dist-"));
@@ -21,7 +12,6 @@ const tempDir = (): string => {
   return d;
 };
 afterEach(async () => {
-  await Promise.all(open.splice(0).map((s) => s.close()));
   for (const d of tempDirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
@@ -107,7 +97,7 @@ describe("POST /events -> GET /stream", () => {
   });
 
   it("session_end_marks_the_lead_gone_then_removes_it_after_goneAfterMs", async () => {
-    const { url } = await start(300);
+    const { url } = await start({ goneAfterMs: 300 });
     await post(url, ev("SessionStart"));
     await post(url, ev("SessionEnd"));
     const gone = await townWhere(url, (t) => leadsOf(t).some((l) => l.stage === "gone"));
@@ -131,7 +121,7 @@ describe("POST /events -> GET /stream", () => {
   });
 
   it("a_lead_that_returns_after_session_end_is_not_removed_by_the_old_timer", async () => {
-    const { url } = await start(300);
+    const { url } = await start({ goneAfterMs: 300 });
     await post(url, ev("SessionStart"));
     await post(url, ev("SessionEnd"));
     await townWhere(url, (t) => leadsOf(t).some((l) => l.stage === "gone"));
@@ -142,7 +132,7 @@ describe("POST /events -> GET /stream", () => {
   });
 
   it("a_sessionless_event_does_not_cancel_the_pending_removal_of_a_ended_session", async () => {
-    const { url } = await start(300);
+    const { url } = await start({ goneAfterMs: 300 });
     await post(url, ev("SessionStart"));
     await post(url, ev("SessionEnd"));
     await townWhere(url, (t) => leadsOf(t).some((l) => l.stage === "gone"));
@@ -170,7 +160,7 @@ describe("POST /events -> GET /stream", () => {
 
 describe("GET / without a built page", () => {
   it("answers_503_with_the_build_hint_not_a_bare_404", async () => {
-    const { url } = await start(undefined, tempDir());
+    const { url } = await start({ distDir: tempDir() });
     const res = await fetch(`${url}/`);
     expect(res.status).toBe(503);
     expect(res.headers.get("content-type")).toMatch(/^text\/plain/);
@@ -182,7 +172,7 @@ describe("GET / with an unreadable index.html", () => {
   it("answers_500_not_the_503_build_hint_when_the_read_fails_for_a_reason_other_than_missing", async () => {
     const dist = tempDir();
     mkdirSync(join(dist, "index.html"));
-    const { url } = await start(undefined, dist);
+    const { url } = await start({ distDir: dist });
     const res = await fetch(`${url}/`);
     expect(res.status).toBe(500);
   });

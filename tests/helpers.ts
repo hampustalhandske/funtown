@@ -1,6 +1,22 @@
+import { afterEach } from "vitest";
 import type { Town } from "../server/types.ts";
 
 export type Json = Record<string, unknown>;
+
+type Server = Awaited<ReturnType<typeof import("../server/app.ts").startServer>>;
+type StartOptions = { goneAfterMs?: number; distDir?: string; run?: (file: string, args: string[]) => Promise<void> };
+const open: Server[] = [];
+
+/** Starts a server on a free port; it is closed after each test. */
+export async function start(opts: StartOptions = {}): Promise<Server> {
+  const { startServer } = await import("../server/app.ts");
+  const s = await startServer({ port: 0, ...opts });
+  open.push(s);
+  return s;
+}
+afterEach(async () => {
+  await Promise.all(open.splice(0).map((s) => s.close()));
+});
 
 /** Posts one hook event to a running server and returns the HTTP status. */
 export async function post(url: string, event: Json, headers: Record<string, string> = {}): Promise<number> {
