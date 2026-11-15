@@ -6,8 +6,9 @@ const STAGE_LABEL: Record<Stage, string> = {
   working: "🟢 working",
   needs_you: "🔴 needs you",
   done: "⚪ done",
-  gone: "⚫ gone",
 };
+
+const OPENING_TIMEOUT_MS = 30_000;
 
 /** Subscribes to the server's Town stream; gives the latest Town, or null before the first. */
 function useTown(): Town | null {
@@ -31,7 +32,12 @@ function CharacterRow({
 }) {
   const { name, stage, activity, needs } = character;
   return (
-    <button type="button" className={`character ${stage}`} data-stage={stage} onClick={() => onSelect(character.id)}>
+    <button
+      type="button"
+      className={`character ${stage}`}
+      data-stage={stage}
+      aria-label={[name, "kind" in character ? character.kind : null, STAGE_LABEL[stage].replace(/^\S+ /, "")].filter(Boolean).join(", ")}
+      onClick={() => onSelect(character.id)}>
       <span className="avatar" aria-hidden="true">{avatar}</span>
       <span className="body">
         <span className="line">
@@ -69,10 +75,12 @@ function HouseCard({
   house,
   onSelect,
   onNew,
+  notice,
 }: {
   house: House;
   onSelect: Select;
   onNew: (cwd: string) => Promise<string | null>;
+  notice?: string;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -94,7 +102,7 @@ function HouseCard({
       <button type="button" onClick={start} disabled={pending}>
         New session
       </button>
-      {error && <p role="alert" className="error">{error}</p>}
+      {(error ?? notice) && <p role="alert" className="error">{error ?? notice}</p>}
     </section>
   );
 }
@@ -151,7 +159,7 @@ function Panel({ character, lead, onClose }: { character: Character; lead: Lead;
       {character.id === lead.id && lead.kind === "terminal" && (
         <p className="hint">press ← or type /bg in its terminal to open it here</p>
       )}
-      {(lead.kind === "terminal" || character.id !== lead.id) && (
+      {lead.kind === "terminal" && (
         <button type="button" onClick={jump} disabled={pending}>
           Go to terminal
         </button>
@@ -173,14 +181,28 @@ export function App() {
   useEffect(() => {
     if (town && selection && !selected) setSelection(null);
   }, [town, selection, selected]);
-  const [opening, setOpening] = useState<string | null>(null);
-  const openedLead = opening ? town?.houses.flatMap((house) => house.leads).find((l) => l.shortId === opening) : undefined;
+  const [opening, setOpening] = useState<{ id: string; cwd: string; at: number }[]>([]);
+  const [missing, setMissing] = useState<string[]>([]);
+  const leads = town?.houses.flatMap((house) => house.leads) ?? [];
+  const listed = opening.flatMap((p) => {
+    const found = leads.find((l) => l.shortId === p.id);
+    return found ? [{ p, found }] : [];
+  });
   useEffect(() => {
-    if (openedLead) {
-      setSelection({ lead: openedLead.id, id: openedLead.id });
-      setOpening(null);
-    }
-  }, [openedLead]);
+    if (listed.length === 0) return;
+    const last = listed[listed.length - 1].found;
+    setSelection({ lead: last.id, id: last.id });
+    setOpening((all) => all.filter((p) => !listed.some((l) => l.p === p)));
+  }, [listed.map((l) => l.p.id).join()]);
+  useEffect(() => {
+    const timers = opening.map((p) =>
+      setTimeout(() => {
+        setOpening((all) => all.filter((x) => x !== p));
+        setMissing((all) => [...all, p.cwd]);
+      }, Math.max(0, p.at + OPENING_TIMEOUT_MS - Date.now())),
+    );
+    return () => timers.forEach(clearTimeout);
+  }, [opening]);
   /** Starts a background session in `cwd`; gives an error text, or null once started (its terminal opens when listed). */
   const startSession = useCallback(async (cwd: string): Promise<string | null> => {
     try {
@@ -190,7 +212,9 @@ export function App() {
         body: JSON.stringify({ cwd }),
       });
       if (reply.status !== 201) return (await reply.text()) || `Start failed (${reply.status}).`;
-      setOpening(((await reply.json()) as { id: string }).id);
+      const { id } = (await reply.json()) as { id: string };
+      setMissing((all) => all.filter((c) => c !== cwd));
+      setOpening((all) => [...all, { id, cwd, at: Date.now() }]);
       return null;
     } catch {
       return "Couldn't reach Funtown.";
@@ -228,6 +252,7 @@ export function App() {
             house={house}
             onSelect={(leadId, id) => setSelection({ lead: leadId, id })}
             onNew={startSession}
+            notice={missing.includes(house.cwd) ? "The new session didn't appear." : undefined}
           />
         ))}
       </main>
