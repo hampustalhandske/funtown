@@ -68,5 +68,7 @@ test("loading_the_page_logs_no_failed_requests_such_as_a_favicon_404", async ({ 
   );
   await page.goto("/");
   await page.waitForLoadState("networkidle");
+  // Headless Chromium never requests /favicon.ico, so check that the page declares its own icon.
+  await expect(page.locator('link[rel="icon"]')).toHaveCount(1);
   expect(problems).toEqual([]);
 });
