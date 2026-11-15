@@ -6,7 +6,7 @@ import { expect, it } from "vitest";
 
 const INSTALL = resolve(import.meta.dirname, "../hooks/install.ts");
 const EVENTS = [
-  "SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse",
+  "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse",
   "PermissionRequest", "Notification", "Stop", "SubagentStart", "SubagentStop",
 ];
 
@@ -94,6 +94,14 @@ it("uninstall_keeps_the_users_own_empty_hooks_object", () => {
   const s = setup(start);
   s.run("install");
   expect(s.run("uninstall")).toEqual(start);
+});
+
+it("uninstall_strips_a_session_end_entry_an_earlier_install_left", () => {
+  const old = { hooks: [{ type: "command", command: "node /x/hooks/funtown-hook.ts", timeout: 2 }] };
+  const theirs = { hooks: [{ type: "command", command: "echo mine-end" }] };
+  const s = setup({ hooks: { SessionEnd: [theirs, old] } });
+  const after = s.run("uninstall");
+  expect(after.hooks.SessionEnd).toEqual([theirs]);
 });
 
 it("a_misspelled_settings_flag_exits_non_zero_and_writes_no_file", () => {

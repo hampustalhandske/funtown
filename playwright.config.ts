@@ -7,7 +7,6 @@ const fake = FakeClaude.install(E2E_FAKE_DIR);
 export default defineConfig({
   testDir: "tests/e2e",
   use: { baseURL: "http://127.0.0.1:4799" },
-  expect: { timeout: 8000 },
   webServer: {
     command: "vite build && node server/main.ts",
     url: "http://127.0.0.1:4799",

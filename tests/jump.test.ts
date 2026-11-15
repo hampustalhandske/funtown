@@ -34,7 +34,6 @@ async function withLead(termProgram: string | null, tty = "ttys001", fail = fals
   s.fake.list([listed("s1", "/work/demo-app")]);
   await townWhere(s.url, (t) => leadsOf(t).length === 1);
   await post(s.url, ev("SessionStart", {}, termProgram, tty));
-  await townWhere(s.url, (t) => leadsOf(t).length === 1);
   return { ...s, calls };
 }
 

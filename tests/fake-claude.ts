@@ -8,6 +8,15 @@ export type Listed = {
   pid?: number; cwd: string; startedAt?: number; status: "busy" | "idle" | "waiting"; waitingFor?: string;
 };
 
+/** A listed session; `sessionId` and `cwd` are required, the rest has fixed defaults. */
+export const listed = (sessionId: string, cwd: string, over: Partial<Listed> = {}): Listed => ({
+  sessionId, cwd, kind: "interactive", status: "idle", name: sessionId, pid: 1, startedAt: 1, ...over,
+});
+
+/** A listed background session whose short id is the first 8 characters of `sessionId`. */
+export const listedBg = (sessionId: string, cwd: string, over: Partial<Listed> = {}): Listed =>
+  listed(sessionId, cwd, { kind: "background", id: sessionId.slice(0, 8), ...over });
+
 /** Where the e2e web server's fake `claude` lives, so the config and the specs share it. */
 export const E2E_FAKE_DIR = join(tmpdir(), "funtown-e2e-claude");
 

@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { fakeClaude, leadsOf, listed, listedBg, start, townWhere, until } from "./helpers.ts";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -59,8 +59,11 @@ it("the_version_check_reports_one_problem_line_per_failing_feature_and_none_for_
     const s = await start({ fake: fakeClaude().version(version) });
     const town = await townWhere(s.url, (t) => (t.claude?.problems.length ?? 0) > 0);
     expect(town.claude.version).toBe(version);
-    expect(town.claude.problems.length).toBeGreaterThan(0);
-    expect(new Set(town.claude.problems).size).toBe(town.claude.problems.length);
+    expect(town.claude.problems).toHaveLength(3);
+    // one line per command the server relies on
+    for (const feature of [/agents --json/, /attach/, /--bg/]) {
+      expect(town.claude.problems.filter((l) => feature.test(l))).toHaveLength(1);
+    }
   }
 });
 
@@ -84,5 +87,26 @@ it("start_prints_every_problem_line_the_page_shows_and_main_reads_FUNTOWN_CLAUDE
     for (const line of town.claude.problems) expect(output).toContain(line);
   } finally {
     child.kill();
+  }
+});
+
+it("repeated_poll_failures_with_the_same_reason_write_one_stderr_line_and_a_new_reason_writes_another", async () => {
+  const lines: string[] = [];
+  const spy = vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => void lines.push(a.map(String).join(" ")));
+  try {
+    const { url, fake } = await start();
+    fake.list([listed("s1", "/work/a")]);
+    await townWhere(url, (t) => leadsOf(t).length === 1);
+    const polls = () => lines.filter((l) => /agents/.test(l));
+    fake.failList();
+    await until(() => polls().length === 1);
+    await sleep(600); // about six more polls with the same reason
+    expect(polls()).toHaveLength(1);
+    fake.failList(false).rawList("not json {");
+    await until(() => polls().length === 2);
+    await sleep(400);
+    expect(polls()).toHaveLength(2);
+  } finally {
+    spy.mockRestore();
   }
 });

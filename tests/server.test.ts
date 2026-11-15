@@ -34,6 +34,12 @@ const ev = (name: string, extra: Record<string, unknown> = {}, session = "s1", c
   ...extra,
 });
 
+/** Like `ev`, with the hook's own timestamp `at`. */
+const evAt = (at: number, name: string, extra: Record<string, unknown> = {}) => ({
+  ...ev(name, extra),
+  funtown: { tty: "ttys009", term_program: "TestTerm", at },
+});
+
 /** A server whose list already shows interactive sessions `ids` in /work/demo-app, with the page's town in sync. */
 async function withListed(...ids: string[]) {
   const s = await start({ pollMs: 60_000 });
@@ -59,6 +65,53 @@ describe("POST /events -> GET /stream", () => {
     await post(url, ev("SubagentStop", { agent_id: "x1", agent_type: "Explore" }));
     const after = await townWhere(url, (t) => leadsOf(t)[0].subagents[0].stage === "done");
     expect(leadsOf(after)[0].subagents[1].stage).toBe("working");
+  });
+
+  it("hooks_move_a_listed_lead_between_stages_and_show_the_running_command", async () => {
+    const { url } = await withListed("s1");
+    const lead = async (ok: (l: ReturnType<typeof leadsOf>[number]) => boolean) =>
+      leadsOf(await townWhere(url, (t) => ok(leadsOf(t)[0])))[0];
+
+    await post(url, evAt(1, "UserPromptSubmit"));
+    expect(await lead((l) => l.stage === "working")).toMatchObject({ stage: "working" });
+    await post(url, evAt(2, "PreToolUse", { tool_name: "Bash", tool_input: { command: "npm test" } }));
+    expect(await lead((l) => l.step === "Bash: npm test")).toMatchObject({ stage: "working", activity: "Bash: npm test" });
+    await post(url, evAt(3, "PermissionRequest"));
+    expect(await lead((l) => l.stage === "needs_you")).toMatchObject({ needs: "permission" });
+    await post(url, evAt(4, "UserPromptSubmit"));
+    await lead((l) => l.stage === "working");
+    await post(url, evAt(5, "Stop"));
+    expect(await lead((l) => l.stage === "needs_you")).toMatchObject({ needs: "turn ended" });
+  });
+
+  it("a_second_unnamed_session_in_one_project_is_lead_2", async () => {
+    const s = await start({ pollMs: 60_000 });
+    s.fake.list([listed("s1", "/work/demo-app", { name: undefined }), listed("s2", "/work/demo-app", { name: undefined })]);
+    const town = await townWhere(s.url, (t) => leadsOf(t).length === 2);
+    expect(leadsOf(town).map((l) => l.name).sort()).toEqual(["lead-1", "lead-2"]);
+  });
+
+  it("a_hook_posted_before_the_session_is_listed_keeps_its_tty_once_it_is_listed", async () => {
+    const { url, fake } = await start();
+    await post(url, ev("SessionStart"));
+    fake.list([listed("s1", "/work/demo-app")]);
+    const town = await townWhere(url, (t) => leadsOf(t).length === 1);
+    expect(leadsOf(town)[0]).toMatchObject({ tty: "ttys009", termProgram: "TestTerm" });
+  });
+
+  it("an_event_with_an_earlier_at_than_the_last_applied_changes_nothing", async () => {
+    const { url } = await withListed("s1");
+    await post(url, evAt(5, "PreToolUse", { tool_name: "Bash", tool_input: { command: "npm test" } }));
+    await post(url, evAt(4, "PostToolUse", { tool_name: "Bash" }));
+    const town = await townWhere(url, (t) => leadsOf(t)[0].step === "Bash: npm test");
+    expect(leadsOf(town)[0].activity).toBe("Bash: npm test");
+
+    await post(url, evAt(6, "Stop"));
+    await townWhere(url, (t) => leadsOf(t)[0].stage === "needs_you");
+    await post(url, evAt(3, "PostToolUse", { tool_name: "Bash" }));
+    await post(url, evAt(7, "SubagentStart", { agent_id: "x1", agent_type: "Explore" })); // a later event, applied after the late one
+    const after = await townWhere(url, (t) => leadsOf(t)[0].subagents.length === 1);
+    expect(leadsOf(after)[0]).toMatchObject({ stage: "needs_you", needs: "turn ended" });
   });
 
   it("an_event_goes_to_its_own_session_when_two_are_listed", async () => {

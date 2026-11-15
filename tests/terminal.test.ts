@@ -74,6 +74,31 @@ it("term_attaches_by_short_id_in_xterm_256color_at_the_pages_size_with_no_claude
   }
 });
 
+it("term_passes_claude_config_dir_through_and_no_other_claude_variable", async () => {
+  process.env.CLAUDE_CONFIG_DIR = "/custom/config";
+  process.env.CLAUDE_CODE_ENTRYPOINT = "cli";
+  try {
+    const s = await withSessions();
+    const c = await connect(s);
+    await until(() => c.out().includes("attached"));
+    expect(c.out()).toContain("env:[CLAUDE_CONFIG_DIR]");
+  } finally {
+    delete process.env.CLAUDE_CONFIG_DIR;
+    delete process.env.CLAUDE_CODE_ENTRYPOINT;
+  }
+});
+
+it("a_frame_over_1_mb_closes_that_socket_and_the_server_keeps_serving", async () => {
+  const s = await withSessions();
+  const c = await connect(s);
+  await until(() => c.out().includes("attached"));
+  c.send({ t: "in", d: "x".repeat(1024 * 1024 + 1) });
+  await until(() => c.closed(), 5000);
+  expect((await fetch(`${s.url}/`)).status).toBe(200);
+  const again = await connect(s);
+  await until(() => again.out().includes("attached"));
+});
+
 it("term_input_frames_reach_the_pty_and_resize_frames_resize_it", async () => {
   const s = await withSessions();
   const c = await connect(s);

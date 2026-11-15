@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach } from "vitest";
 import { startServer } from "../server/app.ts";
-import { FakeClaude, type Listed } from "./fake-claude.ts";
+import { FakeClaude } from "./fake-claude.ts";
 import type { Town } from "../server/types.ts";
 
 export type Json = Record<string, unknown>;
@@ -61,14 +61,7 @@ export async function tokenOf(url: string): Promise<string> {
   return m[1];
 }
 
-/** A listed session; `sessionId` and `cwd` are required, the rest has fixed defaults. */
-export const listed = (sessionId: string, cwd: string, over: Partial<Listed> = {}): Listed => ({
-  sessionId, cwd, kind: "interactive", status: "idle", name: sessionId, pid: 1, startedAt: 1, ...over,
-});
-
-/** A listed background session whose short id is the first 8 characters of `sessionId`. */
-export const listedBg = (sessionId: string, cwd: string, over: Partial<Listed> = {}): Listed =>
-  listed(sessionId, cwd, { kind: "background", id: sessionId.slice(0, 8), ...over });
+export { listed, listedBg } from "./fake-claude.ts";
 
 /** Resolves once `ok()` holds, polling every 20 ms; throws after `ms`. */
 export async function until(ok: () => boolean, ms = 3000): Promise<void> {
