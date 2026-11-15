@@ -55,10 +55,14 @@ function CharacterRow({
 
 type Select = (lead: string, id: string) => void;
 
-/** Cards of `lead`, each naming its subagent when a subagent asks. */
+/**
+ * Cards of `lead`, each naming its subagent when a subagent asks; with `only`, just the cards
+ * of that character. A card from a subagent the lead doesn't list yet counts as the lead's.
+ */
 function Cards({ lead, cards, only }: { lead: Lead; cards: Card[]; only?: string }) {
+  const owner = (card: Card) => (card.agent && lead.subagents.some((s) => s.id === card.agent) ? card.agent : lead.id);
   return cards
-    .filter((card) => card.lead === lead.id && (only === undefined || (card.agent ?? lead.id) === only))
+    .filter((card) => card.lead === lead.id && (only === undefined || owner(card) === only))
     .map((card) => (
       <AnswerCard key={card.id} card={card} who={card.agent ? (lead.subagents.find((s) => s.id === card.agent)?.name ?? "A subagent") : undefined} />
     ));

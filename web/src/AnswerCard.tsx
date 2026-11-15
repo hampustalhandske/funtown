@@ -21,8 +21,6 @@ async function answer(card: Card, body: object): Promise<string | null> {
       body: JSON.stringify({ card: card.id, ...body }),
     });
     if (reply.status === 204) return null;
-    const text = await reply.text();
-    if (text) return text;
     return reply.status === 404 ? "This request is already closed." : `Answer failed (${reply.status}).`;
   } catch {
     return "Couldn't reach Funtown.";
@@ -86,7 +84,7 @@ export function AnswerCard({ card, who }: { card: Card; who?: string }) {
   const questions = Array.isArray(card.input.questions) ? (card.input.questions as Question[]) : [];
   return (
     <div className={`answer-card ${card.kind}`} role="group" aria-label={`${card.kind} request`}>
-      <p className="who">{who ? `${who} asks` : "Asks"}: {card.kind === "permission" ? card.tool : card.kind}</p>
+      <p className="who">{who ?? "Claude"} {card.kind === "permission" ? `asks to use ${card.tool}` : card.kind === "question" ? "asks a question" : "asks you to approve a plan"}</p>
       {card.kind === "permission" && <pre className="subject">{subject(card)}</pre>}
       <p className="folder">{card.cwd}</p>
       {card.kind === "permission" && (
