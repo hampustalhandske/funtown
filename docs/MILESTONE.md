@@ -81,7 +81,7 @@ startServer(opts: {
   port: number;
   goneAfterMs?: number;
   distDir?: string;
-  run?: (file: string, args: string[]) => Promise<void>; // default: execFile, 5 s timeout;
+  run?: (file: string, args: string[]) => Promise<void>; // default: execFile, 60 s timeout;
                                                          // rejects on non-zero exit
 }): Promise<{ url: string; close(): Promise<void> }>
 ```
@@ -89,7 +89,8 @@ startServer(opts: {
 Commands `/jump` passes to `run`:
 - Apple_Terminal, tty matching `/^ttys\d+$/`: `run("osascript", ["-e", <fixed script>, "ttys001"])`;
   the script reads the tty from `argv`, selects the Terminal tab whose tty is
-  `/dev/<tty>`, raises its window and activates Terminal; it errors when no tab matches.
+  `/dev/<tty>`, restores and raises its window and activates Terminal; when no tab matches it only
+  activates Terminal.
 - Apple_Terminal otherwise: `run("open", ["-a", "Terminal"])`.
 - `iTerm.app` → `iTerm`, `vscode` → `Visual Studio Code`, `WarpTerminal` → `Warp`,
   `ghostty` → `Ghostty`: `run("open", ["-a", <App>])`.
@@ -113,6 +114,19 @@ Commands `/jump` passes to `run`:
 - Playwright on the page with a routed `/stream` and `/jump`: catches a character that
   doesn't open its panel, a panel missing step or subagents, Escape not closing it, the
   button posting the wrong lead (a subagent must send its lead's id), and a 409 text not shown.
+
+## Review fixes
+
+Added after review, on the user's word: all Should-fix items are applied in this PR.
+
+| # | Where | Fix | Test |
+|---|---|---|---|
+| R1 | `server/app.ts` run timeout | 60 s instead of 5 s, so macOS's one-time permission prompt can be answered | none (timing) |
+| R2 | `server/app.ts` tab script | Skip windows whose tabs can't be read, restore a minimized window, and only activate Terminal when no tab matches (no error) | by hand: minimized window jumps |
+| R3 | `tests/e2e/panel.spec.ts` | Second stream frame changes the step: panel shows it; third frame drops the character: panel closes | itself |
+| R4 | `web/src/App.tsx` selection | Clear the selected id when its character is no longer in the Town | e2e: character returns after removal, no panel |
+| R5 | `web/src/App.tsx` CharacterRow | No `<div>` inside the character `<button>`: use `<span>`s styled as blocks | none |
+| R6 | `tests/helpers.ts` | One `start(opts)` with its close-all `afterEach`, used by `server.test.ts` and `jump.test.ts` | n/a |
 
 ## Stop and ask
 

@@ -22,27 +22,33 @@ const OPEN_APPS: Record<string, string> = {
   ghostty: "Ghostty",
 };
 
-// Reads the tty from argv so it is never part of the script text.
+// Reads the tty from argv so it is never part of the script text. Restores a minimized
+// window; skips windows that have no tabs to read. When no tab matches, it still brings
+// Terminal to the front.
 const TERMINAL_TAB_SCRIPT = `on run argv
   set target to "/dev/" & item 1 of argv
   tell application "Terminal"
     repeat with w in windows
-      repeat with t in tabs of w
-        if tty of t is target then
-          set selected of t to true
-          set index of w to 1
-          activate
-          return
-        end if
-      end repeat
+      try
+        repeat with t in tabs of w
+          if tty of t is target then
+            set miniaturized of w to false
+            set selected of t to true
+            set index of w to 1
+            activate
+            return
+          end if
+        end repeat
+      end try
     end repeat
+    activate
   end tell
-  error "No Terminal tab has tty " & target
 end run`;
 
+// Long enough for the user to answer macOS's one-time "control Terminal?" prompt.
 const defaultRun = (file: string, args: string[]) =>
   new Promise<void>((resolve, reject) => {
-    execFile(file, args, { timeout: 5000 }, (err) => (err ? reject(err) : resolve()));
+    execFile(file, args, { timeout: 60_000 }, (err) => (err ? reject(err) : resolve()));
   });
 
 /** The command that brings a lead's terminal to the front, or null for an unknown terminal. */
@@ -62,7 +68,7 @@ function jumpCommand(termProgram: string | null, tty: string | null): [string, s
  * are removed after `goneAfterMs` (default 10 min) unless another event arrives first. Port 0
  * picks a free port. `distDir` is the built page (default web/dist/). `/events` rejects any
  * request with an `Origin` header, so web pages cannot post to it. `POST /jump` takes
- * `{ lead }` from the page's own origin only and runs `run` (default: execFile, 5 s timeout) to
+ * `{ lead }` from the page's own origin only and runs `run` (default: execFile, 60 s timeout) to
  * bring that lead's terminal to the front.
  */
 export async function startServer(opts: {
