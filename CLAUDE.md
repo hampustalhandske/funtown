@@ -31,6 +31,8 @@ Commands
 Decisions that bind
 - Nothing leaves the machine; listen on 127.0.0.1 only; `Host` must be 127.0.0.1 or localhost.
 - `POST /events` refuses any request with an `Origin` header; the hook never sends one.
+- `POST /events` has no body size limit: an event for a large Write can be several MB, and
+  dropping it would lose the session's state. `/jump` caps at 64 KB.
 - `POST /jump` needs the server's own Origin; the tty reaches osascript only as an argument.
 - All code our own; MIT tools are reference only.
 - Tests and fixtures never use real project names, paths or the real home folder.
