@@ -1,12 +1,15 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { leadsOf, post, townWhere } from "./helpers.ts";
 
 type Server = { url: string; close(): Promise<void> };
 const open: Server[] = [];
 
-async function start(goneAfterMs?: number): Promise<Server> {
+async function start(goneAfterMs?: number, distDir?: string): Promise<Server> {
   const { startServer } = await import("../server/app.ts");
-  const s = await startServer({ port: 0, goneAfterMs });
+  const s = await startServer({ port: 0, goneAfterMs, distDir });
   open.push(s);
   return s;
 }
@@ -106,5 +109,34 @@ describe("POST /events -> GET /stream", () => {
     await post(url, ev("SessionStart", {}, "s2"));
     const town = await townWhere(url, (t) => leadsOf(t).length >= 1);
     expect(leadsOf(town).map((l) => l.id)).toEqual(["s2"]);
+  });
+
+  it("a_lead_that_returns_after_session_end_is_not_removed_by_the_old_timer", async () => {
+    const { url } = await start(300);
+    await post(url, ev("SessionStart"));
+    await post(url, ev("SessionEnd"));
+    await townWhere(url, (t) => leadsOf(t).some((l) => l.stage === "gone"));
+    await post(url, ev("UserPromptSubmit", { prompt: "back" }));
+    await new Promise((r) => setTimeout(r, 700)); // well past goneAfterMs
+    const town = await townWhere(url, () => true);
+    expect(leadsOf(town).map((l) => l.id)).toEqual(["s1"]);
+  });
+
+  it("an_event_with_an_origin_header_gets_403_and_does_not_change_the_town", async () => {
+    const { url } = await start();
+    expect(await post(url, ev("SessionStart", {}, "evil"), { origin: "http://evil.example" })).toBe(403);
+    expect(await post(url, ev("SessionStart", {}, "s2"))).toBe(204);
+    const town = await townWhere(url, (t) => leadsOf(t).length >= 1);
+    expect(leadsOf(town).map((l) => l.id)).toEqual(["s2"]);
+  });
+});
+
+describe("GET / without a built page", () => {
+  it("answers_503_with_the_build_hint_not_a_bare_404", async () => {
+    const { url } = await start(undefined, mkdtempSync(join(tmpdir(), "funtown-dist-")));
+    const res = await fetch(`${url}/`);
+    expect(res.status).toBe(503);
+    expect(res.headers.get("content-type")).toMatch(/^text\/plain/);
+    expect(await res.text()).toBe("Funtown's page isn't built yet. Run: npm run build");
   });
 });

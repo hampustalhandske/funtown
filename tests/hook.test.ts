@@ -57,7 +57,8 @@ it("hook_posts_the_event_unchanged_plus_a_funtown_block_to_events", async () => 
   expect(got[0]).toMatchObject({ method: "POST", path: "/events" });
   const { funtown, ...rest } = JSON.parse(got[0].body);
   expect(rest).toEqual(event);
-  expect(funtown).toHaveProperty("tty");
+  const ps = spawnSync("ps", ["-o", "tty=", "-p", String(process.pid)], { encoding: "utf8" }).stdout.trim();
+  expect(funtown.tty).toBe(ps === "??" ? null : ps);
   expect(funtown.term_program).toBe("TestTerm");
   expect(typeof funtown.at).toBe("number");
 });
