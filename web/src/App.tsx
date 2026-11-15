@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Character, House, Lead, Stage, Town } from "../../server/types.ts";
 
 const STAGE_LABEL: Record<Stage, string> = {
@@ -44,15 +44,17 @@ function CharacterRow({
   );
 }
 
-function LeadItem({ lead, onSelect }: { lead: Lead; onSelect: (id: string) => void }) {
+type Select = (lead: string, id: string) => void;
+
+function LeadItem({ lead, onSelect }: { lead: Lead; onSelect: Select }) {
   return (
     <li className="lead">
-      <CharacterRow character={lead} avatar="🧑‍💻" onSelect={onSelect} />
+      <CharacterRow character={lead} avatar="🧑‍💻" onSelect={(id) => onSelect(lead.id, id)} />
       {lead.subagents.length > 0 && (
         <ul className="subagents" aria-label={`${lead.name} subagents`}>
           {lead.subagents.map((sub) => (
             <li key={sub.id}>
-              <CharacterRow character={sub} avatar="🤖" onSelect={onSelect} />
+              <CharacterRow character={sub} avatar="🤖" onSelect={(id) => onSelect(lead.id, id)} />
             </li>
           ))}
         </ul>
@@ -61,7 +63,7 @@ function LeadItem({ lead, onSelect }: { lead: Lead; onSelect: (id: string) => vo
   );
 }
 
-function HouseCard({ house, onSelect }: { house: House; onSelect: (id: string) => void }) {
+function HouseCard({ house, onSelect }: { house: House; onSelect: Select }) {
   const needsYou = house.leads.some((lead) => lead.stage === "needs_you");
   return (
     <section className={`house${needsYou ? " needs_you" : ""}`} aria-label={house.project} title={house.cwd}>
@@ -78,6 +80,7 @@ function HouseCard({ house, onSelect }: { house: House; onSelect: (id: string) =
 /** Details of one character: stage, step, need, its subagents (for a lead) and a button that focuses its terminal. */
 function Panel({ character, lead, onClose }: { character: Character; lead: Lead; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -86,6 +89,7 @@ function Panel({ character, lead, onClose }: { character: Character; lead: Lead;
 
   async function jump() {
     setError(null);
+    setPending(true);
     try {
       const reply = await fetch("/jump", {
         method: "POST",
@@ -95,6 +99,8 @@ function Panel({ character, lead, onClose }: { character: Character; lead: Lead;
       if (reply.status !== 204) setError((await reply.text()) || `Jump failed (${reply.status}).`);
     } catch {
       setError("Couldn't reach Funtown.");
+    } finally {
+      setPending(false);
     }
   }
 
@@ -116,7 +122,7 @@ function Panel({ character, lead, onClose }: { character: Character; lead: Lead;
           ))}
         </ul>
       )}
-      <button type="button" onClick={jump}>
+      <button type="button" onClick={jump} disabled={pending}>
         Go to terminal
       </button>
       {error && <p role="alert" className="error">{error}</p>}
@@ -127,14 +133,15 @@ function Panel({ character, lead, onClose }: { character: Character; lead: Lead;
 /** The town page: one house per project, its leads and their subagents, with a banner when any lead needs you. */
 export function App() {
   const town = useTown();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const lead = town?.houses
-    .flatMap((house) => house.leads)
-    .find((l) => l.id === selectedId || l.subagents.some((sub) => sub.id === selectedId));
-  const selected = lead && [lead, ...lead.subagents].find((c) => c.id === selectedId);
+  const [selection, setSelection] = useState<{ lead: string; id: string } | null>(null);
+  const onClose = useCallback(() => setSelection(null), []);
+  const lead = selection
+    ? town?.houses.flatMap((house) => house.leads).find((l) => l.id === selection.lead)
+    : undefined;
+  const selected = lead && [lead, ...lead.subagents].find((c) => c.id === selection?.id);
   useEffect(() => {
-    if (town && selectedId && !selected) setSelectedId(null);
-  }, [town, selectedId, selected]);
+    if (town && selection && !selected) setSelection(null);
+  }, [town, selection, selected]);
   const waiting =
     town?.houses.flatMap((house) =>
       house.leads.filter((lead) => lead.stage === "needs_you").map((lead) => `${lead.name} (${house.project})`),
@@ -153,10 +160,10 @@ export function App() {
       {town && town.houses.length === 0 && <p className="empty">No Claude sessions running yet.</p>}
       <main className="town">
         {town?.houses.map((house) => (
-          <HouseCard key={house.cwd} house={house} onSelect={setSelectedId} />
+          <HouseCard key={house.cwd} house={house} onSelect={(leadId, id) => setSelection({ lead: leadId, id })} />
         ))}
       </main>
-      {lead && selected && <Panel key={selected.id} character={selected} lead={lead} onClose={() => setSelectedId(null)} />}
+      {lead && selected && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} onClose={onClose} />}
     </>
   );
 }

@@ -117,7 +117,7 @@ Commands `/jump` passes to `run`:
 
 ## Review fixes
 
-Added after review, on the user's word: all Should-fix items are applied in this PR.
+Added after review, on the user's word: every finding that holds is applied in this PR.
 
 | # | Where | Fix | Test |
 |---|---|---|---|
@@ -127,6 +127,14 @@ Added after review, on the user's word: all Should-fix items are applied in this
 | R4 | `web/src/App.tsx` selection | Clear the selected id when its character is no longer in the Town | e2e: character returns after removal, no panel |
 | R5 | `web/src/App.tsx` CharacterRow | No `<div>` inside the character `<button>`: use `<span>`s styled as blocks | none |
 | R6 | `tests/helpers.ts` | One `start(opts)` with its close-all `afterEach`, used by `server.test.ts` and `jump.test.ts` | n/a |
+| R7 | `tests/jump.test.ts` | One known-app case instead of looping all four; keep Apple_Terminal with and without tty and the unknown app | itself |
+| R8 | `web/src/App.tsx` | Drop the comment that restates the close-on-removal condition | n/a |
+| R9 | `web/src/App.tsx` Panel | Stable `onClose` (useCallback), so the Escape listener isn't re-added on every state frame | none |
+| R10 | `web/src/App.tsx` Panel | "Go to terminal" is disabled while a jump is in flight | e2e: second click while pending posts once |
+| R11 | `server/app.ts` /jump | Body over 64 KB → 413, nothing run | 70 KB body is 413 |
+| R12 | `web/src/App.tsx` selection | Selection is `{ lead, id }`, so equal subagent ids under two leads open the right panel | e2e: same subagent id under two leads |
+| R13 | `tests/e2e/panel.spec.ts` | Subagent stage asserted as exact text on the Subagents list | itself |
+| R14 | `server/app.ts`, `tests/jump.test.ts` | `promisify(execFile)` for the default run; one 400 branch; drop the extra `process.stderr.write` spy | n/a |
 
 ## Stop and ask
 

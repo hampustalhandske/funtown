@@ -4,6 +4,7 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AddressInfo } from "node:net";
 import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { TownState, type HookEvent } from "./town.ts";
 
 const DEFAULT_DIST = fileURLToPath(new URL("../web/dist/", import.meta.url));
@@ -46,10 +47,12 @@ const TERMINAL_TAB_SCRIPT = `on run argv
 end run`;
 
 // Long enough for the user to answer macOS's one-time "control Terminal?" prompt.
-const defaultRun = (file: string, args: string[]) =>
-  new Promise<void>((resolve, reject) => {
-    execFile(file, args, { timeout: 60_000 }, (err) => (err ? reject(err) : resolve()));
-  });
+const execFileAsync = promisify(execFile);
+const defaultRun = async (file: string, args: string[]) => {
+  await execFileAsync(file, args, { timeout: 60_000 });
+};
+
+const MAX_JUMP_BODY = 64 * 1024;
 
 /** The command that brings a lead's terminal to the front, or null for an unknown terminal. */
 function jumpCommand(termProgram: string | null, tty: string | null): [string, string[]] | null {
@@ -154,13 +157,21 @@ export async function startServer(opts: {
         return;
       }
       let leadId: unknown;
+      let size = 0;
+      let body = "";
       try {
-        let body = "";
-        for await (const chunk of req) body += chunk;
+        for await (const chunk of req) {
+          size += (chunk as Buffer).length;
+          if (size > MAX_JUMP_BODY) {
+            req.resume();
+            res.writeHead(413).end();
+            return;
+          }
+          body += chunk;
+        }
         leadId = (JSON.parse(body) as { lead?: unknown } | null)?.lead;
       } catch {
-        res.writeHead(400).end();
-        return;
+        // an unreadable or malformed body leaves leadId unset and gets the 400 below
       }
       if (typeof leadId !== "string") {
         res.writeHead(400).end();
