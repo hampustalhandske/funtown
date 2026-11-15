@@ -21,8 +21,9 @@ async function answer(card: Card, body: object): Promise<string | null> {
       body: JSON.stringify({ card: card.id, ...body }),
     });
     if (reply.status === 204) return null;
-    if (reply.status === 404) return "This request is already closed.";
-    return (await reply.text()) || `Answer failed (${reply.status}).`;
+    const text = await reply.text();
+    if (text) return text;
+    return reply.status === 404 ? "This request is already closed." : `Answer failed (${reply.status}).`;
   } catch {
     return "Couldn't reach Funtown.";
   }
