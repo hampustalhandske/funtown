@@ -21,7 +21,8 @@ Mode: away: open the PR after review and continue with the queue (empty)
 4. A sweep never marks gone: a lead it has not yet seen live (its hook arrived before its
    session file), a lead whose `ps` call failed in that sweep, or a lead whose session file
    (`sessions/<pid>.json` for the pid it was last seen live with) exists but can't be read or
-   parsed in that sweep (Claude may be rewriting it).
+   parsed in that sweep (Claude may be rewriting it). Added after the plan; approved by
+   the user in review.
 5. A hook event for a lead the sweep marked gone brings it back, as after SessionEnd today.
 6. Without `claudeDir`, no sweep runs and nothing reads a Claude folder.
 7. By hand (you): with Funtown running, `kill -9` a `claude` session's pid. Its character
@@ -51,10 +52,11 @@ type Session = { pid: number; sessionId: string; cwd: string; startedAt: number;
 ### The one `ps` call per session file with a live pid
 
 Produced by task 1, faked by task 2. Replaces m4's `ps -wwE -o tty=,command=` call, at
-rebuild and in every sweep.
+rebuild and in every sweep. `LC_ALL=C` added in review, approved by the user: `ps`
+prints `lstart` in the user's locale otherwise (`Sön 15 Nov ...`).
 
 ```ts
-exec("env", ["TZ=UTC", "ps", "-wwE", "-o", "lstart=,tty=,command=", "-p", String(pid)])
+exec("env", ["LC_ALL=C", "TZ=UTC", "ps", "-wwE", "-o", "lstart=,tty=,command=", "-p", String(pid)])
 // stdout: "Fri Nov 13 12:37:09 2026     ttys008  claude --resume ... TERM_PROGRAM=Apple_Terminal ..."
 // the first 5 whitespace-separated tokens are lstart, the 6th is the tty ("??" when none)
 ```
