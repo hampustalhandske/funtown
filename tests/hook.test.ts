@@ -70,3 +70,53 @@ it("hook_exits_0_within_1s_and_logs_one_line_when_funtown_is_not_running", () =>
   expect(ms).toBeLessThan(1000);
   expect(readFileSync(log, "utf8").trimEnd().split("\n")).toHaveLength(1);
 });
+
+it("hook_exits_0_within_1s_and_logs_one_line_when_the_server_never_replies", async () => {
+  const log = join(mkdtempSync(join(tmpdir(), "funtown-hook-")), "hook.log");
+  const sockets: import("node:net").Socket[] = [];
+  server = createServer(() => {
+    // Accept the request and never answer.
+  });
+  server.on("connection", (s) => sockets.push(s));
+  await new Promise<void>((r) => server!.listen(0, "127.0.0.1", r));
+  const port = (server.address() as { port: number }).port;
+
+  const { spawn } = await import("node:child_process");
+  const t0 = Date.now();
+  const child = spawn("node", [HOOK], {
+    env: { ...process.env, FUNTOWN_URL: `http://127.0.0.1:${port}`, FUNTOWN_LOG: log },
+  });
+  child.stdin.end(JSON.stringify(event));
+  const code = await new Promise((r) => child.on("close", r));
+  const ms = Date.now() - t0;
+  sockets.forEach((s) => s.destroy());
+
+  expect(code).toBe(0);
+  expect(ms).toBeLessThan(1000);
+  expect(readFileSync(log, "utf8").trimEnd().split("\n")).toHaveLength(1);
+});
+
+it("hook_exits_0_and_logs_the_status_when_the_server_answers_500", async () => {
+  const log = join(mkdtempSync(join(tmpdir(), "funtown-hook-")), "hook.log");
+  server = createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.statusCode = 500;
+      res.end();
+    });
+  });
+  await new Promise<void>((r) => server!.listen(0, "127.0.0.1", r));
+  const port = (server.address() as { port: number }).port;
+
+  const { spawn } = await import("node:child_process");
+  const child = spawn("node", [HOOK], {
+    env: { ...process.env, FUNTOWN_URL: `http://127.0.0.1:${port}`, FUNTOWN_LOG: log },
+  });
+  child.stdin.end(JSON.stringify(event));
+  const code = await new Promise((r) => child.on("close", r));
+
+  expect(code).toBe(0);
+  const lines = readFileSync(log, "utf8").trimEnd().split("\n");
+  expect(lines).toHaveLength(1);
+  expect(lines[0]).toContain("500");
+});

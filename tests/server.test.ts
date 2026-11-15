@@ -93,4 +93,18 @@ describe("POST /events -> GET /stream", () => {
     const removed = await townWhere(url, (t) => leadsOf(t).length === 0, 3000);
     expect(leadsOf(removed)).toEqual([]);
   });
+
+  it("invalid_json_gets_400_and_is_not_applied", async () => {
+    const { url } = await start();
+    const res = await fetch(`${url}/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: '{"hook_event_name": "SessionStart", "session_id": "s1", "cwd": "/work/demo-app"',
+    });
+    expect(res.status).toBe(400);
+    // A valid event afterwards is the first the town has seen: lead-1 is the only lead.
+    await post(url, ev("SessionStart", {}, "s2"));
+    const town = await townWhere(url, (t) => leadsOf(t).length >= 1);
+    expect(leadsOf(town).map((l) => l.id)).toEqual(["s2"]);
+  });
 });

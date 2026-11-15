@@ -33,11 +33,24 @@ test("needs_you_lead_is_flagged_and_its_subagent_is_shown_with_its_command", asy
   );
   await page.goto("/");
 
-  await expect(page.getByText("demo-app").first()).toBeVisible();
-  await expect(page.getByText("other-app").first()).toBeVisible();
-  await expect(page.getByText("lead-1").first()).toBeVisible();
-  await expect(page.getByText("Explore-1").first()).toBeVisible();
-  await expect(page.getByText("Bash: npm test").first()).toBeVisible();
-  await expect(page.getByText("lead-2").first()).toBeVisible();
-  await expect(page.getByText(/needs you/i).first()).toBeVisible();
+  const demo = page.locator('section[aria-label="demo-app"]');
+  const other = page.locator('section[aria-label="other-app"]');
+  await expect(demo).toBeVisible();
+  await expect(other).toBeVisible();
+
+  // lead-1's own character, inside the demo-app house, is flagged.
+  const lead1 = demo.locator('.character[data-stage="needs_you"]').filter({ hasText: "lead-1" });
+  await expect(lead1).toHaveCount(1);
+  await expect(lead1).toContainText(/needs you/i);
+
+  // Explore-1 sits in lead-1's subagent list, working, with its command.
+  const sub = demo.locator('ul[aria-label="lead-1 subagents"] .character[data-stage="working"]');
+  await expect(sub).toHaveCount(1);
+  await expect(sub).toContainText("Explore-1");
+  await expect(sub).toContainText("Bash: npm test");
+
+  // lead-2 is in the other house, working, and Explore-1 is not there.
+  await expect(other.locator('.character[data-stage="working"]').filter({ hasText: "lead-2" })).toHaveCount(1);
+  await expect(other.getByText("Explore-1")).toHaveCount(0);
+  await expect(other.getByText(/needs you/i)).toHaveCount(0);
 });
