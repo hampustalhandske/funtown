@@ -1,72 +1,69 @@
-# Milestone 5: live check — handoff
+# Milestone 6: spikes — handoff
 
-Verdict: ship. Every review finding I agreed with is applied; the ones not applied are
-under Decisions with the reason.
+Verdict: ship. Every review finding is applied; two checks moved to later milestones with
+the user's approval.
 
 ## Review in five minutes
 
 **Start here**
-1. `server/app.ts:126` the sweep: which leads it ends, and the four cases it leaves alone
-   (never seen live, failed `ps`, unreadable file, hook during the sweep).
-2. `server/rebuild.ts` `liveCheck`: the `env LC_ALL=C TZ=UTC ps` call and the match against
-   `procStart`, used by both the rebuild and the sweep.
-3. `tests/sweep.test.ts`: fixture Claude folder and fake `ps` changed between sweeps.
+1. `docs/spikes/README.md`: the charter's two open questions answered, and one line per
+   spike on what the next milestone does with it.
+2. `docs/spikes/s1-hook-hold.md`: how answer cards will reach a session (the riskiest
+   behaviour v2 relies on).
+3. `docs/CHARTER.md`: three wording fixes (privacy exception, licence rule, error check).
 
 **Verify**
 
     npx eslint . && npx vitest run && npx playwright test
 
-**Hand checks (done)**
-- 2026-11-15, by the user: sessions appear, details (subagents turn "done"), jump, rebuild
-  and gone pass. Needs you showed on a real permission prompt; the 10-wait count wasn't
-  run. Jump also brings VS Code and minimized windows to the front.
+**Needs you**
+- Re-approve the charter: run `workflow approve` in your terminal (three lines changed).
+- Before m7: `workflow budget 800 m7-terminal-room`.
 
 ## Summary
 
-- Charter item 3 ("gone: the session exited"): a session that died without a SessionEnd
-  hook (killed with `-9`, crashed) now turns "gone" within 5 s instead of staying forever.
-- m4's ghost lead: a reused pid no longer looks alive, because the pid's start time must
-  match the session file's `procStart`. A rebuild against the real Claude folder kept all 5
-  live sessions, each with its tty and terminal app.
+- Serves the charter's open questions, which block items 1 and 2. Seven spikes on Claude
+  Code 2.1.325: held hooks answer permission, question and plan prompts (s1, s6); a live
+  terminal through `claude attach` in node-pty works (s2); `claude agents --json` replaces
+  v1's file reading (s3); background runs get their own worktree (s4); the async event
+  hook doesn't slow Claude (s5); subagents join their lead's task (v1).
+- No production code; scripts live in the notes, the runs in a scratch folder.
 
 ## Decisions
 
-- `procStart` in `~/.claude/sessions/<pid>.json` is `ps -o lstart=` in UTC; checked on 3
-  live sessions. `ps` prints `lstart` in the user's locale (`Sön 15 Nov ...` under sv_SE),
-  so the call sets `LC_ALL=C` too (user approved in review).
-- The sweep ends a lead only after it, or the rebuild, saw it live: a hook can arrive
-  before the session file exists. A session file that can't be parsed (Claude rewriting it)
-  leaves its lead as it is (user approved in review).
-- A lead the sweep ended is forgotten until a sweep sees it live again. The review
-  suggested keeping it tracked so a later `kill -9` is caught; that made each sweep end a
-  revived lead again while its file stayed missing, so a live session flickered to "gone".
-  A test pins the no-flicker case.
-- The sweep checks every session file's pid in parallel, every 5 s (default `sweepMs`).
-- Not applied, with reasons:
-  - a session resumed under a new pid whose new file is half-written: very rare, and its
-    next hook brings it back;
-  - commit subjects over 50 characters and the `scheduleRemoval` refactor inside the feat
-    commit: fixing either means a force-push; the squash title is under 50.
+- The 2 h hold moved to m8 and the background-run push/PR check to m11 (user, 2026-11-15).
+- The 50 ms bar was the architect's, not the user's; an `async: true` command hook doesn't
+  make Claude wait, so it passes and m7 keeps today's hook shape; `type: "http"` (3 ms) is
+  the fallback (user, 2026-11-15).
+- Charter fixes ride in this PR instead of a charter PR of their own (user).
+- PARKING.md: the embedded terminal and answering from Funtown are now in scope and left
+  the list; the two phone entries became one.
+- A copy of the s3 driver for the pending-prompt case is described in prose with its
+  exact command, not inlined.
 
 ## Remaining work
 
-- `/events` decodes each body chunk on its own (`body += chunk`), so a multi-byte UTF-8
-  character split across chunks becomes U+FFFD. Older than this branch; found by the review.
-  Fix: `req.setEncoding("utf8")` or `Buffer.concat` before decoding.
-- v1 is done with the hand checks above. The 5-day real-use check moved to v2, because
-  using Funtown day to day needs typing into a session from it (parked: embedded terminal,
-  answering a waiting session from Funtown).
+- m7-terminal-room, next in the queue (needs this PR merged).
+- s5's "Claude doesn't wait for an async hook" rests on Claude Code's documented async
+  behaviour; the live runs couldn't separate it from model latency. m7 checks it in a
+  real session.
+- `tests/hook.test.ts` "exits within 1 s" failed once at 1.1 s under load (load average
+  13 during the spikes) and passed three reruns. It's a timing test that can trip on a
+  busy Mac.
 
 ## Notes
 
-- The sweep's stderr line is "funtown: sweep left pid N as is: <reason>"; it repeats every
-  5 s while a pid's `ps` keeps failing.
-- Startup still reads whole transcripts one after another (m4); watch it past ~100 MB.
-- `npm start` fails with EADDRINUSE when an older Funtown still holds 4777; stop it first.
+- Every new spike folder needs the trust prompt accepted once, by a person.
+- Never pass `--help` after `claude --bg`: it starts a real session.
+- A pty child started from a Claude session registers in `claude agents` only with every
+  `CLAUDE*` and `AI_AGENT` variable removed from its environment.
+- node-pty's `spawn-helper` installs without its exec bit: `chmod +x` it.
+- The s1 driver accepted the trust prompt for its own folder by sending keys; plan mode
+  wrote two files to `~/.claude/plans/` (Claude Code itself).
 
 ## Numbers
 
-    Branch m5-live-check vs fa11d14
-      Production: +126 -38, net 88 of budget 400
-      Tests:      +210 -9, net 201 (test/prod 2.28 on this branch)
+    Branch m6-spikes vs dea4ec4
+      Production: +0 -0, net 0 of budget 400
+      Tests:      +0 -0, net 0 (test/prod n/a on this branch)
       Repo:       1,109 production lines, 1,221 test lines (test/prod 1.10; band 0.5-0.7)

@@ -14,6 +14,8 @@ Parts
   sessions that died without SessionEnd; `rebuild.ts` rebuilds live sessions on start.
 - `web/`: React page (Vite), emoji houses and characters, a details panel per character.
   `tests/`: Vitest at the seams, Playwright in `tests/e2e/`.
+- `docs/spikes/`: the Claude Code 2.1.325 behaviours v2 builds on, one note each (m6);
+  rerun a note's Reproduce before relying on it. `docs/history/`: v1's charter.
 
 Contracts (source of truth: docs/MILESTONE.md of the milestone that set them)
 - Hook event: POST `/events`, Claude Code's hook JSON plus `funtown: { tty, term_program, at }`.
@@ -34,7 +36,8 @@ Commands
 - Test: `npx eslint . && npx vitest run && npx playwright test`
 
 Decisions that bind
-- Nothing leaves the machine; listen on 127.0.0.1 only; `Host` must be 127.0.0.1 or localhost.
+- Nothing leaves the machine (v2's one exception: the opt-in "Suggest" button); listen on
+  127.0.0.1 only; `Host` must be 127.0.0.1 or localhost.
 - `POST /events` refuses any `Origin` header and has no body limit (a large Write event can
   be several MB); `/jump` needs the server's own Origin, caps at 64 KB, and passes the tty to
   osascript only as an argument.
