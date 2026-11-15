@@ -1,130 +1,93 @@
-# Milestone 4: rebuild
+# Milestone 5: live check
 
-Serves: charter constraint "on start, Funtown rebuilds already-running sessions from the
-transcripts in `~/.claude/projects/`", so items 1–5 hold for sessions that started before
-Funtown did.
-Estimate: ~130 net production lines of a 400 budget
-Mode: with you
+Serves: charter item 3 ("gone: the session exited, removed after 10 min") and m4's remaining
+work ("a ghost lead can appear when a killed session's pid is reused, and it never leaves"):
+a session that died without a SessionEnd hook (killed with `-9`, crashed) or whose pid was
+reused no longer stays on screen.
+Estimate: ~70 net production lines of a 400 budget
+Mode: away: open the PR after review and continue with the queue (empty)
 
 ## Done when
 
-1. Started with a Claude folder holding two live sessions in two projects (one `busy`, one
-   `idle`) and one whose pid is dead, the first `/stream` frame shows two houses named by
-   folder, leads numbered `lead-1`, `lead-2` per house in `startedAt` order, the `idle` one
-   `needs_you` with need `turn ended`, the `busy` one `working`, and no character for the dead one.
-2. A rebuilt character's `step` is its transcript's last `tool_use` ("Bash: <command>" or the
-   tool name), `null` when it has none; its `activity` is `null`.
-3. A rebuilt lead lists its subagents from `subagents/agent-<id>.meta.json`: named
-   `<agentType>-<n>`, `done` when `finished` is true, `working` otherwise, with the step
-   from that subagent's own transcript.
-4. A rebuilt lead has the `tty` and `termProgram` that `ps` reports for its pid, so
-   `POST /jump` for a rebuilt Apple_Terminal lead runs `osascript` with that tty.
-5. A hook event that arrives after start for a rebuilt session updates that same lead:
-   same id and name, no second character.
-6. No Claude folder, or no `sessions/` in it, gives an empty Town and the server starts.
-   A transcript line that isn't JSON (a half-written last line) is skipped.
-7. No test reads the real home folder: `startServer` rebuilds only when given `claudeDir`,
-   and Playwright's server gets `FUNTOWN_CLAUDE_DIR` pointing at an empty test folder.
-8. By hand (you): with two or more `claude` sessions open, restart `npm start`. Each shows
-   at its house within 5 s with the right stage, and "Go to terminal" works on a rebuilt
-   waiting session in macOS Terminal.
-9. The test command passes.
+1. Started with a Claude folder holding a session file whose pid is alive but whose
+   `procStart` differs from the start time `ps` reports for that pid, the first `/stream`
+   frame has no character for it.
+2. A session file whose `procStart` matches (whitespace runs count as one space) rebuilds
+   exactly as in m4: stage, step, subagents, tty and `termProgram`. A session file without
+   `procStart` rebuilds as in m4 (pid alive is enough).
+3. With `claudeDir` and `sweepMs`, a lead that a sweep or the rebuild once saw live becomes
+   `gone` within one `sweepMs` after its session file disappears, its pid dies, or its pid's
+   start time stops matching; it is then removed after `goneAfterMs`, as after SessionEnd.
+4. A sweep never marks gone: a lead it has not yet seen live (its hook arrived before its
+   session file), or a lead whose `ps` call failed in that sweep.
+5. A hook event for a lead the sweep marked gone brings it back, as after SessionEnd today.
+6. Without `claudeDir`, no sweep runs and nothing reads a Claude folder.
+7. By hand (you): with Funtown running, `kill -9` a `claude` session's pid. Its character
+   shows "gone" within 5 s. Restarting Funtown, every live session still comes back with
+   its tty.
+8. The test command passes.
 
 ## Must not
 
 - Add a dependency, service or paid API without asking.
-- Change `/events`, `/jump`, the hook, the installer, the page, or the Town shapes.
-- Write to the Claude folder, or read anything in it besides `sessions/*.json` and
-  `projects/*/<sessionId>.jsonl` and `projects/*/<sessionId>/subagents/agent-*`.
+- Change `/events`, `/jump`, the hook, the installer, the page, `server/town.ts` or the Town
+  shapes.
+- Read anything in the Claude folder beyond `sessions/*.json` and what m4 reads.
 - Run any command in a test: tests inject `exec`.
-- Listen on anything but 127.0.0.1.
 
 ## Contracts
 
-### startServer
+### Session file field
 
-Produced by task 1, consumed by task 2. Adds two options; the rest is unchanged.
+Consumed by tasks 1 and 2. `procStart` is the process start time as `ps -o lstart=` prints
+it in UTC, e.g. `"Fri Nov 13 12:37:09 2026"`. It may be absent.
 
 ```ts
-startServer(opts: {
-  port: number;
-  goneAfterMs?: number;
-  distDir?: string;
-  run?: (file: string, args: string[]) => Promise<void>;
-  claudeDir?: string;                                         // rebuild from here before listening;
-                                                              // absent: no rebuild
-  exec?: (file: string, args: string[]) => Promise<string>;   // stdout; default: execFile, 5 s timeout
-}): Promise<{ url: string; close(): Promise<void> }>
+type Session = { pid: number; sessionId: string; cwd: string; startedAt: number; status?: string; procStart?: string };
 ```
 
-`server/main.ts` passes `claudeDir: process.env.FUNTOWN_CLAUDE_DIR ?? ~/.claude`.
+### The one `ps` call per session file with a live pid
 
-### What the rebuild reads
+Produced by task 1, faked by task 2. Replaces m4's `ps -wwE -o tty=,command=` call, at
+rebuild and in every sweep.
 
-```
-<claudeDir>/sessions/<pid>.json
-  { "pid": 123, "sessionId": "s1", "cwd": "/x/alpha", "startedAt": 1700000000000,
-    "status": "idle" | "busy" | <other>, ...more keys, ignored }
-  live when process.kill(pid, 0) doesn't throw ESRCH
-
-<claudeDir>/projects/<any>/<sessionId>.jsonl          lead transcript, found by file name
-  one JSON object per line; the last line with
-  { "type": "assistant", "message": { "content": [ { "type": "tool_use", "name": "Bash",
-      "input": { "command": "npm test" } } ] } }
-  gives the step
-
-<claudeDir>/projects/<any>/<sessionId>/subagents/agent-<agentId>.meta.json
-  { "agentType": "implementer", "finished": false, ...more keys, ignored }
-<claudeDir>/projects/<any>/<sessionId>/subagents/agent-<agentId>.jsonl
-  same line shape as the lead's; the first line's "timestamp" orders the subagents
+```ts
+exec("env", ["TZ=UTC", "ps", "-wwE", "-o", "lstart=,tty=,command=", "-p", String(pid)])
+// stdout: "Fri Nov 13 12:37:09 2026     ttys008  claude --resume ... TERM_PROGRAM=Apple_Terminal ..."
+// the first 5 whitespace-separated tokens are lstart, the 6th is the tty ("??" when none)
 ```
 
-`exec("ps", ["-wwE", "-o", "tty=,command=", "-p", "<pid>"])` returns one line such as
-`ttys004  claude --resume TERM_PROGRAM=Apple_Terminal SHELL=/bin/zsh`. The first word is the
-tty (`??` means none); `TERM_PROGRAM=<value>` gives `termProgram`; either may be absent (null).
+Those 5 tokens differing from `procStart` (both with whitespace runs collapsed) means the
+pid now belongs to another process: the session counts as not live. A failing call writes
+one stderr line, as in m4; the rebuild skips that session and the sweep leaves it as it is.
 
-Stage: `status` `"idle"` → `needs_you` with need `turn ended`; anything else → `working`.
-The rebuild feeds `TownState.apply` the same events the hook would send, so the reducer
-stays the one place that builds characters.
+### `startServer` option
+
+Produced by task 1, consumed by task 2.
+
+```ts
+startServer({ port, goneAfterMs?, distDir?, run?, claudeDir?, exec?, sweepMs? })
+// sweepMs: how often the Claude folder is checked for sessions that ended; default 5000.
+// Only with claudeDir. close() stops the sweep.
+```
 
 ## Tasks
 
 | # | Owner | Owned paths | Does | Done when |
 |---|---|---|---|---|
-| 1 | api | `server/` | `server/rebuild.ts` reads the Claude folder and `ps`, and applies the events before the server listens; `claudeDir` and `exec` in `startServer`; `FUNTOWN_CLAUDE_DIR` in `main.ts` | Done when 1–7 hold |
-| 2 | tests | `tests/`, `playwright.config.ts` | Tests at the seams below, with fixture Claude folders made in a temp dir; `FUNTOWN_CLAUDE_DIR` for Playwright's server | They run, and fail only where code is missing |
+| 1 | server | server/rebuild.ts, server/app.ts | The new `ps` call with the start-time match, shared by the rebuild and a sweep every `sweepMs` that ends leads no longer live through the same path as SessionEnd | Done when 1–6 hold |
+| 2 | tests | tests/rebuild.test.ts, tests/sweep.test.ts | Updates the fake `exec` to the new call; adds the seams below | They run, and fail only where code is missing |
 
 ## Test seams
 
-- `startServer({ claudeDir, exec })` → first `/stream` frame: catches a dead pid shown, a
-  wrong stage for `idle`/`busy`, lead numbering out of `startedAt` order, a wrong or missing
-  step, subagents missing or with the wrong stage, a non-JSON line crashing the rebuild, and
-  a missing folder crashing the server.
-- `exec` recording + `POST /jump`: catches tty or termProgram not taken from the `ps` line,
-  and `??` taken as a tty.
-- `POST /events` after a rebuild: catches a second character for a rebuilt session.
-
-## Review fixes
-
-Added after review, on the user's word ("fix the stuff you agree with").
-
-| # | Where | Fix | Test |
-|---|---|---|---|
-| R1 | `server/rebuild.ts` sessions | A `sessions/*.json` that can't be read or parsed is skipped with one line on stderr; the server still starts | half-written session file next to a good one: the good one shows |
-| R2 | `server/rebuild.ts` ps | When `exec` rejects (the pid just exited), that session is skipped with one line on stderr | `exec` rejecting for one pid: the other session shows |
-| R3 | `server/rebuild.ts` subagents | A missing `agent-<id>.jsonl` means no step; a `.meta.json` that can't be parsed skips that subagent with one line on stderr | meta without jsonl: subagent shows, step null |
-| R4 | `server/rebuild.ts` project loop | Stop at the first project folder holding the transcript | none |
-| R5 | `server/rebuild.ts` lastToolUse | Don't reverse the caller's array (`toReversed()` or a backwards loop) | none |
-| R6 | `server/rebuild.ts` | Export `Session` and have `tests/helpers.ts` import it; the lead `stepEvents` loop on one line | n/a |
-| R7 | `tests/helpers.ts` deadPid | A fixed pid above macOS's maximum (999999) instead of spawning a process | n/a |
-| R8 | `tests/rebuild.test.ts` DW1 | Live sessions in two projects: two houses, and numbering within one house | itself |
-| R9 | `tests/rebuild.test.ts` | Lead transcript's first tool_use differs from its last | itself |
-| R10 | `tests/` | Top-level imports instead of `await import(...)`; `join` instead of template paths; `StartOptions` from `Parameters<typeof startServer>[0]` | n/a |
-| R11 | `playwright.config.ts` | A fixed path that doesn't exist under the temp dir, instead of a new `mkdtemp` folder per run | e2e passes |
-
-Not applied, with reasons in docs/HANDOFF.md: parallel reads and one `ps` call (startup measured
-at 1 s with 5 sessions), reading transcripts from the end (largest here is 65 MB and reads fine),
-and detecting a reused pid as a ghost lead (no reliable check yet).
+- `startServer({ claudeDir, exec })` first `/stream` frame: catches a reused pid showing as
+  a lead, a matching session dropped, a session without `procStart` dropped, and the tty
+  read from the wrong token after lstart was added.
+- `startServer({ claudeDir, exec, sweepMs, goneAfterMs })` later `/stream` frames, with the
+  fixture folder and fake `exec` changed between sweeps: catches a dead, reused or deleted
+  session staying on screen; a lead marked gone before it was ever seen live; a failed `ps`
+  ending a live lead; a gone lead not removed after `goneAfterMs`; a hook event not
+  reviving it; a sweep still running after `close()`.
 
 ## Stop and ask
 
@@ -136,4 +99,4 @@ Every agent stops and reports BLOCKED when:
 
 ## Queue
 
-- None. After m4 every charter item has a milestone; next is the 5-day real-use check.
+- none
