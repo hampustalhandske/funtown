@@ -1,0 +1,58 @@
+#!/usr/bin/env node
+// A stand-in for the `claude` executable. State lives in files next to this script:
+//   list.json (the `agents --json` output, written raw), version, and the switches
+//   list-fail, version-fail, bg-fail. `--bg` appends to started.json and lists a new
+//   background session; `attach <id>` echoes every input chunk as `got:<JSON string>`.
+const fs = process.getBuiltinModule("fs");
+const path = process.getBuiltinModule("path");
+const crypto = process.getBuiltinModule("crypto");
+
+const dir = __dirname;
+const file = (n) => path.join(dir, n);
+const read = (n, d) => (fs.existsSync(file(n)) ? fs.readFileSync(file(n), "utf8") : d);
+const argv = process.argv.slice(2);
+const out = (s) => process.stdout.write(s);
+
+if (argv[0] === "--version") {
+  if (fs.existsSync(file("version-fail"))) process.exit(1);
+  out(`${read("version", "2.1.325").trim()} (Claude Code)\n`);
+} else if (argv[0] === "agents" && argv[1] === "--json") {
+  if (fs.existsSync(file("list-fail"))) {
+    process.stderr.write("agents failed\n");
+    process.exit(1);
+  }
+  out(read("list.json", "[]"));
+} else if (argv[0] === "--bg") {
+  if (fs.existsSync(file("bg-fail"))) {
+    process.stderr.write("bg failed\n");
+    process.exit(1);
+  }
+  const id = crypto.randomBytes(4).toString("hex");
+  const started = JSON.parse(read("started.json", "[]"));
+  started.push({ cwd: process.cwd(), argv });
+  fs.writeFileSync(file("started.json"), JSON.stringify(started));
+  const list = JSON.parse(read("list.json", "[]"));
+  list.push({
+    sessionId: `${id}-0000-4000-8000-000000000000`, id, name: `fresh-${id}`, kind: "background",
+    pid: process.pid, cwd: process.cwd(), startedAt: Date.now(), status: "idle",
+  });
+  fs.writeFileSync(file("list.tmp"), JSON.stringify(list));
+  fs.renameSync(file("list.tmp"), file("list.json"));
+  out(`${id}\n`);
+} else if (argv[0] === "attach") {
+  const id = argv[1];
+  process.stdin.setRawMode(true);
+  fs.appendFileSync(file(`attach-${id}.pids`), `${process.pid}\n`);
+  const leaked = Object.keys(process.env).filter((k) => /^(CLAUDE|AI_AGENT)/.test(k));
+  const size = () => `${process.stdout.columns}x${process.stdout.rows}`;
+  out(`attached ${id} TERM=${process.env.TERM} size:${size()} env:[${leaked.join(",")}]\r\n`);
+  process.stdout.on("resize", () => out(`size:${size()}\r\n`));
+  process.stdin.on("data", (d) => {
+    const s = d.toString();
+    if (s === "quit") process.exit(0);
+    out(`got:${JSON.stringify(s)}\r\n`);
+  });
+} else {
+  process.stderr.write(`fake claude: unexpected arguments ${JSON.stringify(argv)}\n`);
+  process.exit(2);
+}

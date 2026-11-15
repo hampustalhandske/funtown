@@ -54,6 +54,14 @@ it("install_adds_one_2s_command_hook_per_event_and_keeps_every_other_entry_in_pl
   expect(after.hooks.PreCompact).toEqual(original.hooks.PreCompact);
 });
 
+it("install_marks_every_funtown_hook_async_so_it_never_holds_up_claude", () => {
+  const after = setup().run("install");
+  for (const name of EVENTS) {
+    const ours = funtownEntries(after.hooks[name]) as { hooks: { async?: boolean }[] }[];
+    expect(ours[0].hooks[0].async, name).toBe(true);
+  }
+});
+
 it("install_twice_does_not_duplicate_entries", () => {
   const s = setup();
   s.run("install");

@@ -1,17 +1,17 @@
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { defineConfig } from "@playwright/test";
+import { E2E_FAKE_DIR, FakeClaude } from "./tests/fake-claude.ts";
 
-// A path that does not exist: the rebuild finds no sessions there.
-const emptyClaudeDir = join(tmpdir(), "funtown-e2e-no-claude-dir");
+// The web server runs this fake `claude`; the specs steer it through files in its folder.
+const fake = FakeClaude.install(E2E_FAKE_DIR);
 
 export default defineConfig({
   testDir: "tests/e2e",
   use: { baseURL: "http://127.0.0.1:4799" },
+  expect: { timeout: 8000 },
   webServer: {
     command: "vite build && node server/main.ts",
     url: "http://127.0.0.1:4799",
-    env: { FUNTOWN_PORT: "4799", FUNTOWN_CLAUDE_DIR: emptyClaudeDir },
+    env: { FUNTOWN_PORT: "4799", FUNTOWN_CLAUDE: fake.path },
     reuseExistingServer: false,
   },
 });
