@@ -93,11 +93,13 @@ export async function liveCheck(
   exec: Exec,
 ): Promise<{ tty: string | null; termProgram: string | null } | null> {
   if (!isAlive(s.pid)) return null;
-  const out = await exec("env", ["TZ=UTC", "ps", "-wwE", "-o", "lstart=,tty=,command=", "-p", String(s.pid)]);
+  const out = await exec("env", ["LC_ALL=C", "TZ=UTC", "ps", "-wwE", "-o", "lstart=,tty=,command=", "-p", String(s.pid)]);
   const tokens = out.trim().split(/\s+/);
   if (s.procStart !== undefined && tokens.slice(0, 5).join(" ") !== s.procStart.trim().split(/\s+/).join(" ")) return null;
-  const [tty, termProgram] = parsePs(out);
-  return { tty, termProgram };
+  return {
+    tty: tokens[5] && tokens[5] !== "??" ? tokens[5] : null,
+    termProgram: out.match(/(?:^|\s)TERM_PROGRAM=(\S+)/)?.[1] ?? null,
+  };
 }
 
 /**
@@ -168,10 +170,4 @@ export async function rebuild(town: TownState, claudeDir: string, exec: Exec): P
     if (s.status === "idle") town.apply({ ...base, hook_event_name: "Stop" });
   }
   return new Map(sessions.map((s) => [s.sessionId, s.pid]));
-}
-
-/** The tty (6th token, after lstart) and TERM_PROGRAM from a `ps -o lstart=,tty=,command=` line; null for each that is absent. */
-function parsePs(out: string): [string | null, string | null] {
-  const tty = out.trim().split(/\s+/)[5];
-  return [tty && tty !== "??" ? tty : null, out.match(/(?:^|\s)TERM_PROGRAM=(\S+)/)?.[1] ?? null];
 }

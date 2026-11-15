@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { TownState, type HookEvent } from "./town.ts";
-import { liveCheck, readSessions, rebuild, warn } from "./rebuild.ts";
+import { liveCheck, readSessions, rebuild } from "./rebuild.ts";
 
 const DEFAULT_DIST = fileURLToPath(new URL("../web/dist/", import.meta.url));
 const TYPES: Record<string, string> = {
@@ -80,7 +80,8 @@ function jumpCommand(termProgram: string | null, tty: string | null): [string, s
  * are rebuilt into the Town before listening, reading their tty with `exec` (default:
  * execFile, 5 s timeout; returns stdout). Every `sweepMs` (default 5 s) the Claude folder is
  * checked again, and a lead seen live whose session is no longer live ends like SessionEnd;
- * a lead whose `ps` call fails is left alone. `close()` stops the sweep.
+ * a lead whose `ps` call fails, or whose session file can't be read, is left alone, as is a lead
+ * that got a hook event during the check. `close()` stops the sweep.
  */
 export async function startServer(opts: {
   port: number;
@@ -97,8 +98,8 @@ export async function startServer(opts: {
   const town = new TownState();
   const exec = opts.exec ?? defaultExec;
   // session id -> the pid it was last seen live with
-  const seenLive = new Map<string, number>();
-  if (opts.claudeDir) for (const [id, pid] of await rebuild(town, opts.claudeDir, exec)) seenLive.set(id, pid);
+  const seenLive = opts.claudeDir ? await rebuild(town, opts.claudeDir, exec) : new Map<string, number>();
+  const sweepMs = opts.sweepMs ?? 5_000;
   const clients = new Set<ServerResponse>();
   const timers = new Map<string, NodeJS.Timeout>();
   let port = 0;
@@ -116,6 +117,7 @@ export async function startServer(opts: {
       setTimeout(() => {
         timers.delete(gone);
         town.remove(gone);
+        seenLive.delete(gone);
         broadcast();
       }, goneAfterMs),
     );
@@ -123,25 +125,34 @@ export async function startServer(opts: {
 
   let closed = false;
   let sweepTimer: NodeJS.Timeout | undefined;
+  // session ids that got a hook event since the current sweep started
+  const hooked = new Set<string>();
   const sweep = async (claudeDir: string) => {
+    hooked.clear();
     const live = new Map<string, number>();
     const unknown = new Set<string>();
     const { sessions, unreadable } = await readSessions(claudeDir);
-    for (const s of sessions) {
-      try {
-        if (await liveCheck(s, exec)) live.set(s.sessionId, s.pid);
-      } catch (err) {
-        warn(`pid ${s.pid}`, err);
-        unknown.add(s.sessionId);
-      }
-    }
+    await Promise.all(
+      sessions.map(async (s) => {
+        try {
+          if (await liveCheck(s, exec)) live.set(s.sessionId, s.pid);
+        } catch (err) {
+          console.error(`funtown: sweep left pid ${s.pid} as is: ${(err as Error).message}`);
+          unknown.add(s.sessionId);
+        }
+      }),
+    );
     if (closed) return;
     for (const [id, pid] of live) seenLive.set(id, pid);
     let changed = false;
     for (const [id, pid] of seenLive) {
-      if (live.has(id) || unknown.has(id) || unreadable.has(pid)) continue;
-      seenLive.delete(id);
-      if (!town.lead(id) || town.lead(id)?.stage === "gone") continue;
+      if (live.has(id) || unknown.has(id) || unreadable.has(pid) || hooked.has(id)) continue;
+      const lead = town.lead(id);
+      if (!lead) {
+        seenLive.delete(id);
+        continue;
+      }
+      if (lead.stage === "gone") continue;
       const gone = town.apply({ session_id: id, hook_event_name: "SessionEnd" });
       if (gone) scheduleRemoval(gone);
       changed = true;
@@ -154,7 +165,7 @@ export async function startServer(opts: {
     } catch (err) {
       console.error("funtown: sweep failed", err);
     }
-    if (!closed) sweepTimer = setTimeout(() => void sweepLoop(claudeDir), opts.sweepMs ?? 5_000);
+    if (!closed) sweepTimer = setTimeout(() => void sweepLoop(claudeDir), sweepMs);
   };
 
   const server = createServer(async (req, res) => {
@@ -189,6 +200,7 @@ export async function startServer(opts: {
       try {
         const gone = town.apply(event);
         const sid = event.session_id;
+        if (sid) hooked.add(sid);
         if (sid && event.hook_event_name) {
           clearTimeout(timers.get(sid));
           timers.delete(sid);
@@ -294,7 +306,7 @@ export async function startServer(opts: {
     server.listen(opts.port, "127.0.0.1", resolve);
   });
   port = (server.address() as AddressInfo).port;
-  if (opts.claudeDir) sweepTimer = setTimeout(() => void sweepLoop(opts.claudeDir!), opts.sweepMs ?? 5_000);
+  if (opts.claudeDir) sweepTimer = setTimeout(() => void sweepLoop(opts.claudeDir!), sweepMs);
 
   return {
     url: `http://127.0.0.1:${port}`,
