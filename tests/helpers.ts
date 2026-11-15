@@ -119,12 +119,26 @@ export const toolUse = (name: string, input: Json, timestamp = "2024-01-01T00:00
   message: { content: [{ type: "tool_use", name, input }] },
 });
 
-/** An `exec` fake that answers ps with `lines[pid]` and records each call. */
+/** Process start time as `ps -o lstart` prints it. */
+export const START = "Fri Nov 13 12:37:09 2026";
+
+/** One `ps -o lstart=,tty=,command=` output line for a claude process started at `lstart`. */
+export const psLine = (lstart = START) => `${lstart}     ttys004  claude --resume TERM_PROGRAM=Apple_Terminal`;
+
+/** The fixture session s1 of the current process, idle in /work/alpha, with its start time recorded. */
+export const s1Session = (over: Partial<Session> = {}): Session => ({
+  pid: process.pid, sessionId: "s1", cwd: "/work/alpha", startedAt: 1, status: "idle", procStart: START, ...over,
+});
+
+/** An `exec` fake that answers ps with `lines[pid]` (mutable), fails for pids in `failing`, and records each call. */
 export function fakePs(lines: Record<number, string>) {
+  const failing = new Set<number>();
   const calls: [string, string[]][] = [];
   const exec = async (file: string, args: string[]): Promise<string> => {
     calls.push([file, args]);
-    return `${lines[Number(args[args.length - 1])] ?? ""}\n`;
+    const pid = Number(args[args.length - 1]);
+    if (failing.has(pid)) throw new Error("ps failed");
+    return `${lines[pid] ?? ""}\n`;
   };
-  return { exec, calls };
+  return { lines, failing, exec, calls };
 }

@@ -1,10 +1,9 @@
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ClaudeDir, deadPid, fakePs, leadsOf, post, start, toolUse, townWhere } from "./helpers.ts";
+import { ClaudeDir, deadPid, fakePs, leadsOf, post, psLine, start, START, toolUse, townWhere } from "./helpers.ts";
 
-const START = "Fri Nov 13 12:37:09 2026";
-const PS = `${START}     ttys004  claude --resume TERM_PROGRAM=Apple_Terminal SHELL=/bin/zsh`;
+const PS = psLine();
 
 describe("rebuild on start", () => {
   it("rebuilds_live_sessions_per_house_with_stage_numbering_and_step_and_drops_the_dead_one", async () => {
@@ -109,9 +108,9 @@ describe("rebuild on start", () => {
 });
 
 describe("rebuilt tty and termProgram", () => {
-  const rebuilt = async (psLine: string) => {
+  const rebuilt = async (line: string) => {
     const claude = new ClaudeDir().session({ pid: process.pid, sessionId: "s1", cwd: "/work/alpha", startedAt: 1, status: "idle" });
-    const ps = fakePs({ [process.pid]: psLine });
+    const ps = fakePs({ [process.pid]: line });
     const runs: [string, string[]][] = [];
     const s = await start({ claudeDir: claude.dir, exec: ps.exec, run: async (f, a) => void runs.push([f, a]) });
     return { ...s, ps, runs };
@@ -119,7 +118,7 @@ describe("rebuilt tty and termProgram", () => {
 
   it("tty_and_term_program_come_from_the_ps_line_and_jump_runs_osascript_with_that_tty", async () => {
     const { url, ps, runs } = await rebuilt(PS);
-    expect(ps.calls).toContainEqual(["env", ["TZ=UTC", "ps", "-wwE", "-o", "lstart=,tty=,command=", "-p", String(process.pid)]]);
+    expect(ps.calls).toContainEqual(["env", ["LC_ALL=C", "TZ=UTC", "ps", "-wwE", "-o", "lstart=,tty=,command=", "-p", String(process.pid)]]);
     const lead = leadsOf(await townWhere(url, () => true))[0];
     expect([lead.tty, lead.termProgram]).toEqual(["ttys004", "Apple_Terminal"]);
 
