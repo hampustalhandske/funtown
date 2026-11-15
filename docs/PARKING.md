@@ -9,3 +9,5 @@
 - 2026-11-14: Jump straight to a specific subagent inside its lead's Claude terminal, not just the lead's tab
 - 2026-11-14: Settings in the app to pick which projects Funtown shows (e.g. so each user sees only their own)
 - 2026-11-15: Jump to the right app for VS Code forks (Cursor, Windsurf) that also set TERM_PROGRAM=vscode
+- 2026-11-15: Answer a waiting session from Funtown: accept or reject a permission, pick a multiple-choice option
+- 2026-11-15: One plain sentence per character (doing now, doing next, plan steps) instead of the raw command
