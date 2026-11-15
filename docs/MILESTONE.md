@@ -1,140 +1,108 @@
-# Milestone 3: panel-jump
+# Milestone 4: rebuild
 
-Serves: charter items 4 (clicking a character opens a panel with its current step and its
-subagents with status) and 5 (a button in that panel focuses the session's exact tab in
-macOS Terminal; other terminal apps are just brought to the front).
-Estimate: ~250 net production lines of a 400 budget
+Serves: charter constraint "on start, Funtown rebuilds already-running sessions from the
+transcripts in `~/.claude/projects/`", so items 1–5 hold for sessions that started before
+Funtown did.
+Estimate: ~130 net production lines of a 400 budget
 Mode: with you
 
 ## Done when
 
-1. Clicking any lead or subagent opens a panel (`role="dialog"`, `aria-label="<name> details"`)
-   showing its name, stage, current step, and "waiting for you: <need>" when it needs you;
-   a lead's panel lists each subagent with its stage. The panel follows live updates,
-   closes with ✕ or Escape, and closes on its own when the character is removed.
-2. A character's `step` is the text of its last `PreToolUse` ("Bash: <command>" or the tool
-   name) and stays after `PostToolUse` and `Stop`; the panel shows "nothing yet" when null.
-3. A lead's panel, and a subagent's (which jumps to its lead), has a "Go to terminal"
-   button that sends `POST /jump`; on a non-204 reply the panel shows the reply's text.
-4. `POST /jump` from the page with lead `termProgram: "Apple_Terminal"` and tty `ttys001`
-   runs `osascript` with the tty as an argument (never inside the script text) and returns
-   204; a known other app (`iTerm.app`, `vscode`, `WarpTerminal`, `ghostty`) runs
-   `open -a <App>`; Apple_Terminal without a valid tty runs `open -a Terminal`.
-5. `POST /jump` without an `Origin` header, or with one other than the server's own
-   (`http://127.0.0.1:<port>` or `http://localhost:<port>`), returns 403 and runs nothing.
-6. Unknown lead → 404; a terminal Funtown doesn't know → 409 with
-   `Funtown doesn't know how to open this session's terminal.`; a failing command → 500
-   with `Couldn't open the terminal.` and the error logged to stderr.
-7. By hand (you): in a real macOS Terminal session, the button brings that exact tab to the
-   front. macOS asks once for Automation permission for Terminal.
-8. The test command passes.
+1. Started with a Claude folder holding two live sessions in two projects (one `busy`, one
+   `idle`) and one whose pid is dead, the first `/stream` frame shows two houses named by
+   folder, leads numbered `lead-1`, `lead-2` per house in `startedAt` order, the `idle` one
+   `needs_you` with need `turn ended`, the `busy` one `working`, and no character for the dead one.
+2. A rebuilt character's `step` is its transcript's last `tool_use` ("Bash: <command>" or the
+   tool name), `null` when it has none; its `activity` is `null`.
+3. A rebuilt lead lists its subagents from `subagents/agent-<id>.meta.json`: named
+   `<agentType>-<n>`, `done` when `finished` is true, `working` otherwise, with the step
+   from that subagent's own transcript.
+4. A rebuilt lead has the `tty` and `termProgram` that `ps` reports for its pid, so
+   `POST /jump` for a rebuilt Apple_Terminal lead runs `osascript` with that tty.
+5. A hook event that arrives after start for a rebuilt session updates that same lead:
+   same id and name, no second character.
+6. No Claude folder, or no `sessions/` in it, gives an empty Town and the server starts.
+   A transcript line that isn't JSON (a half-written last line) is skipped.
+7. No test reads the real home folder: `startServer` rebuilds only when given `claudeDir`,
+   and Playwright's server gets `FUNTOWN_CLAUDE_DIR` pointing at an empty test folder.
+8. By hand (you): with two or more `claude` sessions open, restart `npm start`. Each shows
+   at its house within 5 s with the right stage, and "Go to terminal" works on a rebuilt
+   waiting session in macOS Terminal.
+9. The test command passes.
 
 ## Must not
 
 - Add a dependency, service or paid API without asking.
-- Change `/events`, the hook, the installer, or the Town shapes beyond adding `step`.
-- Run any command in a test: tests inject `run`.
-- Interpolate the tty or any request field into a script or shell string.
+- Change `/events`, `/jump`, the hook, the installer, the page, or the Town shapes.
+- Write to the Claude folder, or read anything in it besides `sessions/*.json` and
+  `projects/*/<sessionId>.jsonl` and `projects/*/<sessionId>/subagents/agent-*`.
+- Run any command in a test: tests inject `exec`.
 - Listen on anything but 127.0.0.1.
 
 ## Contracts
 
-### Town state: `step`
-
-Produced by task 1, consumed by tasks 2 and 3. `server/types.ts`:
-
-```ts
-export type Character = {
-  id: string;
-  name: string;
-  stage: Stage;
-  activity: string | null; // what runs now; null between tools
-  step: string | null;     // last PreToolUse text; null until the first tool call
-  needs?: string;
-};
-```
-
-Set on every `PreToolUse` (lead or subagent), never cleared by later events.
-
-### POST /jump
-
-Produced by task 1, consumed by tasks 2 and 3.
-
-```
-POST /jump
-Origin: http://127.0.0.1:<port>          (or http://localhost:<port>)
-content-type: application/json
-{ "lead": "<session id>" }
-
-204                                       command ran and exited 0
-400                                       body not JSON or no string "lead"
-403                                       Origin missing or not the server's own
-404                                       no such lead
-409 text/plain  Funtown doesn't know how to open this session's terminal.
-500 text/plain  Couldn't open the terminal.
-```
-
 ### startServer
+
+Produced by task 1, consumed by task 2. Adds two options; the rest is unchanged.
 
 ```ts
 startServer(opts: {
   port: number;
   goneAfterMs?: number;
   distDir?: string;
-  run?: (file: string, args: string[]) => Promise<void>; // default: execFile, 60 s timeout;
-                                                         // rejects on non-zero exit
+  run?: (file: string, args: string[]) => Promise<void>;
+  claudeDir?: string;                                         // rebuild from here before listening;
+                                                              // absent: no rebuild
+  exec?: (file: string, args: string[]) => Promise<string>;   // stdout; default: execFile, 5 s timeout
 }): Promise<{ url: string; close(): Promise<void> }>
 ```
 
-Commands `/jump` passes to `run`:
-- Apple_Terminal, tty matching `/^ttys\d+$/`: `run("osascript", ["-e", <fixed script>, "ttys001"])`;
-  the script reads the tty from `argv`, selects the Terminal tab whose tty is
-  `/dev/<tty>`, restores and raises its window and activates Terminal; when no tab matches it only
-  activates Terminal.
-- Apple_Terminal otherwise: `run("open", ["-a", "Terminal"])`.
-- `iTerm.app` → `iTerm`, `vscode` → `Visual Studio Code`, `WarpTerminal` → `Warp`,
-  `ghostty` → `Ghostty`: `run("open", ["-a", <App>])`.
-- Anything else, or null: 409, nothing run.
+`server/main.ts` passes `claudeDir: process.env.FUNTOWN_CLAUDE_DIR ?? ~/.claude`.
+
+### What the rebuild reads
+
+```
+<claudeDir>/sessions/<pid>.json
+  { "pid": 123, "sessionId": "s1", "cwd": "/x/alpha", "startedAt": 1700000000000,
+    "status": "idle" | "busy" | <other>, ...more keys, ignored }
+  live when process.kill(pid, 0) doesn't throw ESRCH
+
+<claudeDir>/projects/<any>/<sessionId>.jsonl          lead transcript, found by file name
+  one JSON object per line; the last line with
+  { "type": "assistant", "message": { "content": [ { "type": "tool_use", "name": "Bash",
+      "input": { "command": "npm test" } } ] } }
+  gives the step
+
+<claudeDir>/projects/<any>/<sessionId>/subagents/agent-<agentId>.meta.json
+  { "agentType": "implementer", "finished": false, ...more keys, ignored }
+<claudeDir>/projects/<any>/<sessionId>/subagents/agent-<agentId>.jsonl
+  same line shape as the lead's; the first line's "timestamp" orders the subagents
+```
+
+`exec("ps", ["-wwE", "-o", "tty=,command=", "-p", "<pid>"])` returns one line such as
+`ttys004  claude --resume TERM_PROGRAM=Apple_Terminal SHELL=/bin/zsh`. The first word is the
+tty (`??` means none); `TERM_PROGRAM=<value>` gives `termProgram`; either may be absent (null).
+
+Stage: `status` `"idle"` → `needs_you` with need `turn ended`; anything else → `working`.
+The rebuild feeds `TownState.apply` the same events the hook would send, so the reducer
+stays the one place that builds characters.
 
 ## Tasks
 
 | # | Owner | Owned paths | Does | Done when |
 |---|---|---|---|---|
-| 1 | api | `server/` | `step` in the reducer; `POST /jump` with the Origin check, lead lookup, command choice and injectable `run` | Done when 2, 4, 5, 6 hold |
-| 2 | ui | `web/` | Clickable characters, the details panel with live updates and Escape/✕, the "Go to terminal" button and its error text | Done when 1 and 3 hold |
-| 3 | tests | `tests/` | Tests at the seams below | They run, and fail only where code is missing |
+| 1 | api | `server/` | `server/rebuild.ts` reads the Claude folder and `ps`, and applies the events before the server listens; `claudeDir` and `exec` in `startServer`; `FUNTOWN_CLAUDE_DIR` in `main.ts` | Done when 1–7 hold |
+| 2 | tests | `tests/`, `playwright.config.ts` | Tests at the seams below, with fixture Claude folders made in a temp dir; `FUNTOWN_CLAUDE_DIR` for Playwright's server | They run, and fail only where code is missing |
 
 ## Test seams
 
-- `POST /events` → `GET /stream`: catches `step` lost after `PostToolUse` or `Stop`, or not
-  set for a subagent.
-- `POST /jump` with a recording `run`: catches the wrong command or arguments per terminal,
-  the tty spliced into the script, a cross-origin or Origin-less request that runs
-  something, and wrong status codes for unknown lead, unknown terminal and a failing `run`.
-- Playwright on the page with a routed `/stream` and `/jump`: catches a character that
-  doesn't open its panel, a panel missing step or subagents, Escape not closing it, the
-  button posting the wrong lead (a subagent must send its lead's id), and a 409 text not shown.
-
-## Review fixes
-
-Added after review, on the user's word: every finding that holds is applied in this PR.
-
-| # | Where | Fix | Test |
-|---|---|---|---|
-| R1 | `server/app.ts` run timeout | 60 s instead of 5 s, so macOS's one-time permission prompt can be answered | none (timing) |
-| R2 | `server/app.ts` tab script | Skip windows whose tabs can't be read, restore a minimized window, and only activate Terminal when no tab matches (no error) | by hand: minimized window jumps |
-| R3 | `tests/e2e/panel.spec.ts` | Second stream frame changes the step: panel shows it; third frame drops the character: panel closes | itself |
-| R4 | `web/src/App.tsx` selection | Clear the selected id when its character is no longer in the Town | e2e: character returns after removal, no panel |
-| R5 | `web/src/App.tsx` CharacterRow | No `<div>` inside the character `<button>`: use `<span>`s styled as blocks | none |
-| R6 | `tests/helpers.ts` | One `start(opts)` with its close-all `afterEach`, used by `server.test.ts` and `jump.test.ts` | n/a |
-| R7 | `tests/jump.test.ts` | One known-app case instead of looping all four; keep Apple_Terminal with and without tty and the unknown app | itself |
-| R8 | `web/src/App.tsx` | Drop the comment that restates the close-on-removal condition | n/a |
-| R9 | `web/src/App.tsx` Panel | Stable `onClose` (useCallback), so the Escape listener isn't re-added on every state frame | none |
-| R10 | `web/src/App.tsx` Panel | "Go to terminal" is disabled while a jump is in flight | e2e: second click while pending posts once |
-| R11 | `server/app.ts` /jump | Body over 64 KB → 413, nothing run | 70 KB body is 413 |
-| R12 | `web/src/App.tsx` selection | Selection is `{ lead, id }`, so equal subagent ids under two leads open the right panel | e2e: same subagent id under two leads |
-| R13 | `tests/e2e/panel.spec.ts` | Subagent stage asserted as exact text on the Subagents list | itself |
-| R14 | `server/app.ts`, `tests/jump.test.ts` | `promisify(execFile)` for the default run; one 400 branch; drop the extra `process.stderr.write` spy | n/a |
+- `startServer({ claudeDir, exec })` → first `/stream` frame: catches a dead pid shown, a
+  wrong stage for `idle`/`busy`, lead numbering out of `startedAt` order, a wrong or missing
+  step, subagents missing or with the wrong stage, a non-JSON line crashing the rebuild, and
+  a missing folder crashing the server.
+- `exec` recording + `POST /jump`: catches tty or termProgram not taken from the `ps` line,
+  and `??` taken as a tty.
+- `POST /events` after a rebuild: catches a second character for a rebuilt session.
 
 ## Stop and ask
 
@@ -146,5 +114,4 @@ Every agent stops and reports BLOCKED when:
 
 ## Queue
 
-- m4-rebuild: ~200, after m3: on start, rebuild already-running sessions from the
-  transcripts in `~/.claude/projects/`.
+- None. After m4 every charter item has a milestone; next is the 5-day real-use check.
