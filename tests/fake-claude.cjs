@@ -2,8 +2,8 @@
 // A stand-in for the `claude` executable. State lives in files next to this script:
 //   list.json (the `agents --json` output, written raw), version, and the switches
 //   list-fail, version-fail, bg-fail. `--bg` appends (cwd, argv, CLAUDE*/AI_AGENT variable
-//   names) to started.json and lists a new
-//   background session; `attach <id>` echoes every input chunk as `got:<JSON string>`.
+//   names) to started.json and lists a new background session; `attach <id>` echoes every
+//   input chunk as `got:<JSON string>`.
 const fs = process.getBuiltinModule("fs");
 const path = process.getBuiltinModule("path");
 const crypto = process.getBuiltinModule("crypto");

@@ -23,7 +23,7 @@ const bg = lead({ id: "b1", name: "bg-1", kind: "background", shortId: "b1b1b1b1
 const sse = (t: unknown) => `retry: 50\nevent: state\ndata: ${JSON.stringify(t)}\n\n`;
 
 /** Opens the page on a stubbed stream; records each POST /answer body and replies with `reply`. */
-async function open(page: Page, initial: unknown, reply: { status: number; body?: string } = { status: 204 }) {
+async function open(page: Page, initial: unknown, reply: { status: number } = { status: 204 }) {
   const answers: unknown[] = [];
   let current = initial;
   await page.route("**/stream", (r) =>
@@ -31,7 +31,7 @@ async function open(page: Page, initial: unknown, reply: { status: number; body?
   );
   await page.route("**/answer", (r) => {
     answers.push(r.request().postDataJSON());
-    return r.fulfill({ status: reply.status, contentType: "text/plain", body: reply.body ?? "" });
+    return r.fulfill({ status: reply.status, contentType: "text/plain", body: "" });
   });
   await page.goto("/");
   return { answers, send: (t: unknown) => void (current = t) };
@@ -97,8 +97,16 @@ test("a_card_takes_no_focus_and_disappears_when_the_next_state_has_no_card", asy
   await expect(house(page).getByRole("button", { name: "Allow" })).toHaveCount(0);
 });
 
-test("a_refused_answer_shows_the_servers_reply_text_on_the_card", async ({ page }) => {
-  await open(page, town([lead({})], [card({})]), { status: 404, body: "That card is already closed." });
+test("a_404_on_answer_shows_that_the_request_is_already_closed", async ({ page }) => {
+  await open(page, town([lead({})], [card({})]), { status: 404 });
   await house(page).getByRole("button", { name: "Allow" }).click();
-  await expect(house(page)).toContainText("That card is already closed.");
+  await expect(house(page)).toContainText("This request is already closed.");
+});
+
+test("a_card_from_an_agent_the_lead_does_not_list_shows_in_the_leads_panel", async ({ page }) => {
+  await open(page, town([lead({})], [card({ agent: "ghost" })]));
+  await house(page).locator(".character").filter({ hasText: "lead-1" }).first().click({ position: { x: 5, y: 5 } });
+  const panel = page.getByRole("dialog", { name: "lead-1 details" });
+  await expect(panel).toContainText("rm -rf /work/demo-app/build");
+  await expect(panel.getByRole("button", { name: "Allow" })).toBeVisible();
 });

@@ -2,11 +2,9 @@ import { mkdtempSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { Town } from "../server/types.ts";
+import type { Card } from "../server/types.ts";
 import { leadsOf, listed, listedBg, post, start, tokenOf, townWhere, until, type Json } from "./helpers.ts";
 
-type Card = { id: string; lead: string; agent: string | null; kind: string; tool: string; input: Json; cwd: string; at: number };
-type Cards = Town & { cards: Card[] };
 
 const CWD = "/work/demo-app";
 const BG = "bg111111-0000-4000-8000-000000000000";
@@ -69,7 +67,7 @@ function hold(url: string, payload: Json, headers: Record<string, string> = {}) 
   return { reply, abort: () => ctl.abort() };
 }
 
-const cardsWhere = async (url: string, ok: (c: Card[]) => boolean) => ((await townWhere(url, (t) => ok((t as Cards).cards))) as Cards).cards;
+const cardsWhere = async (url: string, ok: (c: Card[]) => boolean) => (await townWhere(url, (t) => ok(t.cards))).cards;
 
 type S = Awaited<ReturnType<typeof room>>;
 const answer = (s: S, body: Json, headers: Record<string, string> = { origin: s.url, "x-funtown-token": s.token }) =>
@@ -88,7 +86,6 @@ describe("POST /hold + POST /answer: the hook output per answer", () => {
     const s = await room();
     const { card, reply } = await held(s, permission(100));
     expect(card).toMatchObject({ lead: "s1", agent: null, kind: "permission", tool: "Bash", input: { command: "rm -rf build" }, cwd: CWD, at: 100 });
-    expect(typeof card.id).toBe("string");
     expect((await answer(s, { card: card.id, decision: "allow" })).status).toBe(204);
     const res = await reply;
     expect(res.status).toBe(200);
@@ -221,6 +218,35 @@ describe("when a card is released", () => {
     await cardsWhere(s.url, (c) => c.length === 0);
     expect((await reply).status).toBe(204);
     expect((await answer(s, { card: card.id, decision: "allow", answers: {} })).status).toBe(404);
+  });
+
+  it("a_permission_card_stays_for_the_same_tools_pretooluse_with_a_tool_use_id_and_closes_for_a_different_input", async () => {
+    const s = await room();
+    const { card, reply } = await held(s, permission(100, "npm test"));
+    const pre = (at: number, command: string) =>
+      ev("PreToolUse", at, { tool_name: "Bash", tool_use_id: "tuX", tool_input: { command } });
+    await post(s.url, pre(200, "npm test"));
+    await sleep(200);
+    expect((await cardsWhere(s.url, () => true)).map((c) => c.id)).toEqual([card.id]);
+
+    await post(s.url, pre(300, "npm run other"));
+    await cardsWhere(s.url, (c) => c.length === 0);
+    expect((await reply).status).toBe(204);
+  });
+
+  it("a_hold_is_released_after_unlistedMs_when_the_last_page_leaves", async () => {
+    const s = await start({ pollMs: 100, unlistedMs: 400 });
+    s.fake.list([listedBg(BG, CWD)]);
+    const page = new AbortController();
+    aborts.push(page);
+    fetch(`${s.url}/stream`, { signal: page.signal }).then((r) => r.body!.pipeTo(new WritableStream())).catch(() => {});
+    await sleep(250);
+    const { card, reply } = await held(s, question(100));
+    expect(card.kind).toBe("question");
+    page.abort();
+    const t0 = Date.now();
+    expect((await reply).status).toBe(204);
+    expect(Date.now() - t0).toBeLessThan(3000);
   });
 
   it("a_hold_with_no_page_connected_is_released_after_unlistedMs", async () => {
