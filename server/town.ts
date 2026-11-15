@@ -9,13 +9,12 @@ const UNLISTED_MS = 10_000;
 export type HookEvent = {
   hook_event_name?: string;
   session_id?: string;
-  cwd?: string;
   tool_name?: string;
   tool_input?: { command?: unknown };
   agent_id?: string;
   agent_type?: string;
   notification_type?: string;
-  funtown?: { tty?: string | null; term_program?: string | null };
+  funtown?: { tty?: string | null; term_program?: string | null; at?: number };
 };
 
 /** Text shown for a tool call: "Bash: <command>" for Bash, the tool name otherwise. */
@@ -34,7 +33,6 @@ function notificationNeed(type: string | undefined): string | null {
   return null;
 }
 
-
 /**
  * Holds the sessions `claude agents --json` lists and the hook data for them. Only listed
  * sessions are on the Town; hook data for a session the list doesn't show is kept for
@@ -47,6 +45,8 @@ export class TownState {
   // unlisted session id -> when its first hook event arrived
   private heard = new Map<string, number>();
   private agentCounts = new Map<string, number>();
+  // session id + agent id ("" for the lead) -> `funtown.at` of the last event applied to it
+  private lastAt = new Map<string, number>();
   private readonly claude: Town["claude"];
 
   /** `claude` is the version check's result, carried on every snapshot. */
@@ -55,13 +55,19 @@ export class TownState {
   }
 
   /** Applies one hook event; an event for an unknown session starts its hook data. */
-  apply(event: HookEvent, now = Date.now()): void {
+  apply(event: HookEvent): void {
     const sid = event.session_id;
     if (!sid || !event.hook_event_name) return;
+    const at = event.funtown?.at;
+    if (typeof at === "number") {
+      const key = `${sid}\0${event.agent_id ?? ""}`;
+      if (at < (this.lastAt.get(key) ?? -Infinity)) return;
+      this.lastAt.set(key, at);
+    }
     let lead = this.leads.get(sid);
     if (!lead) {
       lead = this.newLead(sid);
-      this.heard.set(sid, now);
+      this.heard.set(sid, Date.now());
     }
     if (event.funtown?.tty) lead.tty = event.funtown.tty;
     if (event.funtown?.term_program) lead.termProgram = event.funtown.term_program;
@@ -114,7 +120,7 @@ export class TownState {
    * one's name, kind, short id and stage, and forgets sessions that left the list and hook data
    * unlisted for longer than `UNLISTED_MS`.
    */
-  sync(list: Listed[], now = Date.now()): void {
+  sync(list: Listed[]): void {
     const next = new Map<string, string>();
     for (const s of list) {
       const lead = this.leads.get(s.sessionId) ?? this.newLead(s.sessionId);
@@ -133,8 +139,14 @@ export class TownState {
       next.set(s.sessionId, s.cwd);
     }
     for (const sid of this.listed.keys()) if (!next.has(sid)) this.forget(sid);
-    for (const [sid, at] of this.heard) if (now - at > UNLISTED_MS) this.forget(sid);
     this.listed = next;
+    this.expire();
+  }
+
+  /** Forgets hook data that has waited longer than `UNLISTED_MS` for its session to be listed. */
+  expire(): void {
+    const now = Date.now();
+    for (const [sid, at] of this.heard) if (now - at > UNLISTED_MS) this.forget(sid);
   }
 
   /** The listed lead with this session id, or undefined. */
@@ -159,8 +171,8 @@ export class TownState {
   private forget(sessionId: string): void {
     this.leads.delete(sessionId);
     this.heard.delete(sessionId);
-    for (const key of this.agentCounts.keys()) {
-      if (key.startsWith(`${sessionId}\0`)) this.agentCounts.delete(key);
+    for (const map of [this.agentCounts, this.lastAt]) {
+      for (const key of map.keys()) if (key.startsWith(`${sessionId}\0`)) map.delete(key);
     }
   }
 

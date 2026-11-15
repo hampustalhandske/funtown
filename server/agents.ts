@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { Town } from "./types.ts";
 
-const execFileAsync = promisify(execFile);
+export const execFileAsync = promisify(execFile);
 
 /** One entry of `claude agents --json`, as far as Funtown reads it. */
 export type Listed = {
@@ -24,16 +24,16 @@ const FEATURES = [
 const BG_SETTINGS = JSON.stringify({ worktree: { bgIsolation: "none" } });
 
 /**
- * The server's environment without the `CLAUDE*` and `AI_AGENT` variables, which make a
- * child `claude` behave as part of the session that started Funtown.
+ * The server's environment without the `CLAUDE*` (except `CLAUDE_CONFIG_DIR`) and `AI_AGENT`
+ * variables, which make a child `claude` behave as part of the session that started Funtown.
  */
 export function claudeEnv(): NodeJS.ProcessEnv {
-  return Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDE|AI_AGENT)/.test(k)));
+  return Object.fromEntries(Object.entries(process.env).filter(([k]) => k === "CLAUDE_CONFIG_DIR" || !/^(CLAUDE|AI_AGENT)/.test(k)));
 }
 
-/** Runs `claude` with `args` (never through a shell) and gives its stdout. */
-async function run(claude: string, args: string[], cwd?: string): Promise<string> {
-  return (await execFileAsync(claude, args, { env: claudeEnv(), cwd, timeout: 30_000 })).stdout;
+/** Runs `claude` with `args` (never through a shell) and gives its stdout; kills it after `timeout` ms. */
+async function run(claude: string, args: string[], cwd?: string, timeout = 30_000): Promise<string> {
+  return (await execFileAsync(claude, args, { env: claudeEnv(), cwd, timeout })).stdout;
 }
 
 /** True when dotted version `a` is lower than `b`. */
@@ -54,8 +54,9 @@ export async function checkVersion(claude: string): Promise<Town["claude"]> {
     version = /^(\d+\.\d+\.\d+)/.exec((await run(claude, ["--version"])).trim())?.[1] ?? null;
     if (version && !older(version, MIN_VERSION)) return { version, problems: [] };
     reason = version ? `Claude Code ${version} is older than ${MIN_VERSION}` : "`claude --version` printed no version";
-  } catch {
-    reason = "`claude --version` failed";
+  } catch (err) {
+    const { stderr, message } = err as { stderr?: string; message: string };
+    reason = `\`claude --version\` failed: ${(stderr?.trim() || message).replace(/\s*\n\s*/g, " ")}`;
   }
   return { version, problems: FEATURES.map((f) => `${f} won't work: ${reason}.`) };
 }
@@ -72,7 +73,7 @@ export async function listAgents(claude: string): Promise<Listed[]> {
 export async function startBackground(claude: string, cwd: string): Promise<string> {
   let out: string;
   try {
-    out = await run(claude, ["--bg", "--settings", BG_SETTINGS], cwd);
+    out = await run(claude, ["--bg", "--settings", BG_SETTINGS], cwd, 120_000);
   } catch (err) {
     const { stderr, message } = err as { stderr?: string; message: string };
     throw new Error(stderr?.trim() || message, { cause: err });

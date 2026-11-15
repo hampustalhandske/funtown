@@ -1,4 +1,4 @@
-export type Stage = "working" | "needs_you" | "done" | "gone";
+export type Stage = "working" | "needs_you" | "done";
 export type Character = {
   id: string;
   name: string;

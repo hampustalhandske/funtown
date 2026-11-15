@@ -48,6 +48,10 @@ export function createTerminals(claude: string) {
           ptys.delete(pty);
           ws.close();
         });
+        ws.on("error", (err) => {
+          console.error(`funtown: /term socket error on ${shortId}: ${err.message}`);
+          ws.close();
+        });
         ws.on("message", (data) => {
           if (exited) return;
           let f: Frame = null;

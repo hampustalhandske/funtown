@@ -3,12 +3,10 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AddressInfo } from "node:net";
-import { execFile } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { promisify } from "node:util";
 import { TownState, type HookEvent } from "./town.ts";
 import type { Town } from "./types.ts";
-import { checkVersion, listAgents, startBackground } from "./agents.ts";
+import { checkVersion, execFileAsync, listAgents, startBackground } from "./agents.ts";
 import { createTerminals, isSize } from "./terminal.ts";
 
 const DEFAULT_DIST = fileURLToPath(new URL("../web/dist/", import.meta.url));
@@ -50,12 +48,10 @@ const TERMINAL_TAB_SCRIPT = `on run argv
   end tell
 end run`;
 
-// Long enough for the user to answer macOS's one-time "control Terminal?" prompt.
-const execFileAsync = promisify(execFile);
 const defaultRun = async (file: string, args: string[]) => {
+  // Long enough for the user to answer macOS's one-time "control Terminal?" prompt.
   await execFileAsync(file, args, { timeout: 60_000 });
 };
-
 
 const MAX_PAGE_BODY = 64 * 1024;
 
@@ -130,17 +126,25 @@ export async function startServer(opts: {
 
   let closed = false;
   let pollTimer: NodeJS.Timeout | undefined;
+  let lastReason = "";
   const poll = async () => {
     let list: Awaited<ReturnType<typeof listAgents>> | undefined;
     try {
       list = await listAgents(claude);
     } catch (err) {
       const reason = (err as Error).message.replace(/\s*\n\s*/g, " ").trim();
-      console.error(`funtown: claude agents --json failed, keeping the last list: ${reason}`);
+      if (reason !== lastReason) {
+        console.error(`funtown: claude agents --json failed, keeping the last list: ${reason}`);
+        lastReason = reason;
+      }
     }
     if (closed) return;
     if (list) {
+      lastReason = "";
       town.sync(list);
+      broadcast();
+    } else {
+      town.expire();
       broadcast();
     }
     pollTimer = setTimeout(() => void poll(), pollMs);

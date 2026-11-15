@@ -4,7 +4,6 @@ import { dirname, join, resolve } from "node:path";
 
 const EVENTS = [
   "SessionStart",
-  "SessionEnd",
   "UserPromptSubmit",
   "PreToolUse",
   "PostToolUse",
