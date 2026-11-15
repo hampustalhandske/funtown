@@ -32,14 +32,14 @@ function CharacterRow({
   return (
     <button type="button" className={`character ${stage}`} data-stage={stage} onClick={() => onSelect(character.id)}>
       <span className="avatar" aria-hidden="true">{avatar}</span>
-      <div>
-        <div>
+      <span className="body">
+        <span className="line">
           <span className="name">{name}</span>
           <span className="stage">{STAGE_LABEL[stage]}</span>
-        </div>
-        {stage === "needs_you" && needs && <div className="activity">waiting for you: {needs}</div>}
-        {stage === "working" && <div className="activity">{activity ?? "thinking"}</div>}
-      </div>
+        </span>
+        {stage === "needs_you" && needs && <span className="activity">waiting for you: {needs}</span>}
+        {stage === "working" && <span className="activity">{activity ?? "thinking"}</span>}
+      </span>
     </button>
   );
 }
@@ -132,6 +132,9 @@ export function App() {
     .flatMap((house) => house.leads)
     .find((l) => l.id === selectedId || l.subagents.some((sub) => sub.id === selectedId));
   const selected = lead && [lead, ...lead.subagents].find((c) => c.id === selectedId);
+  useEffect(() => {
+    if (town && selectedId && !selected) setSelectedId(null);
+  }, [town, selectedId, selected]);
   const waiting =
     town?.houses.flatMap((house) =>
       house.leads.filter((lead) => lead.stage === "needs_you").map((lead) => `${lead.name} (${house.project})`),
