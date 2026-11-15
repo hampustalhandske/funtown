@@ -1,5 +1,9 @@
 import { basename } from "node:path";
+import type { Listed } from "./agents.ts";
 import type { Character, House, Lead, Stage, Town } from "./types.ts";
+
+/** How long hook data waits for its session to appear in `claude agents --json`. */
+const UNLISTED_MS = 10_000;
 
 /** The hook payload fields the reducer reads. */
 export type HookEvent = {
@@ -30,25 +34,37 @@ function notificationNeed(type: string | undefined): string | null {
   return null;
 }
 
-/** Holds every known session and turns hook events into the Town. */
-export class TownState {
-  private houses = new Map<string, House>();
-  private leads = new Map<string, Lead>();
-  private agentCounts = new Map<string, number>();
 
-  /**
-   * Applies one hook event. Returns the id of a lead that just became gone, or null.
-   * Events for an unknown session create its lead.
-   */
-  apply(event: HookEvent): string | null {
+/**
+ * Holds the sessions `claude agents --json` lists and the hook data for them. Only listed
+ * sessions are on the Town; hook data for a session the list doesn't show is kept for
+ * `UNLISTED_MS`, so a session that just started keeps its first events.
+ */
+export class TownState {
+  private leads = new Map<string, Lead>();
+  // listed session id -> its cwd, in list order
+  private listed = new Map<string, string>();
+  // unlisted session id -> when its first hook event arrived
+  private heard = new Map<string, number>();
+  private agentCounts = new Map<string, number>();
+  private readonly claude: Town["claude"];
+
+  /** `claude` is the version check's result, carried on every snapshot. */
+  constructor(claude: Town["claude"]) {
+    this.claude = claude;
+  }
+
+  /** Applies one hook event; an event for an unknown session starts its hook data. */
+  apply(event: HookEvent, now = Date.now()): void {
     const sid = event.session_id;
-    if (!sid || !event.hook_event_name) return null;
-    const lead = this.leads.get(sid) ?? this.addLead(sid, event.cwd ?? "");
+    if (!sid || !event.hook_event_name) return;
+    let lead = this.leads.get(sid);
+    if (!lead) {
+      lead = this.newLead(sid);
+      this.heard.set(sid, now);
+    }
     if (event.funtown?.tty) lead.tty = event.funtown.tty;
     if (event.funtown?.term_program) lead.termProgram = event.funtown.term_program;
-    if (lead.stage === "gone" && event.hook_event_name !== "SessionEnd") {
-      lead.stage = "working";
-    }
 
     const inSubagent = event.agent_id !== undefined;
     switch (event.hook_event_name) {
@@ -90,34 +106,62 @@ export class TownState {
         agent.activity = null;
         break;
       }
-      case "SessionEnd":
-        this.setLead(lead, "gone", null);
-        return sid;
     }
-    return null;
   }
 
-  /** Removes a lead, and its house when it was the last one. */
-  remove(sessionId: string): void {
-    const lead = this.leads.get(sessionId);
-    if (!lead) return;
+  /**
+   * Makes `list` (one good `claude agents --json` result) the sessions on the Town: sets each
+   * one's name, kind, short id and stage, and forgets sessions that left the list and hook data
+   * unlisted for longer than `UNLISTED_MS`.
+   */
+  sync(list: Listed[], now = Date.now()): void {
+    const next = new Map<string, string>();
+    for (const s of list) {
+      const lead = this.leads.get(s.sessionId) ?? this.newLead(s.sessionId);
+      this.heard.delete(s.sessionId);
+      lead.name = s.name || lead.name || `lead-${this.nextNumber(`${s.cwd}\0lead`)}`;
+      lead.kind = s.kind === "interactive" ? "terminal" : "background";
+      lead.shortId = lead.kind === "background" ? (s.id ?? null) : null;
+      if (s.status === "busy") {
+        lead.stage = "working";
+        delete lead.needs;
+      } else if (s.status === "waiting") {
+        this.setLead(lead, "needs_you", null, s.waitingFor);
+      } else if (s.status === "idle") {
+        this.setLead(lead, "needs_you", null, "turn ended");
+      }
+      next.set(s.sessionId, s.cwd);
+    }
+    for (const sid of this.listed.keys()) if (!next.has(sid)) this.forget(sid);
+    for (const [sid, at] of this.heard) if (now - at > UNLISTED_MS) this.forget(sid);
+    this.listed = next;
+  }
+
+  /** The listed lead with this session id, or undefined. */
+  lead(sessionId: string): Lead | undefined {
+    return this.listed.has(sessionId) ? this.leads.get(sessionId) : undefined;
+  }
+
+  /** The listed sessions, one house per cwd in list order. */
+  snapshot(): Town {
+    const houses = new Map<string, House>();
+    for (const [sid, cwd] of this.listed) {
+      let house = houses.get(cwd);
+      if (!house) {
+        house = { project: basename(cwd) || cwd, cwd, leads: [] };
+        houses.set(cwd, house);
+      }
+      house.leads.push(this.leads.get(sid)!);
+    }
+    return { houses: [...houses.values()], claude: this.claude };
+  }
+
+  private forget(sessionId: string): void {
     this.leads.delete(sessionId);
+    this.heard.delete(sessionId);
     for (const key of this.agentCounts.keys()) {
       if (key.startsWith(`${sessionId}\0`)) this.agentCounts.delete(key);
     }
-    for (const [cwd, house] of this.houses) {
-      house.leads = house.leads.filter((l) => l !== lead);
-      if (house.leads.length === 0) this.houses.delete(cwd);
-    }
-  }
-
-  /** The lead with this session id, or undefined. */
-  lead(sessionId: string): Lead | undefined {
-    return this.leads.get(sessionId);
-  }
-
-  snapshot(): Town {
-    return { houses: [...this.houses.values()] };
   }
 
   private setLead(lead: Lead, stage: Stage, activity: string | null, needs?: string): void {
@@ -127,23 +171,19 @@ export class TownState {
     else delete lead.needs;
   }
 
-  private addLead(sid: string, cwd: string): Lead {
-    let house = this.houses.get(cwd);
-    if (!house) {
-      house = { project: basename(cwd) || cwd, cwd, leads: [] };
-      this.houses.set(cwd, house);
-    }
+  private newLead(sid: string): Lead {
     const lead: Lead = {
       id: sid,
-      name: `lead-${this.nextNumber(`${cwd}\0lead`)}`,
+      name: "",
       stage: "working",
       activity: null,
       step: null,
       tty: null,
       termProgram: null,
       subagents: [],
+      kind: "terminal",
+      shortId: null,
     };
-    house.leads.push(lead);
     this.leads.set(sid, lead);
     return lead;
   }

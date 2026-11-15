@@ -7,6 +7,17 @@ export type Character = {
   step: string | null;
   needs?: string;
 };
-export type Lead = Character & { tty: string | null; termProgram: string | null; subagents: Character[] };
+export type Lead = Character & {
+  tty: string | null;
+  termProgram: string | null;
+  subagents: Character[];
+  kind: "terminal" | "background";
+  /** The id `claude attach` takes; null for a terminal session. */
+  shortId: string | null;
+};
 export type House = { project: string; cwd: string; leads: Lead[] };
-export type Town = { houses: House[] };
+export type Town = {
+  houses: House[];
+  /** The installed Claude Code's version, and one line per feature that won't work with it. */
+  claude: { version: string | null; problems: string[] };
+};
