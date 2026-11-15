@@ -10,15 +10,17 @@ Parts
 - `hooks/install.ts`: adds and removes Funtown's entries in `~/.claude/settings.json`;
   records what it created in `~/.funtown/installed.json`.
 - `server/`: HTTP server on 127.0.0.1:4777. `town.ts` turns events into the Town state,
-  `app.ts` serves `/events`, `/stream` (SSE) and the built page.
-- `web/`: React page (Vite), emoji houses and characters.
+  `app.ts` serves `/events`, `/stream` (SSE), `/jump` and the built page.
+- `web/`: React page (Vite), emoji houses and characters, a details panel per character.
 - `tests/`: Vitest at the seams, Playwright in `tests/e2e/`.
 
 Contracts (source of truth: docs/MILESTONE.md of the milestone that set them)
 - Hook event: POST `/events`, Claude Code's hook JSON plus `funtown: { tty, term_program, at }`.
 - Town state: `server/types.ts`, streamed as SSE `state` events; `web/` and `tests/`
   import the types from there.
-- `startServer({ port, goneAfterMs?, distDir? })` in `server/app.ts`: entry for tests.
+- `POST /jump { lead }` from the page's own Origin: focuses the lead's terminal (m3).
+- `startServer({ port, goneAfterMs?, distDir?, run? })` in `server/app.ts`: entry for tests;
+  `run` replaces execFile so tests never run osascript or open.
 - Env for tests: `FUNTOWN_PORT`, `FUNTOWN_URL`, `FUNTOWN_LOG`, `FUNTOWN_STATE`, `--settings`.
 
 Commands
@@ -29,6 +31,7 @@ Commands
 Decisions that bind
 - Nothing leaves the machine; listen on 127.0.0.1 only; `Host` must be 127.0.0.1 or localhost.
 - `POST /events` refuses any request with an `Origin` header; the hook never sends one.
+- `POST /jump` needs the server's own Origin; the tty reaches osascript only as an argument.
 - All code our own; MIT tools are reference only.
 - Tests and fixtures never use real project names, paths or the real home folder.
 - Personal files stay gitignored: docs/ideas.md, .claude/settings.json, .claude/never-push.
