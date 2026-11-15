@@ -6,7 +6,7 @@ Charter: docs/CHARTER.md. Current state: docs/HANDOFF.md. Parked ideas: docs/PAR
 
 Parts
 - `hooks/funtown-hook.ts`: command hook Claude Code runs on each event; adds the session's
-  tty and POSTs to the server; 900 ms deadline, always exits 0.
+  tty and POSTs to the server; 800 ms deadline, always exits 0.
 - `hooks/install.ts`: adds and removes Funtown's entries in `~/.claude/settings.json`;
   records what it created in `~/.funtown/installed.json`.
 - `server/`: HTTP server on 127.0.0.1:4777. `town.ts` turns events into the Town state,

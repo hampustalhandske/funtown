@@ -6,12 +6,12 @@ import { dirname, join } from "node:path";
 const url = process.env.FUNTOWN_URL ?? "http://127.0.0.1:4777";
 const logPath = process.env.FUNTOWN_LOG ?? join(homedir(), ".funtown", "hook.log");
 
-const deadline = Date.now() + 900;
+const deadline = Date.now() + 800;
 
 /** Milliseconds left before the overall deadline; throws once it has passed. */
 function remaining(): number {
   const left = deadline - Date.now();
-  if (left <= 0) throw new Error("deadline exceeded (900 ms)");
+  if (left <= 0) throw new Error("deadline exceeded (800 ms)");
   return left;
 }
 
