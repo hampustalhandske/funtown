@@ -1,74 +1,75 @@
-# Milestone 3: panel-jump — handoff
+# Milestone 4: rebuild — handoff
 
-Verdict: ship. Every review finding that holds is applied; tests are green.
+Verdict: ship once #5 (hook deadline 800 ms) is merged; until then one hook timing test
+fails about one run in three on this branch. Every review finding I agreed with is applied.
 
 ## Review in five minutes
 
 **Start here**
-1. `server/app.ts:25-48` and the `/jump` handler: the Terminal tab script, the 60 s run
-   timeout, the same-origin check, and the command chosen per terminal.
-2. `web/src/App.tsx`: `Panel` and the selection in `App` (lead lookup, cleared when the
-   character leaves the Town).
-3. `tests/jump.test.ts`: command per terminal, Origin refusals, 404/409/500.
+1. `server/rebuild.ts:75` `rebuild`: which sessions count as live, what is skipped and
+   logged, and the events it feeds the reducer.
+2. `server/app.ts:95`: the rebuild runs before the server listens, only with `claudeDir`.
+3. `tests/rebuild.test.ts`: fixture Claude folders and a fake `ps`.
 
 **Verify**
 
     npx eslint . && npx vitest run && npx playwright test
 
 **Needs you**
-- Restart `npm start` (it builds once; it doesn't reload), then in a real Terminal session:
-  minimize its window, click its lead in Funtown, press "Go to terminal". The window should
-  come back with that tab in front. Try once with the window visible and once behind others.
+- Merge #5 first (the hook deadline). That fixes the flaky `hook_exits_0_within_1s...` test.
+- With two or more `claude` sessions open, restart `npm start` (stop the old one first). Each
+  should show at its house within 5 s with the right stage. Then press "Go to terminal" on a
+  rebuilt waiting session in macOS Terminal: its tab should come to the front.
 
 ## Summary
 
-- Charter item 4: clicking any character opens a details panel with its stage, its step
-  (the last tool call, kept after it finishes), why it's waiting, and a lead's subagents.
-  It follows live updates and closes with ✕, Escape, or when the character is removed.
-- Charter item 5: "Go to terminal" selects the session's exact tab in macOS Terminal by tty;
-  iTerm, VS Code, Warp and Ghostty are brought to the front; other terminals get a plain
-  message.
+- Charter constraint "on start, rebuild already-running sessions": Funtown now shows every
+  live session on start, with its stage (idle → "needs you: turn ended", busy → working), its
+  last step, its subagents, and the tty and terminal app it needs for "Go to terminal".
+- A run against the real Claude folder brought back all 5 live sessions, each with its
+  tty, terminal app, step and subagents.
 
 ## Decisions
 
-- `step` added to `Character` in `server/types.ts`: `activity` is cleared between tools, so a
-  waiting session would otherwise show no step.
-- `/jump` accepts only `Origin` `http://127.0.0.1:<port>` or `http://localhost:<port>`; the tty
-  must match `ttys<N>` and goes to osascript as an argument, never in the script text.
-- A subagent's panel jumps to its lead's tab; jumping to the subagent itself stays parked.
-- The tab script skips windows whose tabs can't be read (that error broke jumps to minimized
-  windows, reproduced by hand), restores a minimized window, and only activates Terminal
-  when no tab matches, instead of failing.
-- Run timeout is 60 s so the one-time macOS "control Terminal?" prompt can be answered.
-- Cursor and other VS Code forks set `TERM_PROGRAM=vscode`, so the button raises VS Code;
-  not needed now, parked.
-- Every review finding that holds is applied (R1–R14 in docs/MILESTONE.md), Nice-to-have
-  and small trims included, at the user's call, so the next review doesn't find them again.
-- `/jump` caps its body at 64 KB (413); `/events` has no cap, because an event for a large
-  Write can be several MB and the plan leaves `/events` unchanged.
-- The quality reviewer's "error handling catches too much" was dropped: only `await run()`
-  is inside the try.
+- Live sessions come from `~/.claude/sessions/<pid>.json` (pid alive), and tty and
+  `TERM_PROGRAM` from `ps -wwE`. The charter names only hooks and `~/.claude/projects/`.
+  The user approved both sources; the charter wording still needs an edit and
+  `workflow approve`.
+- The rebuild feeds `TownState.apply` the events a hook would send, so `town.ts` stays the
+  one place that builds characters.
+- A session file that can't be parsed, a pid that exits before `ps`, or a broken subagent
+  meta skips just that one with a stderr line, so Funtown still starts (user: "fix the stuff
+  you agree with").
+- Tests use a fixed dead pid (999999) instead of spawning a process, per "Must not run any
+  command in a test".
+- Not applied, with reasons:
+  - reading sessions in parallel with one `ps` call: startup was 1 s with 5 sessions;
+  - reading transcripts from the end: the largest here is 65 MB and reads fine;
+  - catching a reused pid (a session killed with -9, its pid given to another process): no
+    reliable way yet to tell the process is Claude.
 
 ## Remaining work
 
-- None from this milestone's review.
-- Next: m4-rebuild (on start, rebuild already-running sessions from the transcripts in
-  `~/.claude/projects/`).
-- Charter wording from m1 is still open (needs `workflow approve` after editing): the
-  "done" stage for subagents, "HTTP hooks" vs the command hook, and no check for
-  "rebuild running sessions on start".
+- A ghost lead can appear when a killed session's pid is reused, and it never leaves.
+- Startup reads whole transcripts one after another; watch it if transcripts grow past
+  ~100 MB or many sessions run at once.
+- Charter wording: add `~/.claude/sessions/` and `ps` as sources, plus m1's open items (the
+  subagent "done" stage, "HTTP hooks" vs the command hook, a check for the rebuild). Then
+  run `workflow approve`.
+- Next: the charter's 5-day real-use check. Every v1 item now has a milestone.
 
 ## Notes
 
-- Tests never run osascript or open: `startServer({ run })` records the commands.
-- The panel e2e test serves the stream with `retry: 50` and a mutable state, so each
-  reconnect gets the next frame.
+- `startServer` without `claudeDir` never touches a Claude folder. Playwright's server
+  gets `FUNTOWN_CLAUDE_DIR` set to a path that doesn't exist, so e2e sees an empty Town.
 - `npm start` fails with EADDRINUSE when an older Funtown still holds 4777; stop it first.
-- Test/prod ratio is above the 0.5–0.7 band (repo 0.93), mostly from m2's fix tests.
+- A rebuilt lead with many finished subagents lists all of them, as a live lead does.
+- The parked-ideas commit (de27da0) is on this branch and on #5; whichever merges first
+  carries it.
 
 ## Numbers
 
-    Branch m3-panel-jump vs ea17400
-      Production: +212 -18, net 194 of budget 400
-      Tests:      +278 -16, net 262 (test/prod 1.35 on this branch)
-      Repo:       854 production lines, 804 test lines (test/prod 0.94; band 0.5-0.7)
+    Branch m4-rebuild vs de27da0
+      Production: +170 -3, net 167 of budget 400
+      Tests:      +223 -7, net 216 (test/prod 1.29 on this branch)
+      Repo:       1,021 production lines, 1,020 test lines (test/prod 1.00; band 0.5-0.7)
