@@ -16,8 +16,9 @@ one view and jumps to its terminal in one click.
 2. A session waiting on you (permission prompt, question, idle after finishing) is clearly
    marked "needs you" and stands out from the rest.
 3. Each character shows its stage at a glance (working: a tool or turn is running; needs you:
-   a permission prompt, a question, or the turn ended; gone: the session exited, removed
-   after 10 min) and the shell command or tool it is running now; subagents appear next to
+   a permission prompt, a question, or the turn ended; done: a subagent finished its task;
+   gone: the session exited or was killed, removed after 10 min) and the shell command or
+   tool it is running now; subagents appear next to
    the session that started them, so you see who is working for whom.
 4. Clicking a character opens a panel with its current step and its subagents with status.
 5. A button in that panel focuses that session's exact tab in macOS Terminal; other terminal
@@ -42,6 +43,8 @@ one view and jumps to its terminal in one click.
 | Needs you | A session hitting a permission prompt or question shows "needs you" within 5 s; 10 real waits, 0 missed. |
 | Details | Clicking a character shows its current step (last tool call or shell command) and its subagents with status. |
 | Jump | One click in the panel focuses that session's tab in macOS Terminal. |
+| Rebuild | Restarted while sessions run, Funtown shows each at its house with its stage within 5 s. |
+| Gone | A session that exits or is killed (`kill -9`) shows "gone" within 5 s. |
 | Real use | For 5 working days you answer waiting sessions from Funtown without hunting through terminal tabs. |
 
 ## Constraints
@@ -49,11 +52,13 @@ one view and jumps to its terminal in one click.
 - macOS only, on your own Mac.
 - A local server plus a page in the browser, built as a web UI that can later be wrapped as a
   native app and shipped as a .dmg.
-- Data comes from Claude Code's own sources: hooks and transcript files in
-  `~/.claude/projects/`. Not the status line: it is one command for the whole Mac and would
-  replace your own.
+- Data comes from Claude Code's own sources: hooks, the transcript files in
+  `~/.claude/projects/`, the session files in `~/.claude/sessions/`, and `ps` for each
+  session's terminal and start time. Not the status line: it is one command for the whole
+  Mac and would replace your own.
 - Hooks POST events to a localhost server that pushes live updates to the page; on start,
-  Funtown rebuilds already-running sessions from the transcripts in `~/.claude/projects/`.
+  Funtown rebuilds already-running sessions from the session files, the transcripts and
+  `ps`, and every 5 s it marks sessions that stopped without a hook as gone.
 - Nothing leaves the machine; transcripts hold private project content.
 - All code is our own. MIT-licensed tools (stargx/claude-code-dashboard, gavraz/recon,
   mercurialsolo/claudectl) are reference only; no code is copied.
@@ -75,8 +80,9 @@ simplify, split the milestone or raise the budget. To raise it for one milestone
 ## Open questions
 
 - Stack (language, server, UI framework, ready for a later native wrapper): blocks milestone 1.
-- Hooks: user-level HTTP hooks in `~/.claude/settings.json`; `funtown install`/`uninstall`
-  add and remove only Funtown's own entries.
+- Hooks: user-level command hooks in `~/.claude/settings.json` (a command hook can read the
+  session's tty; an HTTP hook can't); `funtown install`/`uninstall` add and remove only
+  Funtown's own entries.
 - What identifies a session's terminal (tty, TERM_PROGRAM), recorded on SessionStart; test it
   before milestone 1 counts on it: blocks items 1 and 5.
 - Visual style of the town and characters (pixel art, emoji, other): blocks item 1's look.
