@@ -39,7 +39,8 @@ try {
   const event = JSON.parse(readFileSync(0, "utf8"));
   event.funtown = { at: Date.now() };
   const { status, text } = await post(JSON.stringify(event));
-  if (status === 200) process.stdout.write(text);
+  // stdout to a pipe is async, so wait for the write or an exit cuts the output at 64 KB.
+  if (status === 200) await new Promise((done) => process.stdout.write(text, done));
   else if (status !== 204) log(`POST ${url}/hold returned ${status}`);
 } catch (err) {
   log(String(err));
