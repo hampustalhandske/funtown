@@ -96,8 +96,9 @@ export async function startServer(opts: {
   const dist = normalize(join(opts.distDir ?? DEFAULT_DIST, "/"));
   const town = new TownState();
   const exec = opts.exec ?? defaultExec;
-  const seenLive = new Set<string>();
-  if (opts.claudeDir) for (const id of await rebuild(town, opts.claudeDir, exec)) seenLive.add(id);
+  // session id -> the pid it was last seen live with
+  const seenLive = new Map<string, number>();
+  if (opts.claudeDir) for (const [id, pid] of await rebuild(town, opts.claudeDir, exec)) seenLive.set(id, pid);
   const clients = new Set<ServerResponse>();
   const timers = new Map<string, NodeJS.Timeout>();
   let port = 0;
@@ -123,21 +124,22 @@ export async function startServer(opts: {
   let closed = false;
   let sweepTimer: NodeJS.Timeout | undefined;
   const sweep = async (claudeDir: string) => {
-    const live = new Set<string>();
+    const live = new Map<string, number>();
     const unknown = new Set<string>();
-    for (const s of await readSessions(claudeDir)) {
+    const { sessions, unreadable } = await readSessions(claudeDir);
+    for (const s of sessions) {
       try {
-        if (await liveCheck(s, exec)) live.add(s.sessionId);
+        if (await liveCheck(s, exec)) live.set(s.sessionId, s.pid);
       } catch (err) {
         warn(`pid ${s.pid}`, err);
         unknown.add(s.sessionId);
       }
     }
     if (closed) return;
-    for (const id of live) seenLive.add(id);
+    for (const [id, pid] of live) seenLive.set(id, pid);
     let changed = false;
-    for (const id of seenLive) {
-      if (live.has(id) || unknown.has(id)) continue;
+    for (const [id, pid] of seenLive) {
+      if (live.has(id) || unknown.has(id) || unreadable.has(pid)) continue;
       seenLive.delete(id);
       if (!town.lead(id) || town.lead(id)?.stage === "gone") continue;
       const gone = town.apply({ session_id: id, hook_event_name: "SessionEnd" });

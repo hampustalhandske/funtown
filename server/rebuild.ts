@@ -65,17 +65,22 @@ function isAlive(pid: number): boolean {
   }
 }
 
-/** The session files under `claudeDir`; one that can't be read or parsed is skipped with a stderr line. */
-export async function readSessions(claudeDir: string): Promise<Session[]> {
+/**
+ * The session files under `claudeDir`, and the pids (from the file names) of those that can't
+ * be read or parsed; each of those is skipped with a stderr line.
+ */
+export async function readSessions(claudeDir: string): Promise<{ sessions: Session[]; unreadable: Set<number> }> {
   const sessions: Session[] = [];
+  const unreadable = new Set<number>();
   for (const name of (await list(join(claudeDir, "sessions"))).filter((n) => n.endsWith(".json"))) {
     try {
       sessions.push(JSON.parse(await readFile(join(claudeDir, "sessions", name), "utf8")) as Session);
     } catch (err) {
       warn(`session file ${name}`, err);
+      unreadable.add(Number.parseInt(name, 10));
     }
   }
-  return sessions;
+  return { sessions, unreadable };
 }
 
 /**
@@ -98,14 +103,14 @@ export async function liveCheck(
 /**
  * Applies to `town` the events that bring it to the state of the sessions already running
  * under `claudeDir`: live ones in `startedAt` order, with their step, subagents, tty and
- * terminal program. Returns the ids of those sessions. A missing `sessions/` folder changes
+ * terminal program. Returns those sessions' pids by session id. A missing `sessions/` folder changes
  * nothing. Skipped, each with one line on stderr: a session file that can't be read or parsed,
  * a session whose `ps` call fails, and a subagent whose `.meta.json` can't be read or parsed.
  * A subagent without a transcript has no step.
  */
-export async function rebuild(town: TownState, claudeDir: string, exec: Exec): Promise<string[]> {
+export async function rebuild(town: TownState, claudeDir: string, exec: Exec): Promise<Map<string, number>> {
   const sessions: (Session & { tty: string | null; termProgram: string | null })[] = [];
-  for (const s of await readSessions(claudeDir)) {
+  for (const s of (await readSessions(claudeDir)).sessions) {
     try {
       const live = await liveCheck(s, exec);
       if (live) sessions.push({ ...s, tty: live.tty, termProgram: live.termProgram });
@@ -162,7 +167,7 @@ export async function rebuild(town: TownState, claudeDir: string, exec: Exec): P
     }
     if (s.status === "idle") town.apply({ ...base, hook_event_name: "Stop" });
   }
-  return sessions.map((s) => s.sessionId);
+  return new Map(sessions.map((s) => [s.sessionId, s.pid]));
 }
 
 /** The tty (6th token, after lstart) and TERM_PROGRAM from a `ps -o lstart=,tty=,command=` line; null for each that is absent. */

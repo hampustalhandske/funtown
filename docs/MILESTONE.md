@@ -19,7 +19,9 @@ Mode: away: open the PR after review and continue with the queue (empty)
    `gone` within one `sweepMs` after its session file disappears, its pid dies, or its pid's
    start time stops matching; it is then removed after `goneAfterMs`, as after SessionEnd.
 4. A sweep never marks gone: a lead it has not yet seen live (its hook arrived before its
-   session file), or a lead whose `ps` call failed in that sweep.
+   session file), a lead whose `ps` call failed in that sweep, or a lead whose session file
+   (`sessions/<pid>.json` for the pid it was last seen live with) exists but can't be read or
+   parsed in that sweep (Claude may be rewriting it).
 5. A hook event for a lead the sweep marked gone brings it back, as after SessionEnd today.
 6. Without `claudeDir`, no sweep runs and nothing reads a Claude folder.
 7. By hand (you): with Funtown running, `kill -9` a `claude` session's pid. Its character
