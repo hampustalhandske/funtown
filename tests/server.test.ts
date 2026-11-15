@@ -1,18 +1,40 @@
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { request } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { leadsOf, post, townWhere } from "./helpers.ts";
 
 type Server = { url: string; close(): Promise<void> };
 const open: Server[] = [];
 
-async function start(goneAfterMs?: number): Promise<Server> {
+async function start(goneAfterMs?: number, distDir?: string): Promise<Server> {
   const { startServer } = await import("../server/app.ts");
-  const s = await startServer({ port: 0, goneAfterMs });
+  const s = await startServer({ port: 0, goneAfterMs, distDir });
   open.push(s);
   return s;
 }
+const tempDirs: string[] = [];
+const tempDir = (): string => {
+  const d = mkdtempSync(join(tmpdir(), "funtown-dist-"));
+  tempDirs.push(d);
+  return d;
+};
 afterEach(async () => {
   await Promise.all(open.splice(0).map((s) => s.close()));
+  for (const d of tempDirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
+
+/** GET with an explicit Host header (fetch forbids overriding it). */
+const getWithHost = (url: string, path: string, host: string): Promise<number> =>
+  new Promise((resolve, reject) => {
+    const req = request(`${url}${path}`, { headers: { host } }, (res) => {
+      res.destroy();
+      resolve(res.statusCode!);
+    });
+    req.on("error", reject);
+    req.end();
+  });
 
 const ev = (name: string, extra: Record<string, unknown> = {}, session = "s1", cwd = "/work/demo-app") => ({
   hook_event_name: name,
@@ -106,5 +128,62 @@ describe("POST /events -> GET /stream", () => {
     await post(url, ev("SessionStart", {}, "s2"));
     const town = await townWhere(url, (t) => leadsOf(t).length >= 1);
     expect(leadsOf(town).map((l) => l.id)).toEqual(["s2"]);
+  });
+
+  it("a_lead_that_returns_after_session_end_is_not_removed_by_the_old_timer", async () => {
+    const { url } = await start(300);
+    await post(url, ev("SessionStart"));
+    await post(url, ev("SessionEnd"));
+    await townWhere(url, (t) => leadsOf(t).some((l) => l.stage === "gone"));
+    await post(url, ev("UserPromptSubmit", { prompt: "back" }));
+    await new Promise((r) => setTimeout(r, 700)); // well past goneAfterMs
+    const town = await townWhere(url, () => true);
+    expect(leadsOf(town).map((l) => l.id)).toEqual(["s1"]);
+  });
+
+  it("a_sessionless_event_does_not_cancel_the_pending_removal_of_a_ended_session", async () => {
+    const { url } = await start(300);
+    await post(url, ev("SessionStart"));
+    await post(url, ev("SessionEnd"));
+    await townWhere(url, (t) => leadsOf(t).some((l) => l.stage === "gone"));
+    await post(url, { session_id: "s1" });
+    const removed = await townWhere(url, (t) => leadsOf(t).length === 0, 2000);
+    expect(leadsOf(removed)).toEqual([]);
+  });
+
+  it("a_foreign_host_header_gets_403_while_the_real_host_and_localhost_are_served", async () => {
+    const { url } = await start();
+    const port = new URL(url).port;
+    expect(await getWithHost(url, "/stream", "evil.example")).toBe(403);
+    expect(await getWithHost(url, "/stream", `127.0.0.1:${port}`)).toBe(200);
+    expect(await getWithHost(url, "/stream", `localhost:${port}`)).toBe(200);
+  });
+
+  it("an_event_with_an_origin_header_gets_403_and_does_not_change_the_town", async () => {
+    const { url } = await start();
+    expect(await post(url, ev("SessionStart", {}, "evil"), { origin: "http://evil.example" })).toBe(403);
+    expect(await post(url, ev("SessionStart", {}, "s2"))).toBe(204);
+    const town = await townWhere(url, (t) => leadsOf(t).length >= 1);
+    expect(leadsOf(town).map((l) => l.id)).toEqual(["s2"]);
+  });
+});
+
+describe("GET / without a built page", () => {
+  it("answers_503_with_the_build_hint_not_a_bare_404", async () => {
+    const { url } = await start(undefined, tempDir());
+    const res = await fetch(`${url}/`);
+    expect(res.status).toBe(503);
+    expect(res.headers.get("content-type")).toMatch(/^text\/plain/);
+    expect(await res.text()).toBe("Funtown's page isn't built yet. Run: npm run build");
+  });
+});
+
+describe("GET / with an unreadable index.html", () => {
+  it("answers_500_not_the_503_build_hint_when_the_read_fails_for_a_reason_other_than_missing", async () => {
+    const dist = tempDir();
+    mkdirSync(join(dist, "index.html"));
+    const { url } = await start(undefined, dist);
+    const res = await fetch(`${url}/`);
+    expect(res.status).toBe(500);
   });
 });

@@ -54,3 +54,21 @@ test("needs_you_lead_is_flagged_and_its_subagent_is_shown_with_its_command", asy
   await expect(other.getByText("Explore-1")).toHaveCount(0);
   await expect(other.getByText(/needs you/i)).toHaveCount(0);
 });
+
+test("loading_the_page_logs_no_failed_requests_such_as_a_favicon_404", async ({ page }) => {
+  const problems: string[] = [];
+  page.on("console", (m) => m.type() === "error" && problems.push(m.text()));
+  page.on("response", (r) => r.status() >= 400 && problems.push(`${r.status()} ${r.url()}`));
+  await page.route("**/stream", (route) =>
+    route.fulfill({
+      status: 200,
+      headers: { "content-type": "text/event-stream", "cache-control": "no-cache" },
+      body: `event: state\ndata: ${JSON.stringify({ houses: [] })}\n\n`,
+    }),
+  );
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+  // Headless Chromium never requests /favicon.ico, so check that the page declares its own icon.
+  await expect(page.locator('link[rel="icon"]')).toHaveCount(1);
+  expect(problems).toEqual([]);
+});

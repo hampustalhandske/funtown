@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Character, House, Lead, Stage, Town } from "./town.ts";
+import type { Character, House, Lead, Stage, Town } from "../../server/types.ts";
 
 const STAGE_LABEL: Record<Stage, string> = {
   working: "🟢 working",
@@ -8,19 +8,15 @@ const STAGE_LABEL: Record<Stage, string> = {
   gone: "⚫ gone",
 };
 
-/** Subscribes to the server's Town stream; gives the latest Town (null before the first) and whether the stream is open. */
-function useTown(): { town: Town | null; connected: boolean } {
+/** Subscribes to the server's Town stream; gives the latest Town, or null before the first. */
+function useTown(): Town | null {
   const [town, setTown] = useState<Town | null>(null);
-  const [connected, setConnected] = useState(false);
   useEffect(() => {
     const source = new EventSource("/stream");
     source.addEventListener("state", (event) => setTown(JSON.parse(event.data) as Town));
-    source.onopen = () => setConnected(true);
-    // EventSource reconnects on its own; this only reflects the outage on the page.
-    source.onerror = () => setConnected(false);
     return () => source.close();
   }, []);
-  return { town, connected };
+  return town;
 }
 
 function CharacterRow({ character, avatar }: { character: Character; avatar: string }) {
@@ -73,7 +69,7 @@ function HouseCard({ house }: { house: House }) {
 
 /** The town page: one house per project, its leads and their subagents, with a banner when any lead needs you. */
 export function App() {
-  const { town, connected } = useTown();
+  const town = useTown();
   const waiting =
     town?.houses.flatMap((house) =>
       house.leads.filter((lead) => lead.stage === "needs_you").map((lead) => `${lead.name} (${house.project})`),
@@ -82,7 +78,6 @@ export function App() {
     <>
       <header>
         <h1>Funtown</h1>
-        <span className="connection">{connected ? "live" : "connecting to Funtown…"}</span>
       </header>
       {waiting.length > 0 && (
         <div className="alert" role="alert">

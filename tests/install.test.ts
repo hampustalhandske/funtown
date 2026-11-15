@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expect, it } from "vitest";
@@ -86,4 +86,19 @@ it("uninstall_keeps_the_users_own_empty_hooks_object", () => {
   const s = setup(start);
   s.run("install");
   expect(s.run("uninstall")).toEqual(start);
+});
+
+it("a_misspelled_settings_flag_exits_non_zero_and_writes_no_file", () => {
+  const root = mkdtempSync(join(tmpdir(), "funtown-args-"));
+  const home = join(root, "home");
+  const target = join(root, "settings.json");
+  mkdirSync(home);
+  const r = spawnSync("node", [INSTALL, "install", "--setings", target], {
+    encoding: "utf8",
+    env: { ...process.env, HOME: home, USERPROFILE: home, FUNTOWN_STATE: join(root, "installed.json") },
+  });
+  expect(r.status).not.toBe(0);
+  expect(readdirSync(root).sort()).toEqual(["home"]);
+  expect(readdirSync(home)).toEqual([]);
+  rmSync(root, { recursive: true, force: true });
 });

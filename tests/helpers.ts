@@ -1,15 +1,12 @@
-export type Stage = "working" | "needs_you" | "done" | "gone";
-export type Character = { id: string; name: string; stage: Stage; activity: string | null; needs?: string };
-export type Lead = Character & { tty: string | null; termProgram: string | null; subagents: Character[] };
-export type Town = { houses: { project: string; cwd: string; leads: Lead[] }[] };
+import type { Town } from "../server/types.ts";
 
 export type Json = Record<string, unknown>;
 
 /** Posts one hook event to a running server and returns the HTTP status. */
-export async function post(url: string, event: Json): Promise<number> {
+export async function post(url: string, event: Json, headers: Record<string, string> = {}): Promise<number> {
   const res = await fetch(`${url}/events`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(event),
   });
   return res.status;

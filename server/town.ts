@@ -100,6 +100,9 @@ export class TownState {
     const lead = this.leads.get(sessionId);
     if (!lead) return;
     this.leads.delete(sessionId);
+    for (const key of this.agentCounts.keys()) {
+      if (key.startsWith(`${sessionId}\0`)) this.agentCounts.delete(key);
+    }
     for (const [cwd, house] of this.houses) {
       house.leads = house.leads.filter((l) => l !== lead);
       if (house.leads.length === 0) this.houses.delete(cwd);
