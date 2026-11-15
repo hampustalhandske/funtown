@@ -83,7 +83,7 @@ test("the_page_sends_the_servers_token_with_jump", async ({ page }) => {
 
 test("a_failed_version_check_shows_every_problem_line_in_a_banner", async ({ page }) => {
   const problems = ["Background sessions won't work", "Terminal room won't work"];
-  const state = { claude: { version: "2.1.300", problems }, houses: [] };
+  const state = { claude: { version: "2.1.300", problems }, houses: [], cards: [] };
   await page.route("**/stream", (r) =>
     r.fulfill({ status: 200, headers: { "content-type": "text/event-stream" }, body: `event: state\ndata: ${JSON.stringify(state)}\n\n` }),
   );

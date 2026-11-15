@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const town = {
   claude: { version: "2.1.325", problems: [] },
+  cards: [],
   houses: [
     {
       project: "demo-app",
@@ -64,7 +65,7 @@ test("loading_the_page_logs_no_failed_requests_such_as_a_favicon_404", async ({ 
     route.fulfill({
       status: 200,
       headers: { "content-type": "text/event-stream", "cache-control": "no-cache" },
-      body: `event: state\ndata: ${JSON.stringify({ claude: { version: "2.1.325", problems: [] }, houses: [] })}\n\n`,
+      body: `event: state\ndata: ${JSON.stringify({ claude: { version: "2.1.325", problems: [] }, houses: [], cards: [] })}\n\n`,
     }),
   );
   await page.goto("/");

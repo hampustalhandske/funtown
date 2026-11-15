@@ -69,7 +69,6 @@ test("a_question_card_lists_every_question_and_option_and_send_posts_labels_or_t
   await under.getByRole("button", { name: "Send" }).click();
   await expect.poll(() => answers).toEqual([{ card: "q1", decision: "allow", answers: { "Which db?": "Postgres", "Which extras?": "Alpha, Beta" } }]);
 
-  await under.getByLabel("Postgres").uncheck();
   await under.getByRole("textbox", { name: /other/i }).first().fill("MySQL");
   await under.getByRole("button", { name: "Send" }).click();
   await expect.poll(() => answers.length).toBe(2);
