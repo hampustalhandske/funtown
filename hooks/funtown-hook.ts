@@ -43,7 +43,7 @@ function psRow(pid: number): { tty: string | null; ppid: number } | null {
 function findTty(): string | null {
   let pid = process.ppid;
   for (let depth = 0; depth < 4 && pid > 1; depth++) {
-    remaining();
+    if (deadline - Date.now() <= 0) return null;
     const row = psRow(pid);
     if (!row) return null;
     if (row.tty) return row.tty;

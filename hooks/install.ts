@@ -46,12 +46,13 @@ function strip(settings: Settings, created?: InstallRecord): void {
   if (created?.createdHooksKey && Object.keys(hooks).length === 0) delete settings.hooks;
 }
 
-const [action, flag, custom] = process.argv.slice(2);
-if (action !== "install" && action !== "uninstall") {
-  throw new Error("usage: install.ts install|uninstall [--settings <path>]");
+const [action, flag, custom, ...extra] = process.argv.slice(2);
+const usage = "usage: install.ts install|uninstall [--settings <path>]";
+if (action !== "install" && action !== "uninstall") throw new Error(usage);
+if (flag !== undefined && (flag !== "--settings" || !custom || extra.length > 0)) {
+  throw new Error(usage);
 }
-const path = flag === "--settings" ? custom : join(homedir(), ".claude", "settings.json");
-if (!path) throw new Error("--settings needs a path");
+const path = custom ?? join(homedir(), ".claude", "settings.json");
 
 const statePath = process.env.FUNTOWN_STATE ?? join(homedir(), ".funtown", "installed.json");
 const state: Partial<Record<string, InstallRecord>> = existsSync(statePath)

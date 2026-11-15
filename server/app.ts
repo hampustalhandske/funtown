@@ -31,14 +31,22 @@ export async function startServer(opts: {
   const town = new TownState();
   const clients = new Set<ServerResponse>();
   const timers = new Map<string, NodeJS.Timeout>();
+  let port = 0;
 
+  const stateFrame = () => `event: state\ndata: ${JSON.stringify(town.snapshot())}\n\n`;
   const broadcast = () => {
-    const frame = `event: state\ndata: ${JSON.stringify(town.snapshot())}\n\n`;
+    const frame = stateFrame();
     for (const res of clients) res.write(frame);
   };
 
   const server = createServer(async (req, res) => {
     const path = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
+
+    if (req.headers.host !== `127.0.0.1:${port}` && req.headers.host !== `localhost:${port}`) {
+      req.resume();
+      res.writeHead(403).end();
+      return;
+    }
 
     if (req.method === "POST" && path === "/events") {
       if (req.headers.origin !== undefined) {
@@ -47,7 +55,12 @@ export async function startServer(opts: {
         return;
       }
       let body = "";
-      for await (const chunk of req) body += chunk;
+      try {
+        for await (const chunk of req) body += chunk;
+      } catch {
+        res.writeHead(400).end();
+        return;
+      }
       let event: HookEvent;
       try {
         event = JSON.parse(body) as HookEvent;
@@ -58,7 +71,7 @@ export async function startServer(opts: {
       try {
         const gone = town.apply(event);
         const sid = event.session_id;
-        if (sid) {
+        if (sid && event.hook_event_name) {
           clearTimeout(timers.get(sid));
           timers.delete(sid);
         }
@@ -89,7 +102,7 @@ export async function startServer(opts: {
       });
       clients.add(res);
       res.on("close", () => clients.delete(res));
-      res.write(`event: state\ndata: ${JSON.stringify(town.snapshot())}\n\n`);
+      res.write(stateFrame());
       return;
     }
 
@@ -101,8 +114,12 @@ export async function startServer(opts: {
           res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });
           res.end(data);
           return;
-        } catch {
-          // fall through
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+            console.error(`funtown: failed to read ${file}`, err);
+            res.writeHead(500).end();
+            return;
+          }
         }
       }
       if (path === "/") {
@@ -118,7 +135,7 @@ export async function startServer(opts: {
     server.once("error", reject);
     server.listen(opts.port, "127.0.0.1", resolve);
   });
-  const { port } = server.address() as AddressInfo;
+  port = (server.address() as AddressInfo).port;
 
   return {
     url: `http://127.0.0.1:${port}`,
