@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Character, House, Lead, Stage, Town } from "../../server/types.ts";
 
 const STAGE_LABEL: Record<Stage, string> = {
@@ -19,32 +19,42 @@ function useTown(): Town | null {
   return town;
 }
 
-function CharacterRow({ character, avatar }: { character: Character; avatar: string }) {
+function CharacterRow({
+  character,
+  avatar,
+  onSelect,
+}: {
+  character: Character;
+  avatar: string;
+  onSelect: (id: string) => void;
+}) {
   const { name, stage, activity, needs } = character;
   return (
-    <div className={`character ${stage}`} data-stage={stage}>
+    <button type="button" className={`character ${stage}`} data-stage={stage} onClick={() => onSelect(character.id)}>
       <span className="avatar" aria-hidden="true">{avatar}</span>
-      <div>
-        <div>
+      <span className="body">
+        <span className="line">
           <span className="name">{name}</span>
           <span className="stage">{STAGE_LABEL[stage]}</span>
-        </div>
-        {stage === "needs_you" && needs && <div className="activity">waiting for you: {needs}</div>}
-        {stage === "working" && <div className="activity">{activity ?? "thinking"}</div>}
-      </div>
-    </div>
+        </span>
+        {stage === "needs_you" && needs && <span className="activity">waiting for you: {needs}</span>}
+        {stage === "working" && <span className="activity">{activity ?? "thinking"}</span>}
+      </span>
+    </button>
   );
 }
 
-function LeadItem({ lead }: { lead: Lead }) {
+type Select = (lead: string, id: string) => void;
+
+function LeadItem({ lead, onSelect }: { lead: Lead; onSelect: Select }) {
   return (
     <li className="lead">
-      <CharacterRow character={lead} avatar="🧑‍💻" />
+      <CharacterRow character={lead} avatar="🧑‍💻" onSelect={(id) => onSelect(lead.id, id)} />
       {lead.subagents.length > 0 && (
         <ul className="subagents" aria-label={`${lead.name} subagents`}>
           {lead.subagents.map((sub) => (
             <li key={sub.id}>
-              <CharacterRow character={sub} avatar="🤖" />
+              <CharacterRow character={sub} avatar="🤖" onSelect={(id) => onSelect(lead.id, id)} />
             </li>
           ))}
         </ul>
@@ -53,23 +63,85 @@ function LeadItem({ lead }: { lead: Lead }) {
   );
 }
 
-function HouseCard({ house }: { house: House }) {
+function HouseCard({ house, onSelect }: { house: House; onSelect: Select }) {
   const needsYou = house.leads.some((lead) => lead.stage === "needs_you");
   return (
     <section className={`house${needsYou ? " needs_you" : ""}`} aria-label={house.project} title={house.cwd}>
       <h2>🏠 {house.project}</h2>
       <ul>
         {house.leads.map((lead) => (
-          <LeadItem key={lead.id} lead={lead} />
+          <LeadItem key={lead.id} lead={lead} onSelect={onSelect} />
         ))}
       </ul>
     </section>
   );
 }
 
+/** Details of one character: stage, step, need, its subagents (for a lead) and a button that focuses its terminal. */
+function Panel({ character, lead, onClose }: { character: Character; lead: Lead; onClose: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function jump() {
+    setError(null);
+    setPending(true);
+    try {
+      const reply = await fetch("/jump", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ lead: lead.id }),
+      });
+      if (reply.status !== 204) setError((await reply.text()) || `Jump failed (${reply.status}).`);
+    } catch {
+      setError("Couldn't reach Funtown.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <aside className="panel" role="dialog" aria-label={`${character.name} details`}>
+      <button type="button" className="close" aria-label="Close" onClick={onClose}>
+        ✕
+      </button>
+      <h2>{character.name}</h2>
+      <p>{STAGE_LABEL[character.stage]}</p>
+      <p className="activity">Step: {character.step ?? "nothing yet"}</p>
+      {character.stage === "needs_you" && character.needs && <p>waiting for you: {character.needs}</p>}
+      {character.id === lead.id && lead.subagents.length > 0 && (
+        <ul aria-label="Subagents">
+          {lead.subagents.map((sub) => (
+            <li key={sub.id}>
+              {sub.name} {STAGE_LABEL[sub.stage]}
+            </li>
+          ))}
+        </ul>
+      )}
+      <button type="button" onClick={jump} disabled={pending}>
+        Go to terminal
+      </button>
+      {error && <p role="alert" className="error">{error}</p>}
+    </aside>
+  );
+}
+
 /** The town page: one house per project, its leads and their subagents, with a banner when any lead needs you. */
 export function App() {
   const town = useTown();
+  const [selection, setSelection] = useState<{ lead: string; id: string } | null>(null);
+  const onClose = useCallback(() => setSelection(null), []);
+  const lead = selection
+    ? town?.houses.flatMap((house) => house.leads).find((l) => l.id === selection.lead)
+    : undefined;
+  const selected = lead && [lead, ...lead.subagents].find((c) => c.id === selection?.id);
+  useEffect(() => {
+    if (town && selection && !selected) setSelection(null);
+  }, [town, selection, selected]);
   const waiting =
     town?.houses.flatMap((house) =>
       house.leads.filter((lead) => lead.stage === "needs_you").map((lead) => `${lead.name} (${house.project})`),
@@ -88,9 +160,10 @@ export function App() {
       {town && town.houses.length === 0 && <p className="empty">No Claude sessions running yet.</p>}
       <main className="town">
         {town?.houses.map((house) => (
-          <HouseCard key={house.cwd} house={house} />
+          <HouseCard key={house.cwd} house={house} onSelect={(leadId, id) => setSelection({ lead: leadId, id })} />
         ))}
       </main>
+      {lead && selected && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} onClose={onClose} />}
     </>
   );
 }

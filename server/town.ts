@@ -63,8 +63,10 @@ export class TownState {
           const agent = this.agent(lead, event);
           agent.stage = "working";
           agent.activity = activity;
+          if (activity) agent.step = activity;
         } else {
           this.setLead(lead, "working", activity);
+          if (activity) lead.step = activity;
         }
         break;
       }
@@ -109,6 +111,11 @@ export class TownState {
     }
   }
 
+  /** The lead with this session id, or undefined. */
+  lead(sessionId: string): Lead | undefined {
+    return this.leads.get(sessionId);
+  }
+
   snapshot(): Town {
     return { houses: [...this.houses.values()] };
   }
@@ -131,6 +138,7 @@ export class TownState {
       name: `lead-${this.nextNumber(`${cwd}\0lead`)}`,
       stage: "working",
       activity: null,
+      step: null,
       tty: null,
       termProgram: null,
       subagents: [],
@@ -150,6 +158,7 @@ export class TownState {
         name: `${type}-${this.nextNumber(`${lead.id}\0${type}`)}`,
         stage: "working",
         activity: null,
+        step: null,
       };
       lead.subagents.push(agent);
     }

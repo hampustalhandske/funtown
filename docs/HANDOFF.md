@@ -1,69 +1,74 @@
-# Milestone 2: cleanup — handoff
+# Milestone 3: panel-jump — handoff
 
-Verdict: ship. Every review finding is applied; tests are green.
+Verdict: ship. Every review finding that holds is applied; tests are green.
 
 ## Review in five minutes
 
 **Start here**
-1. `server/app.ts:43-80`: `/events` now refuses any request with an `Origin` header (403)
-   and keeps one removal timer per session, cancelled by that session's next event.
-2. `server/app.ts:98-112`: `distDir` option and the 503 "page isn't built yet" reply.
-3. `tests/server.test.ts:114-140`: the three new server tests (returning lead, Origin, 503).
+1. `server/app.ts:25-48` and the `/jump` handler: the Terminal tab script, the 60 s run
+   timeout, the same-origin check, and the command chosen per terminal.
+2. `web/src/App.tsx`: `Panel` and the selection in `App` (lead lookup, cleared when the
+   character leaves the Town).
+3. `tests/jump.test.ts`: command per terminal, Origin refusals, 404/409/500.
 
 **Verify**
 
     npx eslint . && npx vitest run && npx playwright test
 
 **Needs you**
-- Nothing to try by hand: m2 changes no visible behaviour beyond the removed "live" text
-  and the new 🏠 tab icon. Open http://127.0.0.1:4777 after `npm start` to see both.
+- Restart `npm start` (it builds once; it doesn't reload), then in a real Terminal session:
+  minimize its window, click its lead in Funtown, press "Go to terminal". The window should
+  come back with that tab in front. Try once with the window visible and once behind others.
+
+## Summary
+
+- Charter item 4: clicking any character opens a details panel with its stage, its step
+  (the last tool call, kept after it finishes), why it's waiting, and a lead's subagents.
+  It follows live updates and closes with ✕, Escape, or when the character is removed.
+- Charter item 5: "Go to terminal" selects the session's exact tab in macOS Terminal by tty;
+  iTerm, VS Code, Warp and Ghostty are brought to the front; other terminals get a plain
+  message.
+
+## Decisions
+
+- `step` added to `Character` in `server/types.ts`: `activity` is cleared between tools, so a
+  waiting session would otherwise show no step.
+- `/jump` accepts only `Origin` `http://127.0.0.1:<port>` or `http://localhost:<port>`; the tty
+  must match `ttys<N>` and goes to osascript as an argument, never in the script text.
+- A subagent's panel jumps to its lead's tab; jumping to the subagent itself stays parked.
+- The tab script skips windows whose tabs can't be read (that error broke jumps to minimized
+  windows, reproduced by hand), restores a minimized window, and only activates Terminal
+  when no tab matches, instead of failing.
+- Run timeout is 60 s so the one-time macOS "control Terminal?" prompt can be answered.
+- Cursor and other VS Code forks set `TERM_PROGRAM=vscode`, so the button raises VS Code;
+  not needed now, parked.
+- Every review finding that holds is applied (R1–R14 in docs/MILESTONE.md), Nice-to-have
+  and small trims included, at the user's call, so the next review doesn't find them again.
+- `/jump` caps its body at 64 KB (413); `/events` has no cap, because an event for a large
+  Write can be several MB and the plan leaves `/events` unchanged.
+- The quality reviewer's "error handling catches too much" was dropped: only `await run()`
+  is inside the try.
+
+## Remaining work
+
+- None from this milestone's review.
+- Next: m4-rebuild (on start, rebuild already-running sessions from the transcripts in
+  `~/.claude/projects/`).
 - Charter wording from m1 is still open (needs `workflow approve` after editing): the
   "done" stage for subagents, "HTTP hooks" vs the command hook, and no check for
   "rebuild running sessions on start".
 
-## Summary
-
-- Clears the m1 should-fix list; charter items 1–3 behave as in m1.
-- The Town types live once, in `server/types.ts`; the page and tests import them.
-- A session that comes back after ending is no longer deleted by its old 10 min timer.
-- Web pages in your browser can no longer post fake events: requests with `Origin` get 403.
-- An unbuilt page says so (503) instead of a bare 404; the page has a favicon.
-
-## Decisions
-
-- Origin check applies to `POST /events` only; the hook never sends `Origin`. The m3 jump
-  endpoint will be called by the page itself, so it needs its own same-origin check.
-- Favicon is an inline emoji SVG data URL in `web/index.html`: no file, no route.
-- `startServer` takes `distDir` so a test can check the unbuilt-page reply.
-- Review fixes applied in away mode: the favicon test now checks for the icon link
-  (headless Chromium never requests `/favicon.ico`, so the old check could not fail); the
-  tty hook test sets `FUNTOWN_LOG` to a temp file so it can't write to the real home.
-- All review findings are applied in this PR, at the user's call: in away mode, every
-  appropriate fix goes in before the PR, not only Must-fix.
-- The `/code-review` pass reviewed the m1 merge commit instead of this branch; its findings
-  that still held are fixed here (R1–R8 in docs/MILESTONE.md). It was not rerun.
-- `Host` must be `127.0.0.1:<port>` or `localhost:<port>` on every route, against DNS
-  rebinding. A later native wrapper that serves another host must add it.
-- `install.ts` takes only `install|uninstall [--settings <path>]`; anything else exits
-  before touching a file.
-
-## Remaining work
-
-None from this milestone's review.
-
-Next: m3-panel-jump (charter items 4 and 5), then m4-rebuild.
-
 ## Notes
 
-- `startServer({ port, goneAfterMs?, distDir? })` is the test entry point; tests point
-  `distDir` at an empty temp dir.
-- The repo test/prod ratio is 0.82, above the 0.5–0.7 band, because m2 added tests
-  for fixes that are mostly a few production lines each.
-- Headless Chromium doesn't fetch favicons; check icons through the page's `<link>`.
+- Tests never run osascript or open: `startServer({ run })` records the commands.
+- The panel e2e test serves the stream with `retry: 50` and a mutable state, so each
+  reconnect gets the next frame.
+- `npm start` fails with EADDRINUSE when an older Funtown still holds 4777; stop it first.
+- Test/prod ratio is above the 0.5–0.7 band (repo 0.93), mostly from m2's fix tests.
 
 ## Numbers
 
-    Branch m2-cleanup vs 146bb7a
-      Production: +72 -52, net 20 of budget 400
-      Tests:      +126 -11, net 115 (test/prod 5.75 on this branch)
-      Repo:       660 production lines, 542 test lines (test/prod 0.82; band 0.5-0.7)
+    Branch m3-panel-jump vs ea17400
+      Production: +212 -18, net 194 of budget 400
+      Tests:      +278 -16, net 262 (test/prod 1.35 on this branch)
+      Repo:       854 production lines, 804 test lines (test/prod 0.94; band 0.5-0.7)

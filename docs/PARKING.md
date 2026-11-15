@@ -8,3 +8,4 @@
 - 2026-11-14: Exact-tab jump for more terminal apps (iTerm2, VS Code, others)
 - 2026-11-14: Jump straight to a specific subagent inside its lead's Claude terminal, not just the lead's tab
 - 2026-11-14: Settings in the app to pick which projects Funtown shows (e.g. so each user sees only their own)
+- 2026-11-15: Jump to the right app for VS Code forks (Cursor, Windsurf) that also set TERM_PROGRAM=vscode

@@ -4,6 +4,7 @@ export type Character = {
   name: string;
   stage: Stage;
   activity: string | null;
+  step: string | null;
   needs?: string;
 };
 export type Lead = Character & { tty: string | null; termProgram: string | null; subagents: Character[] };
