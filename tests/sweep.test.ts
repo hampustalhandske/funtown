@@ -133,6 +133,16 @@ describe("sweep", () => {
     await townWhere(url, isGone());
   });
 
+  it("a_lead_revived_by_a_hook_while_its_file_is_still_missing_is_not_ended_again", async () => {
+    const { claude, url } = await live();
+    rmSync(join(claude.dir, "sessions", `${process.pid}.json`));
+    await townWhere(url, isGone());
+    await post(url, hook(2));
+    await townWhere(url, (t) => leadsOf(t).some((l) => l.id === "s1" && l.stage === "working"));
+    await sleep(SWEEP * 5);
+    expect(leadsOf(await townWhere(url, () => true))[0].stage).toBe("working");
+  });
+
   it("close_stops_the_sweep", async () => {
     const claude = new ClaudeDir().session(s1Session());
     const ps = fakePs({ [process.pid]: psLine() });

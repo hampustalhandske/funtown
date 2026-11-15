@@ -155,6 +155,9 @@ export async function startServer(opts: {
       if (lead.stage === "gone") continue;
       const gone = town.apply({ session_id: id, hook_event_name: "SessionEnd" });
       if (gone) scheduleRemoval(gone);
+      // forgotten until a sweep sees it live again, so a lead a hook revives while its file
+      // is still missing isn't ended again on every sweep
+      seenLive.delete(id);
       changed = true;
     }
     if (changed) broadcast();
