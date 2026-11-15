@@ -26,7 +26,7 @@ Mode: away: open the PR after review and continue with the queue
 
 - Add a dependency, service or paid API without asking.
 - Change the hook event or the Town state shapes from m1.
-- Touch `hooks/`, or the real home folder from a test.
+- Touch `hooks/` beyond review fixes R5 and R6, or the real home folder from a test.
 - Listen on anything but 127.0.0.1.
 
 ## Contracts
@@ -70,6 +70,22 @@ startServer(opts: {
   bare 404.
 - Hook script with a fake stdin event: catches a wrong or missing tty.
 - Playwright on the page: catches a favicon 404 in the console.
+
+## Review fixes
+
+Added after review, on the user's word: every appropriate finding is applied in this PR.
+
+| # | Where | Fix | Test |
+|---|---|---|---|
+| R1 | `server/app.ts` body read | A client dropping mid-upload must not reject the handler: read the body inside a try; on error answer 400 (or just end) | none (hard to trigger) |
+| R2 | `server/app.ts` gone timer | Cancel a session's timer only for an event `town.apply` handles (has `hook_event_name` and `session_id`) | SessionEnd s1, then `{"session_id":"s1"}`: s1 is still removed after `goneAfterMs` |
+| R3 | `server/app.ts` static read | Only `ENOENT` falls through to 404/503; other read errors log to stderr and answer 500 | `distDir` whose `index.html` is a directory: `GET /` is 500 |
+| R4 | `server/app.ts` all routes | `Host` must be `127.0.0.1:<port>` or `localhost:<port>`, else 403 (DNS rebinding) | `GET /stream` with `Host: evil.example` is 403 |
+| R5 | `hooks/funtown-hook.ts` findTty | A passed deadline while looking up the tty gives tty null; the event is still posted | none (timing) |
+| R6 | `hooks/install.ts` args | Accept only `install|uninstall` optionally followed by `--settings <path>`; anything else throws the usage error before touching any file | `install --setings <temp>` with `HOME` set to a temp dir exits non-zero and writes nothing |
+| R7 | `server/town.ts` remove | Delete the removed lead's subagent counter keys | none |
+| R8 | `server/app.ts` SSE | One helper builds the `state` frame for both broadcast and new clients; drop `// fall through` | none |
+| R9 | `tests/server.test.ts` | Remove temp dirs the tests create | n/a |
 
 ## Stop and ask
 
