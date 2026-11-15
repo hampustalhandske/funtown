@@ -104,6 +104,28 @@ stays the one place that builds characters.
   and `??` taken as a tty.
 - `POST /events` after a rebuild: catches a second character for a rebuilt session.
 
+## Review fixes
+
+Added after review, on the user's word ("fix the stuff you agree with").
+
+| # | Where | Fix | Test |
+|---|---|---|---|
+| R1 | `server/rebuild.ts` sessions | A `sessions/*.json` that can't be read or parsed is skipped with one line on stderr; the server still starts | half-written session file next to a good one: the good one shows |
+| R2 | `server/rebuild.ts` ps | When `exec` rejects (the pid just exited), that session is skipped with one line on stderr | `exec` rejecting for one pid: the other session shows |
+| R3 | `server/rebuild.ts` subagents | A missing `agent-<id>.jsonl` means no step; a `.meta.json` that can't be parsed skips that subagent with one line on stderr | meta without jsonl: subagent shows, step null |
+| R4 | `server/rebuild.ts` project loop | Stop at the first project folder holding the transcript | none |
+| R5 | `server/rebuild.ts` lastToolUse | Don't reverse the caller's array (`toReversed()` or a backwards loop) | none |
+| R6 | `server/rebuild.ts` | Export `Session` and have `tests/helpers.ts` import it; the lead `stepEvents` loop on one line | n/a |
+| R7 | `tests/helpers.ts` deadPid | A fixed pid above macOS's maximum (999999) instead of spawning a process | n/a |
+| R8 | `tests/rebuild.test.ts` DW1 | Live sessions in two projects: two houses, and numbering within one house | itself |
+| R9 | `tests/rebuild.test.ts` | Lead transcript's first tool_use differs from its last | itself |
+| R10 | `tests/` | Top-level imports instead of `await import(...)`; `join` instead of template paths; `StartOptions` from `Parameters<typeof startServer>[0]` | n/a |
+| R11 | `playwright.config.ts` | A fixed path that doesn't exist under the temp dir, instead of a new `mkdtemp` folder per run | e2e passes |
+
+Not applied, with reasons in docs/HANDOFF.md: parallel reads and one `ps` call (startup measured
+at 1 s with 5 sessions), reading transcripts from the end (largest here is 65 MB and reads fine),
+and detecting a reused pid as a ghost lead (no reliable check yet).
+
 ## Stop and ask
 
 Every agent stops and reports BLOCKED when:
