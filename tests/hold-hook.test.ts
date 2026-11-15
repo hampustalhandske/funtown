@@ -75,3 +75,12 @@ it("hold_hook_prints_nothing_and_exits_0_at_once_when_no_server_is_running", asy
   expect(r).toMatchObject({ code: 0, out: "" });
   expect(r.ms).toBeLessThan(2000);
 });
+
+it("hold_hook_prints_a_300_kb_reply_in_full_through_the_pipe", async () => {
+  const reply = JSON.stringify({ pad: "x".repeat(300_000) });
+  const s = await serve(200, reply);
+  const r = await runHold(s.url);
+  expect(r.code).toBe(0);
+  expect(r.out.length).toBe(reply.length);
+  expect(r.out).toBe(reply);
+});

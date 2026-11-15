@@ -214,7 +214,7 @@ describe("when a card is released", () => {
     await sleep(200);
     expect((await cardsWhere(s.url, () => true)).map((c) => c.id)).toEqual([card.id]);
 
-    await post(s.url, ev("PostToolUse", 300, { tool_name: "Read" }, BG));
+    await post(s.url, ev("PostToolUse", 300, { tool_name: "AskUserQuestion", tool_use_id: "tu1" }, BG));
     await cardsWhere(s.url, (c) => c.length === 0);
     expect((await reply).status).toBe(204);
     expect((await answer(s, { card: card.id, decision: "allow", answers: {} })).status).toBe(404);
@@ -230,6 +230,21 @@ describe("when a card is released", () => {
     expect((await cardsWhere(s.url, () => true)).map((c) => c.id)).toEqual([card.id]);
 
     await post(s.url, pre(300, "npm run other"));
+    await cardsWhere(s.url, (c) => c.length === 0);
+    expect((await reply).status).toBe(204);
+  });
+
+  it("a_parallel_siblings_posttooluse_leaves_a_permission_card_open_and_its_own_posttooluse_closes_it", async () => {
+    const s = await room();
+    const { card, reply } = await held(s, permission(100, "npm test"));
+    const post_ = (at: number, command: string) =>
+      ev("PostToolUse", at, { tool_name: "Bash", tool_use_id: "tuY", tool_input: { command } });
+    await post(s.url, post_(200, "ls"));
+    await post(s.url, ev("PostToolUse", 210, { tool_name: "Read", tool_input: { file_path: "/a" } }));
+    await sleep(200);
+    expect((await cardsWhere(s.url, () => true)).map((c) => c.id)).toEqual([card.id]);
+
+    await post(s.url, post_(300, "npm test"));
     await cardsWhere(s.url, (c) => c.length === 0);
     expect((await reply).status).toBe(204);
   });
@@ -290,7 +305,7 @@ describe("the answer log", () => {
     expect(lines()).toEqual([line("permission", "funtown")]);
 
     const b = await held(s, permission(200));
-    await post(s.url, ev("PostToolUse", 300, { tool_name: "Bash" }));
+    await post(s.url, ev("PostToolUse", 300, { tool_name: "Bash", tool_input: { command: "rm -rf build" } }));
     await until(() => lines().length === 2);
     expect(lines()[1]).toEqual(line("permission", "elsewhere"));
     await b.reply;

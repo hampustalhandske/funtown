@@ -46,6 +46,7 @@ test("a_permission_card_shows_the_tool_the_exact_command_and_the_folder_and_the_
   await expect(under).toContainText("/work/demo-app");
   await under.getByRole("button", { name: "Deny" }).click();
   await expect.poll(() => answers).toEqual([{ card: "c1", decision: "deny" }]);
+  await page.reload();
   await under.getByRole("button", { name: "Allow" }).click();
   await expect.poll(() => answers).toEqual([{ card: "c1", decision: "deny" }, { card: "c1", decision: "allow" }]);
 });
@@ -69,6 +70,9 @@ test("a_question_card_lists_every_question_and_option_and_send_posts_labels_or_t
   await under.getByRole("button", { name: "Send" }).click();
   await expect.poll(() => answers).toEqual([{ card: "q1", decision: "allow", answers: { "Which db?": "Postgres", "Which extras?": "Alpha, Beta" } }]);
 
+  await page.reload();
+  await under.getByLabel("Postgres").check();
+  await under.getByLabel("Alpha").check();
   await under.getByRole("textbox", { name: /other/i }).first().fill("MySQL");
   await under.getByRole("button", { name: "Send" }).click();
   await expect.poll(() => answers.length).toBe(2);
@@ -82,6 +86,7 @@ test("a_plan_card_shows_the_plan_in_a_pre_and_approve_and_keep_planning_post_the
   await under.getByRole("textbox").first().fill("Split step 2");
   await under.getByRole("button", { name: "Keep planning" }).click();
   await expect.poll(() => answers).toEqual([{ card: "p1", decision: "deny", feedback: "Split step 2" }]);
+  await page.reload();
   await under.getByRole("button", { name: "Approve" }).click();
   await expect.poll(() => answers.length).toBe(2);
   expect(answers[1]).toEqual({ card: "p1", decision: "allow" });
@@ -109,4 +114,14 @@ test("a_card_from_an_agent_the_lead_does_not_list_shows_in_the_leads_panel", asy
   const panel = page.getByRole("dialog", { name: "lead-1 details" });
   await expect(panel).toContainText("rm -rf /work/demo-app/build");
   await expect(panel.getByRole("button", { name: "Allow" })).toBeVisible();
+});
+
+test("after_a_successful_answer_both_buttons_stay_disabled_until_the_card_leaves", async ({ page }) => {
+  await open(page, town([lead({})], [card({})]));
+  const under = house(page);
+  await under.getByRole("button", { name: "Allow" }).click();
+  await expect(under.getByRole("button", { name: "Allow" })).toBeDisabled();
+  await expect(under.getByRole("button", { name: "Deny" })).toBeDisabled();
+  await page.waitForTimeout(500);
+  await expect(under.getByRole("button", { name: "Allow" })).toBeDisabled();
 });
