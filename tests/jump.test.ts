@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { leadsOf, post, start, townWhere } from "./helpers.ts";
+import { leadsOf, listed, post, start, tokenOf, townWhere } from "./helpers.ts";
 
 type Call = [string, string[]];
 afterEach(() => vi.restoreAllMocks());
@@ -12,29 +12,35 @@ const ev = (name: string, extra: Record<string, unknown> = {}, termProgram: stri
   ...extra,
 });
 
-const jump = (url: string, body: unknown, origin: string | null = url) =>
+/** POSTs /jump with the page's token (unless `token` is null) and `origin` (default: the server's own). */
+const jump = async (url: string, body: unknown, origin: string | null = url, token: string | null = null) =>
   fetch(`${url}/jump`, {
     method: "POST",
-    headers: { "content-type": "application/json", ...(origin ? { origin } : {}) },
+    headers: {
+      "content-type": "application/json",
+      ...(origin ? { origin } : {}),
+      "x-funtown-token": token ?? (await tokenOf(url)),
+    },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
 
 /** Starts a server whose `run` records its calls (or fails when `fail` is set), with lead s1 present. */
 async function withLead(termProgram: string | null, tty = "ttys001", fail = false) {
   const calls: Call[] = [];
-  const s = await start({ run: async (f, a) => {
+  const s = await start({ pollMs: 60_000, run: async (f, a) => {
     calls.push([f, a]);
     if (fail) throw new Error("boom");
   } });
-  await post(s.url, ev("SessionStart", {}, termProgram, tty));
+  s.fake.list([listed("s1", "/work/demo-app")]);
   await townWhere(s.url, (t) => leadsOf(t).length === 1);
+  await post(s.url, ev("SessionStart", {}, termProgram, tty));
   return { ...s, calls };
 }
 
 describe("step in the Town state", () => {
   it("step_is_the_last_pretooluse_text_for_lead_and_subagent_and_survives_posttooluse_and_stop", async () => {
-    const { url } = await start({ run: async () => {} });
-    await post(url, ev("SessionStart"));
+    const { url, fake } = await start({ pollMs: 60_000, run: async () => {} });
+    fake.list([listed("s1", "/work/demo-app")]);
     expect(leadsOf(await townWhere(url, (t) => leadsOf(t).length === 1))[0].step).toBeNull();
 
     await post(url, ev("SubagentStart", { agent_id: "x1", agent_type: "Explore" }));
@@ -44,7 +50,7 @@ describe("step in the Town state", () => {
     await post(url, ev("PostToolUse", { agent_id: "x1", agent_type: "Explore", tool_name: "Read" }));
     await post(url, ev("Stop"));
 
-    const town = await townWhere(url, (t) => leadsOf(t)[0].stage === "needs_you");
+    const town = await townWhere(url, (t) => leadsOf(t)[0].subagents[0]?.step === "Read");
     const lead = leadsOf(town)[0];
     expect(lead.step).toBe("Bash: npm test");
     expect(lead.activity).toBeNull();
@@ -89,6 +95,16 @@ describe("POST /jump refusals", () => {
     expect(calls).toEqual([]);
     expect((await jump(url, { lead: "s1" }, `http://localhost:${port}`)).status).toBe(204);
     expect(calls).toHaveLength(1);
+  });
+
+  it("a_missing_or_wrong_token_gets_403_even_from_the_servers_own_origin_and_runs_nothing", async () => {
+    const { url, calls } = await withLead("ghostty");
+    const noToken = await fetch(`${url}/jump`, {
+      method: "POST", headers: { "content-type": "application/json", origin: url }, body: JSON.stringify({ lead: "s1" }),
+    });
+    expect(noToken.status).toBe(403);
+    expect((await jump(url, { lead: "s1" }, url, "0".repeat(32))).status).toBe(403);
+    expect(calls).toEqual([]);
   });
 
   it("a_bad_body_gets_400_and_an_unknown_lead_404_and_nothing_runs", async () => {

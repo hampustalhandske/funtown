@@ -3,7 +3,7 @@ import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { leadsOf, post, start, townWhere } from "./helpers.ts";
+import { leadsOf, listed, post, start, townWhere } from "./helpers.ts";
 
 const tempDirs: string[] = [];
 const tempDir = (): string => {
@@ -34,111 +34,121 @@ const ev = (name: string, extra: Record<string, unknown> = {}, session = "s1", c
   ...extra,
 });
 
+/** Like `ev`, with the hook's own timestamp `at`. */
+const evAt = (at: number, name: string, extra: Record<string, unknown> = {}) => ({
+  ...ev(name, extra),
+  funtown: { tty: "ttys009", term_program: "TestTerm", at },
+});
+
+/** A server whose list already shows interactive sessions `ids` in /work/demo-app, with the page's town in sync. */
+async function withListed(...ids: string[]) {
+  const s = await start({ pollMs: 60_000 });
+  s.fake.list(ids.map((id) => listed(id, "/work/demo-app")));
+  await townWhere(s.url, (t) => leadsOf(t).length === ids.length);
+  return s;
+}
+
 describe("POST /events -> GET /stream", () => {
-  it("a_new_session_appears_as_lead_1_in_a_house_named_after_its_folder_with_tty", async () => {
-    const { url } = await start();
-    expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
-    expect(await post(url, ev("SessionStart"))).toBe(204);
-    const town = await townWhere(url, (t) => leadsOf(t).length === 1);
-    expect(town.houses).toHaveLength(1);
-    expect(town.houses[0]).toMatchObject({ project: "demo-app", cwd: "/work/demo-app" });
-    expect(town.houses[0].leads[0]).toMatchObject({
-      id: "s1", name: "lead-1", stage: "working", tty: "ttys009", termProgram: "TestTerm", subagents: [],
-    });
+  it("hook_activity_step_tty_and_subagents_land_on_the_listed_lead", async () => {
+    const { url } = await withListed("s1");
+    await post(url, ev("SubagentStart", { agent_id: "x1", agent_type: "Explore" }));
+    await post(url, ev("SubagentStart", { agent_id: "x2", agent_type: "Explore" }));
+    await post(url, ev("PreToolUse", { tool_name: "Bash", tool_input: { command: "npm test" } }));
+    await post(url, ev("PreToolUse", { agent_id: "x1", agent_type: "Explore", tool_name: "Bash", tool_input: { command: "ls" } }));
+
+    const town = await townWhere(url, (t) => leadsOf(t)[0]?.subagents[0]?.activity === "Bash: ls");
+    const lead = leadsOf(town)[0];
+    expect(lead).toMatchObject({ id: "s1", step: "Bash: npm test", tty: "ttys009", termProgram: "TestTerm" });
+    expect(lead.subagents.map((x) => x.name)).toEqual(["Explore-1", "Explore-2"]);
+    expect(lead.activity).not.toBe("Bash: ls");
+
+    await post(url, ev("SubagentStop", { agent_id: "x1", agent_type: "Explore" }));
+    const after = await townWhere(url, (t) => leadsOf(t)[0].subagents[0].stage === "done");
+    expect(leadsOf(after)[0].subagents[1].stage).toBe("working");
   });
 
-  it("a_second_session_in_the_same_project_is_lead_2_not_a_replacement", async () => {
-    const { url } = await start();
-    await post(url, ev("SessionStart", {}, "s1"));
-    await post(url, ev("SessionStart", {}, "s2"));
-    const town = await townWhere(url, (t) => leadsOf(t).length === 2);
+  it("hooks_move_a_listed_lead_between_stages_and_show_the_running_command", async () => {
+    const { url } = await withListed("s1");
+    const lead = async (ok: (l: ReturnType<typeof leadsOf>[number]) => boolean) =>
+      leadsOf(await townWhere(url, (t) => ok(leadsOf(t)[0])))[0];
+
+    await post(url, evAt(1, "UserPromptSubmit"));
+    expect(await lead((l) => l.stage === "working")).toMatchObject({ stage: "working" });
+    await post(url, evAt(2, "PreToolUse", { tool_name: "Bash", tool_input: { command: "npm test" } }));
+    expect(await lead((l) => l.step === "Bash: npm test")).toMatchObject({ stage: "working", activity: "Bash: npm test" });
+    await post(url, evAt(3, "PermissionRequest"));
+    expect(await lead((l) => l.stage === "needs_you")).toMatchObject({ needs: "permission" });
+    await post(url, evAt(4, "UserPromptSubmit"));
+    await lead((l) => l.stage === "working");
+    await post(url, evAt(5, "Stop"));
+    expect(await lead((l) => l.stage === "needs_you")).toMatchObject({ needs: "turn ended" });
+  });
+
+  it("a_second_unnamed_session_in_one_project_is_lead_2", async () => {
+    const s = await start({ pollMs: 60_000 });
+    s.fake.list([listed("s1", "/work/demo-app", { name: undefined }), listed("s2", "/work/demo-app", { name: undefined })]);
+    const town = await townWhere(s.url, (t) => leadsOf(t).length === 2);
     expect(leadsOf(town).map((l) => l.name).sort()).toEqual(["lead-1", "lead-2"]);
   });
 
-  it("stage_follows_prompt_permission_tool_and_stop_and_shows_the_bash_command", async () => {
-    const { url } = await start();
-    const lead = async (ok: (l: ReturnType<typeof leadsOf>[number]) => boolean) =>
-      leadsOf(await townWhere(url, (t) => leadsOf(t).some(ok)))[0];
-
-    await post(url, ev("PreToolUse", { tool_name: "Bash", tool_input: { command: "npm test" } }));
-    expect(await lead((l) => l.stage === "working")).toMatchObject({ activity: "Bash: npm test" });
-
-    await post(url, ev("PermissionRequest", { tool_name: "Bash", tool_input: { command: "rm x" } }));
-    expect(await lead((l) => l.stage === "needs_you")).toMatchObject({ needs: "permission" });
-
-    await post(url, ev("PreToolUse", { tool_name: "Edit", tool_input: { file_path: "/work/demo-app/a.ts" } }));
-    expect(await lead((l) => l.stage === "working")).toMatchObject({ activity: "Edit" });
-
-    await post(url, ev("Stop"));
-    expect(await lead((l) => l.stage === "needs_you")).toMatchObject({ needs: "turn ended" });
-
-    await post(url, ev("UserPromptSubmit", { prompt: "go" }));
-    expect(await lead((l) => l.stage === "working")).toBeTruthy();
-  });
-
-  it("subagents_attach_to_their_own_lead_are_numbered_per_type_and_finish_as_done", async () => {
-    const { url } = await start();
-    await post(url, ev("SessionStart", {}, "a", "/work/alpha"));
-    await post(url, ev("SessionStart", {}, "b", "/work/beta"));
-    await post(url, ev("SubagentStart", { agent_id: "x1", agent_type: "Explore" }, "b", "/work/beta"));
-    await post(url, ev("SubagentStart", { agent_id: "x2", agent_type: "Explore" }, "b", "/work/beta"));
-    await post(url, ev("PreToolUse", { agent_id: "x1", agent_type: "Explore", tool_name: "Bash", tool_input: { command: "ls" } }, "b", "/work/beta"));
-
-    const town = await townWhere(url, (t) => leadsOf(t).find((l) => l.id === "b")?.subagents.length === 2);
-    const [a, b] = ["a", "b"].map((id) => leadsOf(town).find((l) => l.id === id)!);
-    expect(a.subagents).toEqual([]);
-    expect(b.subagents.map((s) => s.name)).toEqual(["Explore-1", "Explore-2"]);
-    expect(b.subagents[0]).toMatchObject({ id: "x1", stage: "working", activity: "Bash: ls" });
-    expect(b.activity).not.toBe("Bash: ls");
-
-    await post(url, ev("SubagentStop", { agent_id: "x1", agent_type: "Explore" }, "b", "/work/beta"));
-    const after = await townWhere(url, (t) => leadsOf(t).find((l) => l.id === "b")?.subagents[0].stage === "done");
-    expect(leadsOf(after).find((l) => l.id === "b")!.subagents[1].stage).toBe("working");
-  });
-
-  it("session_end_marks_the_lead_gone_then_removes_it_after_goneAfterMs", async () => {
-    const { url } = await start({ goneAfterMs: 300 });
+  it("a_hook_posted_before_the_session_is_listed_keeps_its_tty_once_it_is_listed", async () => {
+    const { url, fake } = await start();
     await post(url, ev("SessionStart"));
-    await post(url, ev("SessionEnd"));
-    const gone = await townWhere(url, (t) => leadsOf(t).some((l) => l.stage === "gone"));
-    expect(leadsOf(gone)[0].id).toBe("s1");
-    const removed = await townWhere(url, (t) => leadsOf(t).length === 0, 3000);
-    expect(leadsOf(removed)).toEqual([]);
+    fake.list([listed("s1", "/work/demo-app")]);
+    const town = await townWhere(url, (t) => leadsOf(t).length === 1);
+    expect(leadsOf(town)[0]).toMatchObject({ tty: "ttys009", termProgram: "TestTerm" });
+  });
+
+  it("an_event_with_an_earlier_at_than_the_last_applied_changes_nothing", async () => {
+    const { url } = await withListed("s1");
+    await post(url, evAt(5, "PreToolUse", { tool_name: "Bash", tool_input: { command: "npm test" } }));
+    await post(url, evAt(4, "PostToolUse", { tool_name: "Bash" }));
+    const town = await townWhere(url, (t) => leadsOf(t)[0].step === "Bash: npm test");
+    expect(leadsOf(town)[0].activity).toBe("Bash: npm test");
+
+    await post(url, evAt(6, "Stop"));
+    await townWhere(url, (t) => leadsOf(t)[0].stage === "needs_you");
+    await post(url, evAt(3, "PostToolUse", { tool_name: "Bash" }));
+    await post(url, evAt(7, "SubagentStart", { agent_id: "x1", agent_type: "Explore" })); // a later event, applied after the late one
+    const after = await townWhere(url, (t) => leadsOf(t)[0].subagents.length === 1);
+    expect(leadsOf(after)[0]).toMatchObject({ stage: "needs_you", needs: "turn ended" });
+  });
+
+  it("an_event_goes_to_its_own_session_when_two_are_listed", async () => {
+    const { url } = await withListed("s1", "s2");
+    await post(url, ev("PreToolUse", { tool_name: "Bash", tool_input: { command: "only-s2" } }, "s2"));
+    const town = await townWhere(url, (t) => leadsOf(t).find((l) => l.id === "s2")?.step === "Bash: only-s2");
+    expect(leadsOf(town).find((l) => l.id === "s1")!.step).toBeNull();
+  });
+
+  it("a_multibyte_character_split_across_two_chunks_is_read_intact", async () => {
+    const { url } = await withListed("s1");
+    const body = Buffer.from(JSON.stringify(ev("PreToolUse", { tool_name: "Bash", tool_input: { command: "echo 🙂é" } })));
+    const cut = body.indexOf(Buffer.from("🙂")) + 2; // inside the 4-byte character
+    await new Promise<void>((resolve, reject) => {
+      const req = request(`${url}/events`, { method: "POST", headers: { "content-type": "application/json" } }, (res) => {
+        res.resume();
+        res.on("end", () => (res.statusCode === 204 ? resolve() : reject(new Error(`status ${res.statusCode}`))));
+      });
+      req.on("error", reject);
+      req.write(body.subarray(0, cut));
+      setTimeout(() => req.end(body.subarray(cut)), 50);
+    });
+    const town = await townWhere(url, (t) => leadsOf(t)[0]?.step !== null);
+    expect(leadsOf(town)[0].step).toBe("Bash: echo 🙂é");
   });
 
   it("invalid_json_gets_400_and_is_not_applied", async () => {
-    const { url } = await start();
+    const { url } = await withListed("s1");
     const res = await fetch(`${url}/events`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: '{"hook_event_name": "SessionStart", "session_id": "s1", "cwd": "/work/demo-app"',
+      body: '{"hook_event_name": "PreToolUse", "session_id": "s1", "cwd": "/work/demo-app"',
     });
     expect(res.status).toBe(400);
-    // A valid event afterwards is the first the town has seen: lead-1 is the only lead.
-    await post(url, ev("SessionStart", {}, "s2"));
-    const town = await townWhere(url, (t) => leadsOf(t).length >= 1);
-    expect(leadsOf(town).map((l) => l.id)).toEqual(["s2"]);
-  });
-
-  it("a_lead_that_returns_after_session_end_is_not_removed_by_the_old_timer", async () => {
-    const { url } = await start({ goneAfterMs: 300 });
-    await post(url, ev("SessionStart"));
-    await post(url, ev("SessionEnd"));
-    await townWhere(url, (t) => leadsOf(t).some((l) => l.stage === "gone"));
-    await post(url, ev("UserPromptSubmit", { prompt: "back" }));
-    await new Promise((r) => setTimeout(r, 700)); // well past goneAfterMs
-    const town = await townWhere(url, () => true);
-    expect(leadsOf(town).map((l) => l.id)).toEqual(["s1"]);
-  });
-
-  it("a_sessionless_event_does_not_cancel_the_pending_removal_of_a_ended_session", async () => {
-    const { url } = await start({ goneAfterMs: 300 });
-    await post(url, ev("SessionStart"));
-    await post(url, ev("SessionEnd"));
-    await townWhere(url, (t) => leadsOf(t).some((l) => l.stage === "gone"));
-    await post(url, { session_id: "s1" });
-    const removed = await townWhere(url, (t) => leadsOf(t).length === 0, 2000);
-    expect(leadsOf(removed)).toEqual([]);
+    await post(url, ev("PreToolUse", { tool_name: "Edit", tool_input: {} }));
+    const town = await townWhere(url, (t) => leadsOf(t)[0].step !== null);
+    expect(leadsOf(town)[0].step).toBe("Edit");
   });
 
   it("a_foreign_host_header_gets_403_while_the_real_host_and_localhost_are_served", async () => {
@@ -150,11 +160,12 @@ describe("POST /events -> GET /stream", () => {
   });
 
   it("an_event_with_an_origin_header_gets_403_and_does_not_change_the_town", async () => {
-    const { url } = await start();
-    expect(await post(url, ev("SessionStart", {}, "evil"), { origin: "http://evil.example" })).toBe(403);
-    expect(await post(url, ev("SessionStart", {}, "s2"))).toBe(204);
-    const town = await townWhere(url, (t) => leadsOf(t).length >= 1);
-    expect(leadsOf(town).map((l) => l.id)).toEqual(["s2"]);
+    const { url } = await withListed("s1");
+    const bad = ev("PreToolUse", { tool_name: "Bash", tool_input: { command: "evil" } });
+    expect(await post(url, bad, { origin: "http://evil.example" })).toBe(403);
+    expect(await post(url, ev("PreToolUse", { tool_name: "Bash", tool_input: { command: "ok" } }))).toBe(204);
+    const town = await townWhere(url, (t) => leadsOf(t)[0].step !== null);
+    expect(leadsOf(town)[0].step).toBe("Bash: ok");
   });
 });
 

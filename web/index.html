@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%A0%3C/text%3E%3C/svg%3E" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Funtown</title>
     <style>
       body { margin: 0; font-family: system-ui, sans-serif; background: #eef5e9; color: #222; }
@@ -36,6 +36,10 @@
       .activity { font-family: ui-monospace, monospace; font-size: 0.85rem; color: #444; }
       .panel { position: fixed; top: 1rem; right: 1rem; width: 20rem; background: #fff; border: 2px solid #c8a97e;
         border-radius: 0.75rem; padding: 0.75rem 1rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); }
+      .kind { margin-left: 0.4rem; font-size: 0.8rem; color: #666; }
+      .panel.wide { width: min(50rem, calc(100vw - 4rem)); }
+      .terminal { height: 24rem; background: #000; margin-top: 0.5rem; }
+      .hint { font-weight: 600; }
       .panel h2 { margin: 0; font-size: 1.15rem; }
       .panel .close { position: absolute; top: 0.5rem; right: 0.5rem; cursor: pointer; }
       .panel .error { color: #d32f2f; }

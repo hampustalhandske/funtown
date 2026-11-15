@@ -1,12 +1,13 @@
-import { createServer, type ServerResponse } from "node:http";
+import { createServer, STATUS_CODES, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AddressInfo } from "node:net";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { TownState, type HookEvent } from "./town.ts";
-import { liveCheck, readSessions, rebuild } from "./rebuild.ts";
+import type { Town } from "./types.ts";
+import { checkVersion, execFileAsync, listAgents, startBackground } from "./agents.ts";
+import { createTerminals, isSize } from "./terminal.ts";
 
 const DEFAULT_DIST = fileURLToPath(new URL("../web/dist/", import.meta.url));
 const TYPES: Record<string, string> = {
@@ -47,16 +48,12 @@ const TERMINAL_TAB_SCRIPT = `on run argv
   end tell
 end run`;
 
-// Long enough for the user to answer macOS's one-time "control Terminal?" prompt.
-const execFileAsync = promisify(execFile);
 const defaultRun = async (file: string, args: string[]) => {
+  // Long enough for the user to answer macOS's one-time "control Terminal?" prompt.
   await execFileAsync(file, args, { timeout: 60_000 });
 };
 
-const defaultExec = async (file: string, args: string[]) =>
-  (await execFileAsync(file, args, { timeout: 5_000 })).stdout;
-
-const MAX_JUMP_BODY = 64 * 1024;
+const MAX_PAGE_BODY = 64 * 1024;
 
 /** The command that brings a lead's terminal to the front, or null for an unknown terminal. */
 function jumpCommand(termProgram: string | null, tty: string | null): [string, string[]] | null {
@@ -70,111 +67,121 @@ function jumpCommand(termProgram: string | null, tty: string | null): [string, s
 }
 
 /**
- * Starts the Funtown server on 127.0.0.1. `/events` takes hook events, `/stream` pushes the
- * Town as Server-Sent Events, and everything else is served from web/dist/. Leads that ended
- * are removed after `goneAfterMs` (default 10 min) unless another event arrives first. Port 0
- * picks a free port. `distDir` is the built page (default web/dist/). `/events` rejects any
- * request with an `Origin` header, so web pages cannot post to it. `POST /jump` takes
- * `{ lead }` from the page's own origin only and runs `run` (default: execFile, 60 s timeout) to
- * bring that lead's terminal to the front. With `claudeDir`, sessions already running there
- * are rebuilt into the Town before listening, reading their tty with `exec` (default:
- * execFile, 5 s timeout; returns stdout). Every `sweepMs` (default 5 s) the Claude folder is
- * checked again, and a lead seen live whose session is no longer live ends like SessionEnd;
- * a lead whose `ps` call fails, or whose session file can't be read, is left alone, as is a lead
- * that got a hook event during the check. `close()` stops the sweep.
+ * Reads a JSON request body, decoding it only once it is whole; gives the parsed value, or
+ * 413 when it is over `max` bytes and 400 when it can't be read or parsed.
+ */
+async function readJson(req: IncomingMessage, max = Infinity): Promise<{ value: unknown } | { status: 400 | 413 }> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  try {
+    for await (const chunk of req as AsyncIterable<Buffer>) {
+      size += chunk.length;
+      if (size <= max) chunks.push(chunk);
+    }
+    if (size > max) return { status: 413 };
+    return { value: JSON.parse(Buffer.concat(chunks).toString("utf8")) };
+  } catch {
+    return { status: 400 };
+  }
+}
+
+/**
+ * Starts the Funtown server on 127.0.0.1; port 0 picks a free port. The Town holds the sessions
+ * `claude agents --json` lists, asked every `pollMs` (default 2 s) of the executable `claude`
+ * (default "claude"), plus what hook events on `/events` add to them; `/stream` pushes it as
+ * Server-Sent Events. `claude --version` is checked once before listening. Everything else is
+ * served from `distDir` (default web/dist/); HTML gets the page's token and a CSP. `POST /jump`
+ * runs `run` (default: execFile, 60 s timeout) to bring a lead's terminal to the front, `POST
+ * /sessions` starts `claude --bg` in a house's folder, and the `/term` WebSocket attaches a
+ * background lead; all three need the page's own Origin and token. `/events` refuses any
+ * request with an `Origin` header, so web pages cannot post to it.
  */
 export async function startServer(opts: {
   port: number;
-  goneAfterMs?: number;
   distDir?: string;
   run?: (file: string, args: string[]) => Promise<void>;
-  claudeDir?: string;
-  exec?: (file: string, args: string[]) => Promise<string>;
-  sweepMs?: number;
-}): Promise<{ url: string; close(): Promise<void> }> {
+  claude?: string;
+  pollMs?: number;
+}): Promise<{ url: string; claude: Town["claude"]; close(): Promise<void> }> {
   const run = opts.run ?? defaultRun;
-  const goneAfterMs = opts.goneAfterMs ?? 600_000;
+  const claude = opts.claude ?? "claude";
+  const pollMs = opts.pollMs ?? 2_000;
   const dist = normalize(join(opts.distDir ?? DEFAULT_DIST, "/"));
-  const town = new TownState();
-  const exec = opts.exec ?? defaultExec;
-  // session id -> the pid it was last seen live with
-  const seenLive = opts.claudeDir ? await rebuild(town, opts.claudeDir, exec) : new Map<string, number>();
-  const sweepMs = opts.sweepMs ?? 5_000;
+  const version = await checkVersion(claude);
+  const town = new TownState(version);
+  const terminals = createTerminals(claude);
   const clients = new Set<ServerResponse>();
-  const timers = new Map<string, NodeJS.Timeout>();
+  const tokenBytes = Buffer.from(randomBytes(16).toString("hex"));
+  const token = tokenBytes.toString();
   let port = 0;
 
   const stateFrame = () => `event: state\ndata: ${JSON.stringify(town.snapshot())}\n\n`;
+  let lastFrame = "";
   const broadcast = () => {
     const frame = stateFrame();
+    if (frame === lastFrame) return;
+    lastFrame = frame;
     for (const res of clients) res.write(frame);
   };
 
-  const scheduleRemoval = (gone: string) => {
-    clearTimeout(timers.get(gone));
-    timers.set(
-      gone,
-      setTimeout(() => {
-        timers.delete(gone);
-        town.remove(gone);
-        seenLive.delete(gone);
-        broadcast();
-      }, goneAfterMs),
-    );
+  let closed = false;
+  let pollTimer: NodeJS.Timeout | undefined;
+  let lastReason = "";
+  const poll = async () => {
+    let list: Awaited<ReturnType<typeof listAgents>> | undefined;
+    try {
+      list = await listAgents(claude);
+    } catch (err) {
+      const reason = (err as Error).message.replace(/\s*\n\s*/g, " ").trim();
+      if (reason !== lastReason) {
+        console.error(`funtown: claude agents --json failed, keeping the last list: ${reason}`);
+        lastReason = reason;
+      }
+    }
+    if (closed) return;
+    if (list) {
+      lastReason = "";
+      town.sync(list);
+      broadcast();
+    } else {
+      town.expire();
+      broadcast();
+    }
+    pollTimer = setTimeout(() => void poll(), pollMs);
   };
 
-  let closed = false;
-  let sweepTimer: NodeJS.Timeout | undefined;
-  // session ids that got a hook event since the current sweep started
-  const hooked = new Set<string>();
-  const sweep = async (claudeDir: string) => {
-    hooked.clear();
-    const live = new Map<string, number>();
-    const unknown = new Set<string>();
-    const { sessions, unreadable } = await readSessions(claudeDir);
-    await Promise.all(
-      sessions.map(async (s) => {
-        try {
-          if (await liveCheck(s, exec)) live.set(s.sessionId, s.pid);
-        } catch (err) {
-          console.error(`funtown: sweep left pid ${s.pid} as is: ${(err as Error).message}`);
-          unknown.add(s.sessionId);
-        }
-      }),
-    );
-    if (closed) return;
-    for (const [id, pid] of live) seenLive.set(id, pid);
-    let changed = false;
-    for (const [id, pid] of seenLive) {
-      if (live.has(id) || unknown.has(id) || unreadable.has(pid) || hooked.has(id)) continue;
-      const lead = town.lead(id);
-      if (!lead) {
-        seenLive.delete(id);
-        continue;
-      }
-      if (lead.stage === "gone") continue;
-      const gone = town.apply({ session_id: id, hook_event_name: "SessionEnd" });
-      if (gone) scheduleRemoval(gone);
-      // forgotten until a sweep sees it live again, so a lead a hook revives while its file
-      // is still missing isn't ended again on every sweep
-      seenLive.delete(id);
-      changed = true;
-    }
-    if (changed) broadcast();
+  const hostOk = (host: string | undefined) => host === `127.0.0.1:${port}` || host === `localhost:${port}`;
+  /** True for a request from the served page: its own Origin and the page's token. */
+  const fromPage = (origin: string | undefined, given: unknown) => {
+    if (origin !== `http://127.0.0.1:${port}` && origin !== `http://localhost:${port}`) return false;
+    const bytes = typeof given === "string" ? Buffer.from(given) : null;
+    return bytes !== null && bytes.length === tokenBytes.length && timingSafeEqual(bytes, tokenBytes);
   };
-  const sweepLoop = async (claudeDir: string) => {
-    try {
-      await sweep(claudeDir);
-    } catch (err) {
-      console.error("funtown: sweep failed", err);
+  /** The string `field` of a POST body from the page, or null once it has answered 403, 400 or 413. */
+  const pageField = async (req: IncomingMessage, res: ServerResponse, field: string): Promise<string | null> => {
+    if (!fromPage(req.headers.origin, req.headers["x-funtown-token"])) {
+      req.resume();
+      res.writeHead(403).end();
+      return null;
     }
-    if (!closed) sweepTimer = setTimeout(() => void sweepLoop(claudeDir), sweepMs);
+    const body = await readJson(req, MAX_PAGE_BODY);
+    const value = "value" in body ? (body.value as Record<string, unknown> | null)?.[field] : undefined;
+    if (typeof value !== "string") {
+      res.writeHead("status" in body ? body.status : 400).end();
+      return null;
+    }
+    return value;
   };
+  const csp = () =>
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+    `connect-src 'self' ws://127.0.0.1:${port} ws://localhost:${port}; ` +
+    "object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
+  const text = { "content-type": "text/plain; charset=utf-8" };
 
   const server = createServer(async (req, res) => {
     const path = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
 
-    if (req.headers.host !== `127.0.0.1:${port}` && req.headers.host !== `localhost:${port}`) {
+    if (!hostOk(req.headers.host)) {
       req.resume();
       res.writeHead(403).end();
       return;
@@ -186,29 +193,14 @@ export async function startServer(opts: {
         res.writeHead(403).end();
         return;
       }
-      let body = "";
-      try {
-        for await (const chunk of req) body += chunk;
-      } catch {
-        res.writeHead(400).end();
+      const body = await readJson(req);
+      if ("status" in body) {
+        res.writeHead(body.status).end();
         return;
       }
-      let event: HookEvent;
+      const event = body.value as HookEvent;
       try {
-        event = JSON.parse(body) as HookEvent;
-      } catch {
-        res.writeHead(400).end();
-        return;
-      }
-      try {
-        const gone = town.apply(event);
-        const sid = event.session_id;
-        if (sid) hooked.add(sid);
-        if (sid && event.hook_event_name) {
-          clearTimeout(timers.get(sid));
-          timers.delete(sid);
-        }
-        if (gone) scheduleRemoval(gone);
+        town.apply(event);
         broadcast();
         res.writeHead(204).end();
       } catch (err) {
@@ -219,40 +211,14 @@ export async function startServer(opts: {
     }
 
     if (req.method === "POST" && path === "/jump") {
-      const origin = req.headers.origin;
-      if (origin !== `http://127.0.0.1:${port}` && origin !== `http://localhost:${port}`) {
-        req.resume();
-        res.writeHead(403).end();
-        return;
-      }
-      let leadId: unknown;
-      let size = 0;
-      let body = "";
-      try {
-        for await (const chunk of req) {
-          size += (chunk as Buffer).length;
-          if (size > MAX_JUMP_BODY) {
-            req.resume();
-            res.writeHead(413).end();
-            return;
-          }
-          body += chunk;
-        }
-        leadId = (JSON.parse(body) as { lead?: unknown } | null)?.lead;
-      } catch {
-        // an unreadable or malformed body leaves leadId unset and gets the 400 below
-      }
-      if (typeof leadId !== "string") {
-        res.writeHead(400).end();
-        return;
-      }
+      const leadId = await pageField(req, res, "lead");
+      if (leadId === null) return;
       const lead = town.lead(leadId);
       if (!lead) {
         res.writeHead(404).end();
         return;
       }
       const command = jumpCommand(lead.termProgram, lead.tty);
-      const text = { "content-type": "text/plain; charset=utf-8" };
       if (!command) {
         res.writeHead(409, text).end("Funtown doesn't know how to open this session's terminal.");
         return;
@@ -263,6 +229,23 @@ export async function startServer(opts: {
       } catch (err) {
         console.error(`funtown: failed to jump to ${command[0]}`, err);
         res.writeHead(500, text).end("Couldn't open the terminal.");
+      }
+      return;
+    }
+
+    if (req.method === "POST" && path === "/sessions") {
+      const cwd = await pageField(req, res, "cwd");
+      if (cwd === null) return;
+      if (!town.snapshot().houses.some((h) => h.cwd === cwd)) {
+        res.writeHead(404).end();
+        return;
+      }
+      try {
+        const id = await startBackground(claude, cwd);
+        res.writeHead(201, { "content-type": "application/json" }).end(JSON.stringify({ id }));
+      } catch (err) {
+        console.error(`funtown: claude --bg failed in ${cwd}`, err);
+        res.writeHead(500, text).end(`Couldn't start a session: ${(err as Error).message}`);
       }
       return;
     }
@@ -284,8 +267,17 @@ export async function startServer(opts: {
       if (file.startsWith(dist)) {
         try {
           const data = await readFile(file);
-          res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });
-          res.end(data);
+          const type = TYPES[extname(file)] ?? "application/octet-stream";
+          if (extname(file) !== ".html") {
+            res.writeHead(200, { "content-type": type }).end(data);
+            return;
+          }
+          const html = data.toString("utf8");
+          const head = /<head[^>]*>/i.exec(html);
+          if (!head) throw new Error(`${file} has no <head> to put the page's token in`);
+          const at = head.index + head[0].length;
+          res.writeHead(200, { "content-type": type, "content-security-policy": csp() });
+          res.end(`${html.slice(0, at)}<meta name="funtown-token" content="${token}">${html.slice(at)}`);
           return;
         } catch (err) {
           if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
@@ -296,7 +288,7 @@ export async function startServer(opts: {
         }
       }
       if (path === "/") {
-        res.writeHead(503, { "content-type": "text/plain; charset=utf-8" });
+        res.writeHead(503, text);
         res.end("Funtown's page isn't built yet. Run: npm run build");
         return;
       }
@@ -304,20 +296,40 @@ export async function startServer(opts: {
     res.writeHead(404).end();
   });
 
+  server.on("upgrade", (req, socket, head) => {
+    const onError = (err: Error) => console.error("funtown: /term socket error", err.message);
+    socket.on("error", onError);
+    const refuse = (status: number) =>
+      void socket.end(`HTTP/1.1 ${status} ${STATUS_CODES[status]}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+    const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    if (!hostOk(req.headers.host)) return refuse(403);
+    if (url.pathname !== "/term") return refuse(404);
+    if (!fromPage(req.headers.origin, url.searchParams.get("token"))) return refuse(403);
+    const lead = town.lead(url.searchParams.get("lead") ?? "");
+    if (!lead) return refuse(404);
+    if (lead.kind !== "background" || !lead.shortId) return refuse(409);
+    const cols = Number(url.searchParams.get("cols"));
+    const rows = Number(url.searchParams.get("rows"));
+    if (!isSize(cols) || !isSize(rows)) return refuse(400);
+    socket.removeListener("error", onError);
+    terminals.attach(req, socket, head, lead.id, lead.shortId, cols, rows);
+  });
+
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(opts.port, "127.0.0.1", resolve);
   });
   port = (server.address() as AddressInfo).port;
-  if (opts.claudeDir) sweepTimer = setTimeout(() => void sweepLoop(opts.claudeDir!), sweepMs);
+  void poll();
 
   return {
     url: `http://127.0.0.1:${port}`,
+    claude: version,
     close: () =>
       new Promise<void>((resolve) => {
         closed = true;
-        clearTimeout(sweepTimer);
-        for (const timer of timers.values()) clearTimeout(timer);
+        clearTimeout(pollTimer);
+        terminals.close();
         for (const res of clients) res.end();
         server.close(() => resolve());
         server.closeAllConnections();

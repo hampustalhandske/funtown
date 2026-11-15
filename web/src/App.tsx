@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Character, House, Lead, Stage, Town } from "../../server/types.ts";
+import { SessionTerminal, funtownToken } from "./Terminal.tsx";
 
 const STAGE_LABEL: Record<Stage, string> = {
   working: "🟢 working",
   needs_you: "🔴 needs you",
   done: "⚪ done",
-  gone: "⚫ gone",
 };
+
+const OPENING_TIMEOUT_MS = 30_000;
 
 /** Subscribes to the server's Town stream; gives the latest Town, or null before the first. */
 function useTown(): Town | null {
@@ -30,11 +32,17 @@ function CharacterRow({
 }) {
   const { name, stage, activity, needs } = character;
   return (
-    <button type="button" className={`character ${stage}`} data-stage={stage} onClick={() => onSelect(character.id)}>
+    <button
+      type="button"
+      className={`character ${stage}`}
+      data-stage={stage}
+      aria-label={[name, "kind" in character ? character.kind : null, STAGE_LABEL[stage].replace(/^\S+ /, "")].filter(Boolean).join(", ")}
+      onClick={() => onSelect(character.id)}>
       <span className="avatar" aria-hidden="true">{avatar}</span>
       <span className="body">
         <span className="line">
           <span className="name">{name}</span>
+          {"kind" in character && <span className="kind">{character.kind === "background" ? "background" : "terminal"}</span>}
           <span className="stage">{STAGE_LABEL[stage]}</span>
         </span>
         {stage === "needs_you" && needs && <span className="activity">waiting for you: {needs}</span>}
@@ -63,7 +71,25 @@ function LeadItem({ lead, onSelect }: { lead: Lead; onSelect: Select }) {
   );
 }
 
-function HouseCard({ house, onSelect }: { house: House; onSelect: Select }) {
+function HouseCard({
+  house,
+  onSelect,
+  onNew,
+  notice,
+}: {
+  house: House;
+  onSelect: Select;
+  onNew: (cwd: string) => Promise<string | null>;
+  notice?: string;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  async function start() {
+    setError(null);
+    setPending(true);
+    setError(await onNew(house.cwd));
+    setPending(false);
+  }
   const needsYou = house.leads.some((lead) => lead.stage === "needs_you");
   return (
     <section className={`house${needsYou ? " needs_you" : ""}`} aria-label={house.project} title={house.cwd}>
@@ -73,6 +99,10 @@ function HouseCard({ house, onSelect }: { house: House; onSelect: Select }) {
           <LeadItem key={lead.id} lead={lead} onSelect={onSelect} />
         ))}
       </ul>
+      <button type="button" onClick={start} disabled={pending}>
+        New session
+      </button>
+      {(error ?? notice) && <p role="alert" className="error">{error ?? notice}</p>}
     </section>
   );
 }
@@ -82,7 +112,10 @@ function Panel({ character, lead, onClose }: { character: Character; lead: Lead;
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    const onKey = (event: KeyboardEvent) => {
+      const inTerminal = event.target instanceof Element && event.target.closest(".terminal");
+      if (event.key === "Escape" && !inTerminal) onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -93,7 +126,7 @@ function Panel({ character, lead, onClose }: { character: Character; lead: Lead;
     try {
       const reply = await fetch("/jump", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "x-funtown-token": funtownToken() },
         body: JSON.stringify({ lead: lead.id }),
       });
       if (reply.status !== 204) setError((await reply.text()) || `Jump failed (${reply.status}).`);
@@ -105,7 +138,7 @@ function Panel({ character, lead, onClose }: { character: Character; lead: Lead;
   }
 
   return (
-    <aside className="panel" role="dialog" aria-label={`${character.name} details`}>
+    <aside className={`panel${character.id === lead.id && lead.kind === "background" ? " wide" : ""}`} role="dialog" aria-label={`${character.name} details`}>
       <button type="button" className="close" aria-label="Close" onClick={onClose}>
         ✕
       </button>
@@ -122,9 +155,15 @@ function Panel({ character, lead, onClose }: { character: Character; lead: Lead;
           ))}
         </ul>
       )}
-      <button type="button" onClick={jump} disabled={pending}>
-        Go to terminal
-      </button>
+      {character.id === lead.id && lead.kind === "background" && <SessionTerminal lead={lead.id} />}
+      {character.id === lead.id && lead.kind === "terminal" && (
+        <p className="hint">press ← or type /bg in its terminal to open it here</p>
+      )}
+      {lead.kind === "terminal" && (
+        <button type="button" onClick={jump} disabled={pending}>
+          Go to terminal
+        </button>
+      )}
       {error && <p role="alert" className="error">{error}</p>}
     </aside>
   );
@@ -142,6 +181,45 @@ export function App() {
   useEffect(() => {
     if (town && selection && !selected) setSelection(null);
   }, [town, selection, selected]);
+  const [opening, setOpening] = useState<{ id: string; cwd: string; at: number }[]>([]);
+  const [missing, setMissing] = useState<string[]>([]);
+  const leads = town?.houses.flatMap((house) => house.leads) ?? [];
+  const listed = opening.flatMap((p) => {
+    const found = leads.find((l) => l.shortId === p.id);
+    return found ? [{ p, found }] : [];
+  });
+  useEffect(() => {
+    if (listed.length === 0) return;
+    const last = listed[listed.length - 1].found;
+    setSelection({ lead: last.id, id: last.id });
+    setOpening((all) => all.filter((p) => !listed.some((l) => l.p === p)));
+  }, [listed.map((l) => l.p.id).join()]);
+  useEffect(() => {
+    const timers = opening.map((p) =>
+      setTimeout(() => {
+        setOpening((all) => all.filter((x) => x !== p));
+        setMissing((all) => [...all, p.cwd]);
+      }, Math.max(0, p.at + OPENING_TIMEOUT_MS - Date.now())),
+    );
+    return () => timers.forEach(clearTimeout);
+  }, [opening]);
+  /** Starts a background session in `cwd`; gives an error text, or null once started (its terminal opens when listed). */
+  const startSession = useCallback(async (cwd: string): Promise<string | null> => {
+    try {
+      const reply = await fetch("/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-funtown-token": funtownToken() },
+        body: JSON.stringify({ cwd }),
+      });
+      if (reply.status !== 201) return (await reply.text()) || `Start failed (${reply.status}).`;
+      const { id } = (await reply.json()) as { id: string };
+      setMissing((all) => all.filter((c) => c !== cwd));
+      setOpening((all) => [...all, { id, cwd, at: Date.now() }]);
+      return null;
+    } catch {
+      return "Couldn't reach Funtown.";
+    }
+  }, []);
   const waiting =
     town?.houses.flatMap((house) =>
       house.leads.filter((lead) => lead.stage === "needs_you").map((lead) => `${lead.name} (${house.project})`),
@@ -151,6 +229,15 @@ export function App() {
       <header>
         <h1>Funtown</h1>
       </header>
+      {town && town.claude.problems.length > 0 && (
+        <div className="alert" role="alert" aria-label="Claude version problems">
+          <ul>
+            {town.claude.problems.map((problem) => (
+              <li key={problem}>{problem}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {waiting.length > 0 && (
         <div className="alert" role="alert">
           🔴 {waiting.length === 1 ? "1 session needs you" : `${waiting.length} sessions need you`}:{" "}
@@ -160,7 +247,13 @@ export function App() {
       {town && town.houses.length === 0 && <p className="empty">No Claude sessions running yet.</p>}
       <main className="town">
         {town?.houses.map((house) => (
-          <HouseCard key={house.cwd} house={house} onSelect={(leadId, id) => setSelection({ lead: leadId, id })} />
+          <HouseCard
+            key={house.cwd}
+            house={house}
+            onSelect={(leadId, id) => setSelection({ lead: leadId, id })}
+            onNew={startSession}
+            notice={missing.includes(house.cwd) ? "The new session didn't appear." : undefined}
+          />
         ))}
       </main>
       {lead && selected && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} onClose={onClose} />}

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const town = {
+  claude: { version: "2.1.325", problems: [] },
   houses: [
     {
       project: "demo-app",
@@ -8,7 +9,7 @@ const town = {
       leads: [
         {
           id: "s1", name: "lead-1", stage: "needs_you", activity: null, step: "Bash: npm test", needs: "permission",
-          tty: "ttys001", termProgram: "TestTerm",
+          tty: "ttys001", termProgram: "TestTerm", kind: "terminal", shortId: null,
           subagents: [{ id: "x1", name: "Explore-1", stage: "working", activity: "Read", step: "Read" }],
         },
       ],
@@ -17,7 +18,7 @@ const town = {
       project: "other-app",
       cwd: "/work/other-app",
       leads: [
-        { id: "s2", name: "lead-2", stage: "working", activity: null, step: null, tty: null, termProgram: null, subagents: [] },
+        { id: "s2", name: "lead-2", stage: "working", activity: null, step: null, tty: null, termProgram: null, kind: "terminal", shortId: null, subagents: [] },
       ],
     },
   ],
@@ -91,9 +92,9 @@ test("an_open_panel_follows_new_states_and_closes_when_its_character_is_removed"
   const panel = page.getByRole("dialog", { name: "lead-2 details" });
   await expect(panel).toContainText("nothing yet");
   const lead2 = town.houses[1].leads[0];
-  stream.send({ houses: [town.houses[0], { ...town.houses[1], leads: [{ ...lead2, step: "Edit: a.ts" }] }] });
+  stream.send({ claude: { version: "2.1.325", problems: [] }, houses: [town.houses[0], { ...town.houses[1], leads: [{ ...lead2, step: "Edit: a.ts" }] }] });
   await expect(panel).toContainText("Edit: a.ts");
-  stream.send({ houses: [town.houses[0]] });
+  stream.send({ claude: { version: "2.1.325", problems: [] }, houses: [town.houses[0]] });
   await expect(panel).toHaveCount(0);
   stream.send(town);
   await expect(page.locator('section[aria-label="other-app"]')).toBeVisible();
@@ -114,9 +115,10 @@ test("a_second_click_while_a_jump_is_pending_posts_once", async ({ page }) => {
 test("equal_subagent_ids_under_two_leads_open_the_right_panel", async ({ page }) => {
   const sub = (name: string) => ({ id: "x1", name, stage: "working", activity: null, step: null });
   const lead = (id: string, name: string, subName: string) => ({
-    id, name, stage: "working", activity: null, step: null, tty: null, termProgram: null, subagents: [sub(subName)],
+    id, name, stage: "working", activity: null, step: null, tty: null, termProgram: null, kind: "terminal", shortId: null, subagents: [sub(subName)],
   });
   const { jumps } = await open(page, { status: 204 }, {
+    claude: { version: "2.1.325", problems: [] },
     houses: [{ project: "demo-app", cwd: "/work/demo-app", leads: [lead("a", "lead-a", "Sub-A"), lead("b", "lead-b", "Sub-B")] }],
   });
   await page.locator('ul[aria-label="lead-b subagents"] .character').click();

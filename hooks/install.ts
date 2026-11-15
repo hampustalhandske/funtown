@@ -4,7 +4,6 @@ import { dirname, join, resolve } from "node:path";
 
 const EVENTS = [
   "SessionStart",
-  "SessionEnd",
   "UserPromptSubmit",
   "PreToolUse",
   "PostToolUse",
@@ -16,7 +15,7 @@ const EVENTS = [
 ];
 const MARKER = "funtown-hook.ts";
 
-type Command = { type?: string; command?: string; timeout?: number };
+type Command = { type?: string; command?: string; timeout?: number; async?: boolean };
 type Group = { hooks?: Command[] };
 type Settings = { hooks?: Record<string, Group[]> };
 
@@ -72,7 +71,7 @@ if (action === "install") {
     if (!(event in settings.hooks) || previous?.createdEvents.includes(event)) {
       createdEvents.push(event);
     }
-    (settings.hooks[event] ??= []).push({ hooks: [{ type: "command", command, timeout: 2 }] });
+    (settings.hooks[event] ??= []).push({ hooks: [{ type: "command", command, timeout: 2, async: true }] });
   }
   state[key] = { createdHooksKey, createdEvents };
 } else {

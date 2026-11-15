@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const town = {
+  claude: { version: "2.1.325", problems: [] },
   houses: [
     {
       project: "demo-app",
@@ -8,7 +9,7 @@ const town = {
       leads: [
         {
           id: "s1", name: "lead-1", stage: "needs_you", activity: null, needs: "permission",
-          tty: "ttys001", termProgram: "TestTerm",
+          tty: "ttys001", termProgram: "TestTerm", kind: "terminal", shortId: null,
           subagents: [{ id: "x1", name: "Explore-1", stage: "working", activity: "Bash: npm test" }],
         },
       ],
@@ -17,7 +18,7 @@ const town = {
       project: "other-app",
       cwd: "/work/other-app",
       leads: [
-        { id: "s2", name: "lead-2", stage: "working", activity: "Edit", tty: null, termProgram: null, subagents: [] },
+        { id: "s2", name: "lead-2", stage: "working", activity: "Edit", tty: null, termProgram: null, kind: "terminal", shortId: null, subagents: [] },
       ],
     },
   ],
@@ -63,7 +64,7 @@ test("loading_the_page_logs_no_failed_requests_such_as_a_favicon_404", async ({ 
     route.fulfill({
       status: 200,
       headers: { "content-type": "text/event-stream", "cache-control": "no-cache" },
-      body: `event: state\ndata: ${JSON.stringify({ houses: [] })}\n\n`,
+      body: `event: state\ndata: ${JSON.stringify({ claude: { version: "2.1.325", problems: [] }, houses: [] })}\n\n`,
     }),
   );
   await page.goto("/");
