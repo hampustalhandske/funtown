@@ -94,6 +94,11 @@ Produced by tasks 1 and 2, consumed by task 4 (tests) and `package.json`.
   SessionEnd, UserPromptSubmit, PreToolUse, PostToolUse, PermissionRequest, Notification,
   Stop, SubagentStart and SubagentStop. Funtown's entries are the ones whose command runs
   `funtown-hook.ts`; uninstall removes only those.
+- Install records what it created in `FUNTOWN_STATE` (default `~/.funtown/installed.json`),
+  keyed by the settings file's absolute path: `{ "<settings path>": { "createdHooksKey":
+  boolean, "createdEvents": string[] } }`. Uninstall removes Funtown's entries, then deletes
+  an event or the `hooks` key only when the record says install created it and it is now
+  empty, then drops that record. Without a record it deletes no empty entry.
 
 ## Tasks
 
