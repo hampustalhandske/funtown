@@ -1,8 +1,7 @@
-import { spawn } from "node:child_process";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ClaudeDir, leadsOf, post, start, townWhere } from "./helpers.ts";
+import { ClaudeDir, deadPid, leadsOf, post, start, townWhere } from "./helpers.ts";
 
 const START = "Fri Nov 13 12:37:09 2026";
 const psLine = (lstart = START) => `${lstart}     ttys004  claude --resume TERM_PROGRAM=Apple_Terminal`;
@@ -42,15 +41,19 @@ describe("sweep", () => {
   });
 
   it("a_dead_pid_turns_the_lead_gone", async () => {
-    const child = spawn(process.execPath, ["-e", "setTimeout(()=>{},60000)"], { stdio: "ignore" });
-    const exited = new Promise((r) => child.once("exit", r));
-    const claude = new ClaudeDir().session({ pid: child.pid!, sessionId: "s1", cwd: "/work/alpha", startedAt: 1, status: "idle", procStart: START });
-    const ps = livePs({ [child.pid!]: psLine() });
-    const { url } = await start({ claudeDir: claude.dir, exec: ps.exec, sweepMs: SWEEP, goneAfterMs: GONE_AFTER });
-    await townWhere(url, (t) => leadsOf(t).length === 1);
-    child.kill("SIGKILL");
-    await exited;
+    const { claude, url } = await live();
+    claude.session({ pid: process.pid, sessionId: "s1", cwd: "/work/alpha", startedAt: 1, status: "idle", procStart: START });
+    claude.rawSession(process.pid, JSON.stringify({ pid: deadPid(), sessionId: "s1", cwd: "/work/alpha", startedAt: 1, status: "idle", procStart: START }));
     await townWhere(url, isGone());
+  });
+
+  it("a_session_file_that_cannot_be_parsed_does_not_end_a_live_lead", async () => {
+    const { claude, ps, url } = await live();
+    claude.rawSession(process.pid, '{"pid":1,"sessionId":"half');
+    const before = ps.calls.length;
+    await sleep(SWEEP * 5);
+    expect(ps.calls.length).toBeGreaterThanOrEqual(before);
+    expect(leadsOf(await townWhere(url, () => true))[0].stage).not.toBe("gone");
   });
 
   it("a_pid_whose_start_time_stops_matching_turns_the_lead_gone", async () => {
