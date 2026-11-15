@@ -54,9 +54,8 @@ under Decisions with the reason.
 - `/events` decodes each body chunk on its own (`body += chunk`), so a multi-byte UTF-8
   character split across chunks becomes U+FFFD. Older than this branch; found by the review.
   Fix: `req.setEncoding("utf8")` or `Buffer.concat` before decoding.
-- Charter wording: add `~/.claude/sessions/` and `ps` as sources, plus m1's open items (the
-  subagent "done" stage, "HTTP hooks" vs the command hook, a check for the rebuild). Then
-  run `workflow approve`.
+- Charter wording is in #8 (sources, the subagent "done" stage, command hooks, checks for
+  the rebuild and "gone"). Approve the charter in your terminal on that branch, then merge.
 - Next: the charter's 5-day real-use check. Every v1 item now has a milestone.
 
 ## Notes
