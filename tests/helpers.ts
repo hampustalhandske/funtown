@@ -28,14 +28,11 @@ export function fakeClaude(): FakeClaude {
   return f;
 }
 
-let page: string | undefined;
-/** A minimal built page, so served-page tests do not depend on `vite build`. */
+/** A minimal built page in a fresh temp folder, so served-page tests do not depend on `vite build`. */
 function minimalPage(): string {
-  if (!page) {
-    page = mkdtempSync(join(tmpdir(), "funtown-page-"));
-    dirs.push(page);
-    writeFileSync(join(page, "index.html"), "<!doctype html><html><head><title>t</title></head><body></body></html>");
-  }
+  const page = mkdtempSync(join(tmpdir(), "funtown-page-"));
+  dirs.push(page);
+  writeFileSync(join(page, "index.html"), "<!doctype html><html><head><title>t</title></head><body></body></html>");
   return page;
 }
 

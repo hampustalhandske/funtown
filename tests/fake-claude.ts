@@ -28,9 +28,12 @@ export class FakeClaude {
   static install(dir: string): FakeClaude {
     mkdirSync(dir, { recursive: true });
     const f = new FakeClaude(dir);
-    copyFileSync(join(import.meta.dirname, "fake-claude.cjs"), f.path + ".tmp");
-    chmodSync(f.path + ".tmp", 0o755);
-    renameSync(f.path + ".tmp", f.path);
+    const src = join(import.meta.dirname, "fake-claude.cjs");
+    if (existsSync(f.path) && readFileSync(f.path, "utf8") === readFileSync(src, "utf8")) return f;
+    const tmp = `${f.path}.${process.pid}.tmp`; // unique per process, so parallel installs do not clash
+    copyFileSync(src, tmp);
+    chmodSync(tmp, 0o755);
+    renameSync(tmp, f.path);
     return f;
   }
   /** Points at a fake already installed in `dir`. */
@@ -44,6 +47,11 @@ export class FakeClaude {
   private flag(name: string, on: boolean) {
     if (on) writeFileSync(join(this.dir, name), "");
     else rmSync(join(this.dir, name), { force: true });
+  }
+  /** Empties the list and the `--bg` record and clears every failure switch. */
+  reset(): this {
+    for (const n of ["started.json", "list-fail", "version-fail", "bg-fail"]) rmSync(join(this.dir, n), { force: true });
+    return this.list([]);
   }
   /** Sets what `agents --json` prints. */
   list(sessions: Listed[]): this {

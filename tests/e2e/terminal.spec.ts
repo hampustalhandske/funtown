@@ -12,7 +12,7 @@ let project = "";
 test.beforeEach(() => {
   cwd = realpathSync(mkdtempSync(join(tmpdir(), "funtown-e2e-proj-")));
   project = basename(cwd);
-  fake.list([]);
+  fake.reset();
 });
 
 const session = (over: Partial<Listed>): Listed => ({
@@ -21,6 +21,9 @@ const session = (over: Partial<Listed>): Listed => ({
 const bg = (): Listed => session({ sessionId: sid, id: "abcd1234", kind: "background", name: "beta" });
 const row = (page: Page, name: string) => page.locator(`section[aria-label="${project}"] .character`).filter({ hasText: name }).first();
 const screen = (page: Page) => page.getByRole("dialog").locator(".xterm-rows");
+/** Everything the fake echoed as `got:"..."`, joined, so one frame per key or per string reads the same. */
+const echoed = async (page: Page) =>
+  [...(await screen(page).innerText()).matchAll(/got:"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]).join("");
 
 test("rows_show_each_sessions_name_and_kind", async ({ page }) => {
   fake.list([session({}), bg()]);
@@ -38,11 +41,11 @@ test("a_background_session_opens_a_live_terminal_that_echoes_typed_text_and_send
   await expect(screen(page)).toContainText("attached abcd1234");
   await page.locator(".xterm").click();
   await page.keyboard.type("hello");
-  await expect(screen(page)).toContainText('got:"hello"');
+  await expect.poll(() => echoed(page)).toBe("hello");
   await page.keyboard.press("Shift+Enter");
-  await expect(screen(page)).toContainText('got:"\\u001b\\r"');
+  await expect.poll(() => echoed(page)).toBe("hello\\u001b\\r");
   await page.keyboard.press("Enter");
-  await expect(screen(page)).toContainText('got:"\\r"');
+  await expect.poll(() => echoed(page)).toBe("hello\\u001b\\r\\r");
   expect(violations).toEqual([]);
 });
 
