@@ -16,7 +16,9 @@ Parts
 
 Contracts (source of truth: docs/MILESTONE.md of the milestone that set them)
 - Hook event: POST `/events`, Claude Code's hook JSON plus `funtown: { tty, term_program, at }`.
-- Town state: `server/types.ts`, streamed as SSE `state` events; used by `web/`.
+- Town state: `server/types.ts`, streamed as SSE `state` events; `web/` and `tests/`
+  import the types from there.
+- `startServer({ port, goneAfterMs?, distDir? })` in `server/app.ts`: entry for tests.
 - Env for tests: `FUNTOWN_PORT`, `FUNTOWN_URL`, `FUNTOWN_LOG`, `FUNTOWN_STATE`, `--settings`.
 
 Commands
@@ -26,6 +28,7 @@ Commands
 
 Decisions that bind
 - Nothing leaves the machine; listen on 127.0.0.1 only.
+- `POST /events` refuses any request with an `Origin` header; the hook never sends one.
 - All code our own; MIT tools are reference only.
 - Tests and fixtures never use real project names, paths or the real home folder.
 - Personal files stay gitignored: docs/ideas.md, .claude/settings.json, .claude/never-push.
