@@ -1,6 +1,6 @@
 # Milestone 2: cleanup — handoff
 
-Verdict: ship. Both Must-fix items from the review are applied; tests are green.
+Verdict: ship. Every review finding is applied; tests are green.
 
 ## Review in five minutes
 
@@ -38,30 +38,18 @@ Verdict: ship. Both Must-fix items from the review are applied; tests are green.
 - Review fixes applied in away mode: the favicon test now checks for the icon link
   (headless Chromium never requests `/favicon.ico`, so the old check could not fail); the
   tty hook test sets `FUNTOWN_LOG` to a temp file so it can't write to the real home.
-- The `/code-review` pass reviewed the m1 merge commit instead of this branch. Its findings
-  that still hold on this branch are listed below; it was not rerun.
+- All review findings are applied in this PR, at the user's call: in away mode, every
+  appropriate fix goes in before the PR, not only Must-fix.
+- The `/code-review` pass reviewed the m1 merge commit instead of this branch; its findings
+  that still held are fixed here (R1–R8 in docs/MILESTONE.md). It was not rerun.
+- `Host` must be `127.0.0.1:<port>` or `localhost:<port>` on every route, against DNS
+  rebinding. A later native wrapper that serves another host must add it.
+- `install.ts` takes only `install|uninstall [--settings <path>]`; anything else exits
+  before touching a file.
 
 ## Remaining work
 
-Should-fix, not applied:
-- `server/app.ts:50`: `for await (const chunk of req)` sits outside any try. A client that
-  drops mid-upload (the hook's own timeout) rejects the handler unhandled, which can stop
-  the server. Wrap the body read and answer 400.
-- `server/app.ts:60`: any POST with a `session_id` cancels the gone timer, even one
-  `town.apply` ignored (no `hook_event_name`); that lead then stays "gone" forever. Cancel
-  only for applied events.
-- `server/app.ts:104`: the bare `catch` sends every read error on `/` to the 503 "not
-  built" reply. Catch only `ENOENT`; log and 500 the rest.
-- `hooks/funtown-hook.ts:46`: `remaining()` in `findTty` is outside `psRow`'s try, so a
-  slow `ps` drops the whole event instead of posting it with tty null.
-- `hooks/install.ts:53`: an unknown flag (`--setings`, `--settings=x`) is ignored and the
-  real `~/.claude/settings.json` is edited. Reject unknown arguments.
-- No `Host` header check: a DNS-rebinding page could read `/stream`. Accept only
-  `127.0.0.1:<port>` and `localhost:<port>`.
-
-Nice-to-have: `server/town.ts:156` counter keys never deleted on `remove()`; the SSE frame
-built in two places in `server/app.ts`; `// fall through` comment at `server/app.ts:105`;
-temp dir in `tests/server.test.ts:135` never removed.
+None from this milestone's review.
 
 Next: m3-panel-jump (charter items 4 and 5), then m4-rebuild.
 
@@ -69,13 +57,13 @@ Next: m3-panel-jump (charter items 4 and 5), then m4-rebuild.
 
 - `startServer({ port, goneAfterMs?, distDir? })` is the test entry point; tests point
   `distDir` at an empty temp dir.
-- The repo test/prod ratio is 0.75, just above the 0.5–0.7 band, because m2 added tests
-  while removing production lines.
+- The repo test/prod ratio is 0.82, above the 0.5–0.7 band, because m2 added tests
+  for fixes that are mostly a few production lines each.
 - Headless Chromium doesn't fetch favicons; check icons through the page's `<link>`.
 
 ## Numbers
 
     Branch m2-cleanup vs 146bb7a
-      Production: +40 -41, net -1 of budget 400
-      Tests:      +63 -10, net 53 (test/prod n/a on this branch)
-      Repo:       639 production lines, 480 test lines (test/prod 0.75; band 0.5-0.7)
+      Production: +72 -52, net 20 of budget 400
+      Tests:      +126 -11, net 115 (test/prod 5.75 on this branch)
+      Repo:       660 production lines, 542 test lines (test/prod 0.82; band 0.5-0.7)

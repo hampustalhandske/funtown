@@ -27,7 +27,7 @@ Commands
 - Test: `npx eslint . && npx vitest run && npx playwright test`
 
 Decisions that bind
-- Nothing leaves the machine; listen on 127.0.0.1 only.
+- Nothing leaves the machine; listen on 127.0.0.1 only; `Host` must be 127.0.0.1 or localhost.
 - `POST /events` refuses any request with an `Origin` header; the hook never sends one.
 - All code our own; MIT tools are reference only.
 - Tests and fixtures never use real project names, paths or the real home folder.
