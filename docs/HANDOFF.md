@@ -16,11 +16,10 @@ under Decisions with the reason.
 
     npx eslint . && npx vitest run && npx playwright test
 
-**Needs you**
-- With Funtown running (`npm start`), `kill -9` a running `claude` session's pid. Its
-  character should show "gone" within 5 s and leave after 10 min.
-- Restart Funtown with two or more sessions open: each comes back with its tty, and
-  "Go to terminal" works on one in macOS Terminal.
+**Hand checks (done)**
+- 2026-11-15, by the user: sessions appear, details (subagents turn "done"), jump, rebuild
+  and gone pass. Needs you showed on a real permission prompt; the 10-wait count wasn't
+  run. Jump also brings VS Code and minimized windows to the front.
 
 ## Summary
 
@@ -54,9 +53,9 @@ under Decisions with the reason.
 - `/events` decodes each body chunk on its own (`body += chunk`), so a multi-byte UTF-8
   character split across chunks becomes U+FFFD. Older than this branch; found by the review.
   Fix: `req.setEncoding("utf8")` or `Buffer.concat` before decoding.
-- Charter wording is in #8 (sources, the subagent "done" stage, command hooks, checks for
-  the rebuild and "gone"). Approve the charter in your terminal on that branch, then merge.
-- Next: the charter's 5-day real-use check. Every v1 item now has a milestone.
+- v1 is done: the charter checks pass by hand. The 5-day real-use check moved to v2, because using
+  Funtown day to day needs typing into a session from it (parked: embedded terminal,
+  answering a waiting session from Funtown).
 
 ## Notes
 
