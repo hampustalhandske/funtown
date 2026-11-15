@@ -14,9 +14,11 @@ const EVENTS = [
   "SubagentStop",
 ];
 const MARKER = "funtown-hook.ts";
+const HOLD = "funtown-hold.ts";
+const MARKERS = [MARKER, HOLD];
 
 type Command = { type?: string; command?: string; timeout?: number; async?: boolean };
-type Group = { hooks?: Command[] };
+type Group = { matcher?: string; hooks?: Command[] };
 type Settings = { hooks?: Record<string, Group[]> };
 
 type InstallRecord = { createdHooksKey: boolean; createdEvents: string[] };
@@ -32,7 +34,7 @@ function strip(settings: Settings, created?: InstallRecord): void {
     const kept: Group[] = [];
     let touched = false;
     for (const group of groups) {
-      const rest = group.hooks?.filter((h) => !h.command?.includes(MARKER));
+      const rest = group.hooks?.filter((h) => !MARKERS.some((m) => h.command?.includes(m)));
       if (rest && rest.length !== group.hooks?.length) touched = true;
       if (!group.hooks || !rest || rest.length > 0 || group.hooks.length === 0) {
         kept.push(rest ? { ...group, hooks: rest } : group);
@@ -73,6 +75,9 @@ if (action === "install") {
     }
     (settings.hooks[event] ??= []).push({ hooks: [{ type: "command", command, timeout: 2, async: true }] });
   }
+  const hold = { type: "command", command: `node "${join(import.meta.dirname, HOLD)}"`, timeout: 7200 };
+  settings.hooks.PermissionRequest.push({ hooks: [hold] });
+  settings.hooks.PreToolUse.push({ matcher: "AskUserQuestion|ExitPlanMode", hooks: [hold] });
   state[key] = { createdHooksKey, createdEvents };
 } else {
   delete state[key];
