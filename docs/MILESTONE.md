@@ -41,7 +41,8 @@ Mode: with you
 - Start a session in a folder that isn't a project already on the page.
 - Listen anywhere but 127.0.0.1, or change `/events` beyond the decode fix.
 - Add a dependency other than node-pty, @xterm/xterm, @xterm/addon-fit and ws (the
-  orchestrator installs them before the build).
+  orchestrator installs them before the build), plus @types/ws and a postinstall that
+  restores spawn-helper's exec bit (both approved in review).
 
 ## Contracts
 
@@ -50,7 +51,8 @@ Mode: with you
 Produced by task 1 (calls), consumed by task 3 (the fake). The server runs the executable
 named by `startServer({ claude })` (default `"claude"`; `main.ts` reads `FUNTOWN_CLAUDE`)
 with execFile or node-pty, never a shell, and with every `CLAUDE*` and `AI_AGENT` variable
-removed from the child's environment.
+except `CLAUDE_CONFIG_DIR` removed from the child's environment (exception approved in
+review, so a custom config folder still works).
 
 ```
 <claude> --version                  stdout "2.1.325 (Claude Code)"; minimum 2.1.325
@@ -64,7 +66,8 @@ removed from the child's environment.
 <claude> attach <id>                in a pty (xterm-256color, the page's cols and rows)
 ```
 
-A failed or unparsable `agents --json` keeps the last list and writes one stderr line.
+A failed or unparsable `agents --json` keeps the last list and writes one stderr line,
+only when the reason differs from the last one written. Unlisted hook data still expires.
 
 ### Town state (`server/types.ts`)
 
@@ -88,6 +91,9 @@ export type Town = {
 - Stage: each poll sets it from `status`: busy → working, waiting → needs_you with
   `needs` = `waitingFor`, idle → needs_you with `needs` "turn ended" (v1's Stop). Hooks
   change it between polls as today. A lead never shows "gone"; it leaves instead.
+- Hooks run async, so events can arrive out of order: an event whose `funtown.at` is
+  lower than the last one applied to the same character (lead, or subagent by
+  `agent_id`) changes nothing.
 
 ### Page endpoints
 
