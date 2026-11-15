@@ -142,7 +142,11 @@ export function createHolds(town: TownState, opts: { unlistedMs: number; answerL
       for (const hold of holds.values()) {
         const { card, toolUseId } = hold;
         if (card.lead !== event.session_id || card.agent !== (event.agent_id ?? null) || at <= card.at) continue;
-        if (name === "PreToolUse" && toolUseId !== undefined && event.tool_use_id === toolUseId) continue;
+        // A PermissionRequest carries no tool_use_id, so its own PreToolUse is matched by tool and input.
+        const own = toolUseId !== undefined
+          ? event.tool_use_id === toolUseId
+          : event.tool_name === card.tool && JSON.stringify(event.tool_input) === JSON.stringify(card.input);
+        if (name === "PreToolUse" && own) continue;
         void close(hold, "elsewhere");
       }
     },
