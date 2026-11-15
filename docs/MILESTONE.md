@@ -79,6 +79,22 @@ type Town = { houses: House[] };
 
 The server also serves the built page from `web/dist/` at `/`.
 
+### Entry points
+
+Produced by tasks 1 and 2, consumed by task 4 (tests) and `package.json`.
+
+- `server/app.ts`: `startServer(opts: { port: number; goneAfterMs?: number }): Promise<{ url: string; close(): Promise<void> }>`.
+  Port 0 picks a free port; `goneAfterMs` defaults to 600000 (10 min).
+- `server/main.ts`: calls `startServer` on `FUNTOWN_PORT` (default 4777).
+- `hooks/funtown-hook.ts`: run as `node <abs path>/hooks/funtown-hook.ts`, event JSON on
+  stdin; posts to `FUNTOWN_URL` (default `http://127.0.0.1:4777`); when nothing listens, it
+  appends one line to `FUNTOWN_LOG` (default `~/.funtown/hook.log`) and exits 0.
+- `hooks/install.ts install|uninstall [--settings <path>]` (default
+  `~/.claude/settings.json`). It installs one command hook, timeout 2 s, for SessionStart,
+  SessionEnd, UserPromptSubmit, PreToolUse, PostToolUse, PermissionRequest, Notification,
+  Stop, SubagentStart and SubagentStop. Funtown's entries are the ones whose command runs
+  `funtown-hook.ts`; uninstall removes only those.
+
 ## Tasks
 
 | # | Owner | Owned paths | Does | Done when |
