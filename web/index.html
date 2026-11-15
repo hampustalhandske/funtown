@@ -19,7 +19,8 @@
       .house.needs_you { border-color: #d32f2f; box-shadow: 0 0 0 3px #f8b4b4; }
       ul { list-style: none; margin: 0; padding: 0; }
       .subagents { margin: 0.25rem 0 0.25rem 1.75rem; padding-left: 0.75rem; border-left: 2px dashed #c8a97e; }
-      .character { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0.5rem; border-radius: 0.5rem; }
+      .character { display: flex; width: 100%; font: inherit; color: inherit; text-align: left; border: 0;
+        background: none; cursor: pointer; align-items: center; gap: 0.6rem; padding: 0.35rem 0.5rem; border-radius: 0.5rem; }
       .avatar { font-size: 1.6rem; width: 2.4rem; height: 2.4rem; display: flex; align-items: center;
         justify-content: center; border-radius: 50%; border: 3px solid #bbb; background: #fff; }
       .character.working .avatar { border-color: #2e7d32; }
@@ -32,6 +33,11 @@
       .name { font-weight: 600; }
       .stage { margin-left: 0.4rem; font-size: 0.9rem; }
       .activity { font-family: ui-monospace, monospace; font-size: 0.85rem; color: #444; }
+      .panel { position: fixed; top: 1rem; right: 1rem; width: 20rem; background: #fff; border: 2px solid #c8a97e;
+        border-radius: 0.75rem; padding: 0.75rem 1rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); }
+      .panel h2 { margin: 0; font-size: 1.15rem; }
+      .panel .close { position: absolute; top: 0.5rem; right: 0.5rem; cursor: pointer; }
+      .panel .error { color: #d32f2f; }
     </style>
   </head>
   <body>
