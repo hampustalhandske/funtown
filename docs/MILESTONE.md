@@ -1,147 +1,173 @@
-# Milestone 7: terminal room
+# Milestone 8: answer cards
 
-Serves: charter item 1, "Terminal room": every session in one list; background sessions
-open their live terminal in the app through `claude attach`; a session in a Terminal tab
-shows a hint to send it there; start a new session in a project. Also the start-up version
-check (Constraints) and the rule that sessions come only from `claude agents --json`.
-Not here: background runs in worktrees and the shell tab (m11), adding projects (m10).
-Estimate: ~320 net production lines of an 800 budget (adds ~550, deletes ~230: rebuild.ts
-and the `ps` sweep go)
-Mode: with you
+Serves: charter item 2, "Needs you": answer cards (allow or deny, pick an option, approve a
+plan) showing the exact command and folder; and the answer log behind the "Answers through
+Funtown" check. Also m7's two remaining test gaps.
+Not here (m9-needs-queue): the pop-up, sound and mute, the desk queue with its key, focus
+rules, stuck agents.
+Estimate: ~390 net production lines of a 400 budget
+Mode: away: open the PR after review and continue with the queue (approved 2026-11-15)
 
 ## Done when
 
-1. The page shows exactly the sessions `claude agents --json` lists, grouped by project
-   (`cwd`), each with its `name`, its kind (terminal or background) and its stage; a
-   session that leaves the list leaves the page within 5 s (test with the fake `claude`).
-2. Clicking a background session opens its live terminal in the panel. In a real `--bg`
-   session (orchestrator, in this repo, stopped and removed after): typed text, Shift+Enter
-   (a second input line, nothing sent), `!ls`, `/context` and Esc all work; after closing
-   the panel, `claude agents --json` still lists the session.
-3. Clicking a terminal (interactive) session shows the hint "press ← or type /bg in its
-   terminal to open it here" and the Go to terminal button; no live terminal.
-4. "New session" on a project starts `claude --bg` in that project's folder with no
-   worktree (`git worktree list` unchanged), and its terminal opens once it is listed.
-5. With `claude --version` below 2.1.325 or failing, start prints one line per feature that
-   won't work, and the page shows the same list in a banner.
-6. Without the page's token, or from another Origin, `POST /jump`, `POST /sessions` and the
-   `/term` WebSocket are refused (403); the page is served with the CSP below; `/events`
-   reads a multi-byte character split across two chunks intact.
-7. `npm run install-hooks` writes `"async": true` on every Funtown entry; in a real
-   `claude -p` session with a hook that sleeps 3 s, the run takes no 3 s longer (orchestrator).
-8. `npx eslint . && npx vitest run && npx playwright test` passes, and no test runs the
-   real `claude`.
+1. A permission request from a listed session shows a card under its lead and in its
+   panel with the tool, the exact command (Bash) or file path (Edit, Write), and the
+   folder; Allow runs the tool, Deny stops it and Claude is told it was denied in Funtown.
+2. An AskUserQuestion from a listed background session shows a card with every question
+   and its options plus an "Other" text box; Send gives Claude the picked labels (several
+   for a multi-select) or the typed text.
+3. An ExitPlanMode from a listed background session shows the plan text; Approve leaves
+   plan mode, Keep planning sends the typed feedback and Claude stays in plan mode.
+4. A held question or plan sets its lead to needs you, with `needs` "question" or "plan",
+   even while `claude agents --json` says busy.
+5. A permission answered in the terminal removes its card within 2 s of the session's
+   next hook event, and its hook process exits.
+6. Questions and plans from terminal sessions are not held: their dialog shows in their
+   terminal as today. With no page open for 10 s, every held request is released and the
+   terminal's own dialog takes over; a request from a session that isn't listed within
+   10 s is released too.
+7. Every card that closes adds one line to the answer log (`~/.funtown/answers.jsonl`):
+   `at`, `lead`, `project`, `kind`, `by` = funtown, elsewhere or dropped.
+8. With the Funtown server stopped, a permission request shows the normal terminal dialog
+   at once (the hold hook exits 0 with no output).
+9. Real sessions (orchestrator, a `--bg` haiku session in a scratch repo, stopped and
+   removed after): items 1, 2, 3 and 5 work end to end; a subagent's permission card names
+   the subagent (its event carries `agent_id`); a request held 2 h is still held, then
+   Allow still applies.
+10. `npx eslint . && npx vitest run && npx playwright test` passes, and no test runs the
+    real `claude`.
 
 ## Must not
 
-- Read Claude's folder (`~/.claude/`) in production code: sessions come only from
-  `claude agents --json`, terminals only from `claude attach`.
-- Run `claude` through a shell or put a session id, cwd or tty into a command string;
-  ids and paths go in as arguments.
-- Start a session in a folder that isn't a project already on the page.
-- Listen anywhere but 127.0.0.1, or change `/events` beyond the decode fix.
-- Add a dependency other than node-pty, @xterm/xterm, @xterm/addon-fit and ws (the
-  orchestrator installs them before the build), plus @types/ws and a postinstall that
-  restores spawn-helper's exec bit (both approved in review).
+- Change the event hook (`funtown-hook.ts`) or its 800 ms deadline; holds are a separate
+  hook.
+- Hold anything other than PermissionRequest and PreToolUse for AskUserQuestion and
+  ExitPlanMode.
+- Answer for the user: no auto-allow, no "always allow", no timeout that picks an answer.
+- Accept `/hold` with an `Origin` header, or `/answer` without the page's token and Origin.
+- Add a dependency.
 
 ## Contracts
 
-### The `claude` executable
+### Hold hook → server
 
-Produced by task 1 (calls), consumed by task 3 (the fake). The server runs the executable
-named by `startServer({ claude })` (default `"claude"`; `main.ts` reads `FUNTOWN_CLAUDE`)
-with execFile or node-pty, never a shell, and with every `CLAUDE*` and `AI_AGENT` variable
-except `CLAUDE_CONFIG_DIR` removed from the child's environment (exception approved in
-review, so a custom config folder still works).
+Produced by task 1 (hook), consumed by task 2 (server).
 
-```
-<claude> --version                  stdout "2.1.325 (Claude Code)"; minimum 2.1.325
-<claude> agents --json              stdout: JSON array, every pollMs (default 2000 ms)
-  [{ "sessionId": "2a2362f8-...", "id": "2a2362f8",   // id: background only
-     "name": "s3bg", "kind": "interactive" | <other>, // not "interactive" = background
-     "pid": 123, "cwd": "/abs/path", "startedAt": 1731670000000,
-     "status": "busy" | "idle" | "waiting", "waitingFor": "permission prompt" }]
-<claude> --bg --settings '{"worktree":{"bgIsolation":"none"}}'   cwd: the project; stdout
-                                    carries the new short id (task 1 checks the format)
-<claude> attach <id>                in a pty (xterm-256color, the page's cols and rows)
+`hooks/funtown-hold.ts`, a command hook with no deadline of its own. It reads the hook JSON
+from stdin, adds `funtown: { at: Date.now() }`, POSTs it to `${FUNTOWN_URL}/hold`, and
+waits. Reply 200: print the body to stdout, exit 0. Any other reply, a network error or no
+server: print nothing, exit 0 (Claude shows its own dialog). Errors go to `FUNTOWN_LOG`.
+
+Installer entries, added beside the nine event entries and removed with them:
+
+```json
+"PermissionRequest": [{ "hooks": [{ "type": "command", "command": "node \"<dir>/funtown-hold.ts\"", "timeout": 7200 }] }],
+"PreToolUse": [{ "matcher": "AskUserQuestion|ExitPlanMode",
+                 "hooks": [{ "type": "command", "command": "node \"<dir>/funtown-hold.ts\"", "timeout": 7200 }] }]
 ```
 
-A failed or unparsable `agents --json` keeps the last list and writes one stderr line,
-only when the reason differs from the last one written. Unlisted hook data still expires.
+No `async`: Claude waits for these.
+
+`POST /hold`: refuses any `Origin` (403), no body limit, same Host rule as `/events`. The
+server holds the request open until the card closes, then replies:
+- 200 with the hook output for the answer (below), when answered in Funtown;
+- 204 with no body, when released (answered elsewhere, no page, not listed, lead left).
+- 204 at once for a question or plan from a terminal lead, or when no page has been
+  connected for 10 s.
+The request closing early (Esc, the hook's timeout, a kill) closes the card as dropped.
+
+Hook output per answer:
+
+```json
+permission allow  {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}
+permission deny   {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"The user denied this in Funtown."}}}
+question          {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow",
+                    "updatedInput":{...tool_input, "answers":{"<question text>":"<label>, <label> | <typed text>"}}}}
+plan approve      {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","updatedInput":{...tool_input}}}
+plan keep         {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",
+                    "permissionDecisionReason":"<feedback, or: Keep planning.>"}}
+```
+
+Release rule ("answered elsewhere"): a card closes as elsewhere when `/events` applies an
+event from the same `session_id` and `agent_id` with `funtown.at` later than the card's
+`at`, other than PermissionRequest and Notification, and other than a PreToolUse with the
+card's own `tool_use_id`.
 
 ### Town state (`server/types.ts`)
 
-Produced by task 1, consumed by tasks 2 and 3.
+Produced by task 2, consumed by task 3.
 
 ```ts
-export type Lead = Character & {
-  tty: string | null; termProgram: string | null; subagents: Character[];
-  kind: "terminal" | "background";
-  shortId: string | null;            // the `id` `claude attach` takes; null for terminal
+export type Card = {
+  id: string;                    // server-made, unique per start
+  lead: string;                  // session_id
+  agent: string | null;          // agent_id when a subagent asks
+  kind: "permission" | "question" | "plan";
+  tool: string;                  // tool_name
+  input: Record<string, unknown>; // tool_input as sent
+  cwd: string;                   // the hook payload's cwd
+  at: number;                    // funtown.at
 };
-export type Town = {
-  houses: House[];                   // House unchanged: { project, cwd, leads }
-  claude: { version: string | null; problems: string[] };  // problems: "won't work" lines
-};
+export type Town = { houses: House[]; cards: Card[]; claude: {...} };  // cards oldest first
 ```
 
-- A lead is on the page only while the last good list has it. `name` is the list's
-  `name` (fallback `lead-<n>`). Hook events still set activity, step, subagents and tty;
-  hook data for a session the list doesn't show is dropped after 10 s.
-- Stage: each poll sets it from `status`: busy → working, waiting → needs_you with
-  `needs` = `waitingFor`, idle → needs_you with `needs` "turn ended" (v1's Stop). Hooks
-  change it between polls as today. A lead never shows "gone"; it leaves instead.
-- Hooks run async, so events can arrive out of order: an event whose `funtown.at` is
-  lower than the last one applied to the same character (lead, or subagent by
-  `agent_id`) changes nothing.
+`cards` holds only cards of listed leads. The lead (or subagent) a card belongs to has
+`stage` "needs_you" and `needs` = the card's kind while the card is open.
 
-### Page endpoints
+### `POST /answer`
 
-Produced by task 1, consumed by tasks 2 and 3.
+Produced by task 2, consumed by task 3. Page token and Origin as `/jump`, 64 KB cap.
 
-- Token: a random token per server start, injected into the served `index.html` as
-  `<meta name="funtown-token" content="<hex>">`.
-- `POST /jump { lead }` and `POST /sessions { cwd }` need header `x-funtown-token` and the
-  server's own Origin, else 403. `/sessions`: `cwd` must equal a house's `cwd` (else 404);
-  reply 201 `{ "id": "<shortId>" }`, 500 with a text reason when `claude --bg` fails.
-- WebSocket `GET /term?lead=<sessionId>&token=<hex>&cols=<n>&rows=<n>`: own Origin and
-  token, else 403; the lead must be background (else 409). One pty per socket; closing the
-  socket kills the pty, the pty's exit closes the socket. Frames are JSON text, max 1 MB:
-  page → server `{"t":"in","d":"..."}`, `{"t":"resize","c":80,"r":24}`;
-  server → page `{"t":"out","d":"..."}`, `{"t":"shared","n":2}` whenever the number of
-  Funtown sockets on that session changes (n ≥ 2 shows a warning).
-- HTML responses carry `Content-Security-Policy: default-src 'self'; script-src 'self';
-  style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:<port>
-  ws://localhost:<port>; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`.
+```
+{ "card": "<id>", "decision": "allow" | "deny",
+  "answers"?: { "<question text>": "<string>" },   // question cards, with allow
+  "feedback"?: "<string>" }                         // plan cards, with deny
+```
 
-### `startServer` options
+204 once the hold has its reply; 404 when the card is gone; 400 for a body that doesn't
+fit the card's kind (a question without an answer for every question, deny on a question).
 
-Produced by task 1, consumed by task 3.
+### Answer log and options
 
-`startServer({ port, distDir?, run?, claude?, pollMs? })`. `claudeDir`, `exec`, `sweepMs`
-and `goneAfterMs` go; `run` stays for osascript and `open`.
+Produced by task 2, consumed by task 4.
+
+`startServer({ ..., answerLog?, unlistedMs? })`: `answerLog` is the JSONL path (no log when
+absent; `main.ts` passes `FUNTOWN_ANSWERS` or `~/.funtown/answers.jsonl`); `unlistedMs`
+(default 10 000) is both the unlisted-hook-data expiry and the hold's wait for a listing
+or a page. One line per closed card:
+
+```json
+{"at":1731670000000,"lead":"<session_id>","project":"<basename of cwd>","kind":"permission","by":"funtown"}
+```
+
+### Fake `claude --bg`
+
+Produced and consumed by task 4: the fake records its environment for `--bg` as it does
+for `attach`, so the `CLAUDE_CONFIG_DIR` test covers both.
 
 ## Tasks
 
 | # | Owner | Owned paths | Does | Done when |
 |---|---|---|---|---|
-| 1 | server | server/, hooks/install.ts | Poll `claude agents --json` into the Town (new `server/agents.ts`), version check, token and CSP, `/sessions`, `/term` over ws + node-pty (new `server/terminal.ts`), Buffer.concat for `/events`, `async: true` in the installer; delete `server/rebuild.ts` and the sweep | The contracts hold; `npx eslint .` clean |
-| 2 | ui | web/ | Rows show name, kind, stage; panel holds an xterm.js terminal (fit addon, Shift+Enter sends `\x1b\r`, a warning on `shared` n ≥ 2) for background leads and the hint for terminal leads; "New session" per house; the version banner; the token on every POST and the socket | The contracts hold; `vite build` clean |
-| 3 | tests | tests/, playwright.config.ts | A fake `claude` executable (its list read from a file the test writes, `attach` echoing input); replace rebuild and sweep tests; tests at the seams below | They run, and fail only where code is missing |
+| 1 | hooks | hooks/funtown-hold.ts, hooks/install.ts | The hold hook; the installer adds and removes its two entries | The contract holds; `npx eslint .` clean |
+| 2 | server | server/ | Holds (new `server/holds.ts`): `/hold`, `/answer`, release rules, needs_you override, answer log, `answerLog` and `unlistedMs` | The contracts hold; `npx eslint .` clean |
+| 3 | ui | web/ | One answer-card component shown under its lead and in the panel: permission (tool, command or path, folder; Allow, Deny), question (options, Other, Send), plan (plan text in a `<pre>`; Approve, Keep planning with feedback); no autofocus; errors shown | The contracts hold; `vite build` clean |
+| 4 | tests | tests/ | Tests at the seams below; m7's two gaps (unlisted expiry via `unlistedMs`, fake `--bg` env) | They run, and fail only where code is missing |
 
 ## Test seams
 
-- Fake `claude agents --json` → `/stream`: catches a listed session missing, one that left
-  the list still shown after 5 s, wrong kind or stage, a failed poll emptying the town.
-- `/events` → Town: catches hook activity lost on a listed lead, and the split UTF-8 decode.
-- `/jump`, `/sessions`, `/term`: catches a missing token or foreign Origin let through, a
-  cwd that isn't a house accepted, a terminal lead attached.
-- `/term` with the fake `attach`: catches input not reaching the pty, resize ignored, pty
-  left running after the socket closes, `shared` not sent.
-- Page (Playwright): catches rows without name or kind, the terminal not opening or not
-  echoing typed text, Shift+Enter sent as `\r`, the hint missing, New session not opening
-  the new session, the version banner missing; served page without the CSP header.
-- `install-hooks`: catches an entry without `async: true`.
+- Hold hook: catches output printed on a non-200, a non-zero exit, a hang when no server.
+- `install-hooks`: catches a hold entry missing, marked `async`, without the matcher, or
+  left behind by uninstall.
+- `/hold` + `/answer`: catches a wrong hook output per kind, an answer without token or
+  Origin let through, `/hold` with an Origin accepted, a second answer to a closed card.
+- Release: catches a card kept after a later event, a card closed by its own PreToolUse or
+  an older out-of-order event, terminal-lead questions held, holds kept with no page or for
+  an unlisted session past `unlistedMs`.
+- Town: catches a held question not turning its lead to needs you while the list says busy.
+- Answer log: catches a missing line or a wrong `by` for each way a card closes.
+- Page (Playwright): catches a card without the command or folder, buttons that send the
+  wrong body, a card that stays after it closes, a card that takes focus.
 
 ## Stop and ask
 
@@ -155,11 +181,12 @@ Every agent stops and reports BLOCKED when:
 
 Each needs the one before it merged.
 
-- m8-answer-cards: ~400
-- m9-letters: ~400
-- m10-workflow: ~400
-- m11-runs-shell: ~400
-- m12-town-kit: ~400
-- m13-village: ~400
-- m14-interiors: ~400
-- m15-looks: ~400
+- m9-needs-queue: ~400 (pop-up, soft sound per project, mute, desk queue oldest first
+  with a jump key, never steals focus, stuck agents join the queue)
+- m10-letters: ~400
+- m11-workflow: ~400
+- m12-runs-shell: ~400
+- m13-town-kit: ~400
+- m14-village: ~400
+- m15-interiors: ~400
+- m16-looks: ~400
