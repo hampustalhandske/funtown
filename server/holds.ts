@@ -9,6 +9,8 @@ type By = "funtown" | "elsewhere" | "dropped";
 type Hold = { card: Card; toolUseId: string | undefined; res: ServerResponse; shown: boolean; timer?: NodeJS.Timeout };
 
 const DENIED = "The user denied this in Funtown.";
+/** Events that show a session went on past any request it had open. */
+const MOVED_ON = ["Stop", "SubagentStop", "UserPromptSubmit", "SessionStart"];
 
 /** The card kind a held hook payload asks for, or null when Funtown doesn't hold it. */
 function kindOf(event: HookEvent): Card["kind"] | null {
@@ -138,16 +140,18 @@ export function createHolds(town: TownState, opts: { unlistedMs: number; answerL
     event(event: HookEvent): void {
       const at = event.funtown?.at;
       const name = event.hook_event_name;
-      if (typeof at !== "number" || name === "PermissionRequest" || name === "Notification") return;
+      if (typeof at !== "number" || !name) return;
       for (const hold of holds.values()) {
         const { card, toolUseId } = hold;
         if (card.lead !== event.session_id || card.agent !== (event.agent_id ?? null) || at <= card.at) continue;
-        // A PermissionRequest carries no tool_use_id, so its own PreToolUse is matched by tool and input.
+        // A PermissionRequest carries no tool_use_id, so its own tool call is matched by tool and input.
         const own = toolUseId !== undefined
           ? event.tool_use_id === toolUseId
           : event.tool_name === card.tool && JSON.stringify(event.tool_input) === JSON.stringify(card.input);
-        if (name === "PreToolUse" && own) continue;
-        void close(hold, "elsewhere");
+        // Moved past the card: its own tool ran, a new call started, or the turn ended. A parallel
+        // sibling's PostToolUse proves nothing.
+        const moved = name === "PostToolUse" ? own : name === "PreToolUse" ? !own : MOVED_ON.includes(name);
+        if (moved) void close(hold, "elsewhere");
       }
     },
 
