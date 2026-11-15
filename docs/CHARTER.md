@@ -1,71 +1,71 @@
-# Funtown
+# Funtown v2
 
 ## Goal
 
-You see every Claude Code session and subagent on your Mac as a character in one fun town
-view, so you know what each is doing and which ones need you, without hunting through
-terminals. Unlike a notification alert or claudectl, Funtown shows every session's state in
-one view and jumps to its terminal in one click.
+You run your Claude Code work from Funtown instead of Terminal and agent view: a 3D clay
+town shows what every agent is doing, and each session's live terminal lets you answer,
+type and run commands in the app. VS Code stays for reading code and git history.
 
 ## v1 scope
 
-1. Funtown runs locally. Each project is a house in the town, labeled with its folder name,
-   and every Claude Code session and subagent on the Mac appears as a character at its
-   project's house, named by its role and a number: main sessions are lead-1, lead-2;
-   subagents use their agent type (implementer-1, implementer-2).
-2. A session waiting on you (permission prompt, question, idle after finishing) is clearly
-   marked "needs you" and stands out from the rest.
-3. Each character shows its stage at a glance (working: a tool or turn is running; needs you:
-   a permission prompt, a question, or the turn ended; done: a subagent finished its task;
-   gone: the session exited or was killed, removed after 10 min) and the shell command or
-   tool it is running now; subagents appear next to
-   the session that started them, so you see who is working for whom.
-4. Clicking a character opens a panel with its current step and its subagents with status.
-5. A button in that panel focuses that session's exact tab in macOS Terminal; other terminal
-   apps are just brought to the front.
+1. Terminal room: every session in one list; background sessions open their live terminal
+   in the app through `claude attach` (answer, type, `!` commands, slash commands), and a
+   session still in a Terminal tab shows a hint to send it there with `←` or `/bg`; start a
+   new session or background run in
+   a project; a shell tab per project; add and set up your projects in the app.
+2. Needs you: answer cards (allow or deny, pick an option, approve a plan) showing the
+   exact command and folder; a pop-up with a soft sound per project and a mute button; the
+   queue at your desk, oldest first, with a key to jump to the next one; never steals focus
+   while you type; a stuck agent (error, rate limit, loop) stops visibly and joins the queue.
+3. Readable work: end-of-turn messages and subagent results as rendered letters with a
+   reply box; a morning view of what happened overnight per project (done, stuck, next); a
+   one-click "I had to switch" note and an automatic crash and error log, both local.
+4. Your workflow visible: a phase file any workflow can write; agent roles and tags; PRs as
+   parcels on their building; the steward (the queen of the castle) pre-reviews each PR,
+   writes its title and merge text, and puts it on your desk; overlap warnings when two runs
+   touch the same files.
+5. The 3D town in inked clay: a village with your castle (you as king at the desk, agents
+   queued, the queen beside you), one building per project with an inside view, agents
+   that carry work between them and leave when done, all made from a code-made kit of parts,
+   with an opt-in "Suggest" button for looks and your own avatar.
 
 ## Not in v1
 
-- Embedded terminal inside Funtown (v1 jumps to the real terminal instead).
-- The 5-day real-use check (answering waiting sessions from Funtown for 5 working days):
-  it needs typing into a session from Funtown, which v1 leaves out. Moved to v2.
-- Recent transcript and session cost in the panel.
-- Exact-tab jump for terminal apps other than macOS Terminal (iTerm2, VS Code, others).
-- Notion intake from the phone and an MCP to-do feed per project.
-- A mode for non-coders, and sharing with other people.
-- The orchestrator posting PR links and review prompts.
-- .dmg packaging and code signing.
-- Remote or phone access.
+- Town extras: weather, night mode, noticeboard, buildings growing floors, gentle camera,
+  the context meter.
+- The queen acting fully as you (approving or merging PRs); you press merge on GitHub.
+- Projects talking to projects.
+- Walking your own character in the town.
+- The Friday replay.
+- Phone or remote access.
 
 ## How we know it works
 
 | Check | Passes when |
 |---|---|
-| Sessions appear | A newly started `claude` session in any project shows as a named character at its project's house within 5 s. |
-| Needs you | A session hitting a permission prompt or question shows "needs you" within 5 s; 10 real waits, 0 missed. |
-| Details | Clicking a character shows its current step (last tool call or shell command) and its subagents with status. |
-| Jump | One click in the panel focuses that session's tab in macOS Terminal. |
-| Rebuild | Restarted while sessions run, Funtown shows each at its house with its stage within 5 s. |
-| Gone | A session that exits or is killed (`kill -9`) shows "gone" within 5 s. |
+| Answers through Funtown | Over 5 working days of real use, Funtown's own log shows at least 90% of answers to waiting sessions came from Funtown |
+| No missed waits | Over the same 5 days, no session waited more than 5 minutes without its sound and pop-up firing |
+| Switches noted | Every switch to Terminal or agent view for Claude work in those 5 days has a note in Funtown's local log |
+| Errors logged | Killing the server or a hook mid-event leaves an entry in the local error log with the time and the failing step |
+| Live terminal | In a session opened from the app, typing text, `!ls`, a slash command and Esc all work, and closing the panel leaves the session running |
+| Town draws the model | Every agent in the list view appears in the town with its role's hat and its project's colour, and a done or dead agent leaves both within 5 s |
 
 ## Constraints
 
-- macOS only, on your own Mac.
-- A local server plus a page in the browser, built as a web UI that can later be wrapped as a
-  native app and shipped as a .dmg.
-- Data comes from Claude Code's own sources: hooks, the transcript files in
-  `~/.claude/projects/`, the session files in `~/.claude/sessions/`, and `ps` for each
-  session's terminal and start time. Not the status line: it is one command for the whole
-  Mac and would replace your own.
-- Hooks POST events to a localhost server that pushes live updates to the page; on start,
-  Funtown rebuilds already-running sessions from the session files, the transcripts and
-  `ps`, and every 5 s it marks sessions that stopped without a hook as gone.
-- Nothing leaves the machine; transcripts hold private project content.
-- All code is our own. MIT-licensed tools (stargx/claude-code-dashboard, gavraz/recon,
-  mercurialsolo/claudectl) are reference only; no code is copied.
-- No running cost and no deadline.
-- Should read without explanation (plain labels such as "waiting for you"), since non-coders
-  are the intended later users.
+- macOS, a local web page on 127.0.0.1; nothing leaves the machine except the opt-in
+  "Suggest" button, which shows the exact text before sending it.
+- Public MIT repo: nothing from claude-setup or private notes; all art code-made, with no
+  outside licence on any file.
+- Works with any Claude Code plugins and agents; your own setup plugs in locally.
+- A minimum Claude Code version, checked at start, with a plain list of what won't work.
+- Libraries approved: node-pty, xterm.js, React Three Fiber and drei, a Markdown renderer,
+  sanitiser and code highlighter.
+- Sessions are listed and attached only through `claude agents --json` and `claude attach`,
+  never by reading Claude's internal files.
+- The phase file is `.claude/phase.json` in each project; PRs come from `gh pr list`; the
+  steward is a Claude session like any other. Funtown itself sends nothing; the sessions
+  and `gh` it starts talk to Anthropic and GitHub as they do today.
+- No cost beyond the Claude subscription; no deadline.
 
 ## Budget
 
@@ -80,10 +80,11 @@ simplify, split the milestone or raise the budget. To raise it for one milestone
 
 ## Open questions
 
-- Stack (language, server, UI framework, ready for a later native wrapper): blocks milestone 1.
-- Hooks: user-level command hooks in `~/.claude/settings.json` (a command hook can read the
-  session's tty; an HTTP hook can't); `funtown install`/`uninstall` add and remove only
-  Funtown's own entries.
-- What identifies a session's terminal (tty, TERM_PROGRAM), recorded on SessionStart; test it
-  before milestone 1 counts on it: blocks items 1 and 5.
-- Visual style of the town and characters (pixel art, emoji, other): blocks item 1's look.
+- One PR per version needs claude-setup's full-flow command, not built yet; until then
+  background runs follow today's one-PR-per-milestone flow. Blocks the "background run" part of item 1.
+- The minimum Claude Code version is set after the spikes (hook hold, attach in the app,
+  agents list). Blocks the start-up check in item 1.
+- Answer path: cards answer through a separate permission hook that waits for Funtown and
+  falls back to the terminal prompt after a timeout; the event hook keeps its 800 ms. An
+  answer typed elsewhere is logged as "elsewhere". The hook-hold spike settles it. Blocks
+  item 2 and the "Answers through Funtown" check.

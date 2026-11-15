@@ -11,3 +11,14 @@
 - 2026-11-15: Jump to the right app for VS Code forks (Cursor, Windsurf) that also set TERM_PROGRAM=vscode
 - 2026-11-15: Answer a waiting session from Funtown: accept or reject a permission, pick a multiple-choice option
 - 2026-11-15: One plain sentence per character (doing now, doing next, plan steps) instead of the raw command
+- 2026-11-15: Town weather as status (clouds when usage limits get close)
+- 2026-11-15: Away mode as night: the town goes dark with lit windows while runs work without you
+- 2026-11-15: Noticeboard in the town square with parked ideas pinned on it
+- 2026-11-15: Buildings grow a floor for each finished milestone
+- 2026-11-15: Gentle camera that flies to whoever needs you, never while you type
+- 2026-11-15: A meter showing how full each agent's context is
+- 2026-11-15: The steward (queen) acting fully as you: approving PRs on its own
+- 2026-11-15: Projects talking to projects through a channel you set up
+- 2026-11-15: Walk your own character in the town and talk to the agent next to you
+- 2026-11-15: Friday replay of the week's work in the town
+- 2026-11-15: Phone access, after real login and encryption
