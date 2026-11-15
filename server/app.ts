@@ -8,6 +8,7 @@ import { TownState, type HookEvent } from "./town.ts";
 import type { Town } from "./types.ts";
 import { checkVersion, execFileAsync, listAgents, startBackground } from "./agents.ts";
 import { createTerminals, isSize } from "./terminal.ts";
+import { createHolds } from "./holds.ts";
 
 const DEFAULT_DIST = fileURLToPath(new URL("../web/dist/", import.meta.url));
 const TYPES: Record<string, string> = {
@@ -94,7 +95,11 @@ async function readJson(req: IncomingMessage, max = Infinity): Promise<{ value: 
  * runs `run` (default: execFile, 60 s timeout) to bring a lead's terminal to the front, `POST
  * /sessions` starts `claude --bg` in a house's folder, and the `/term` WebSocket attaches a
  * background lead; all three need the page's own Origin and token. `/events` refuses any
- * request with an `Origin` header, so web pages cannot post to it.
+ * request with an `Origin` header, so web pages cannot post to it. `POST /hold` (no Origin
+ * either) holds a permission, question or plan as a card until `POST /answer` (page Origin
+ * and token) answers it or it is released; `answerLog` (a JSONL path) gets one line per
+ * closed card. `unlistedMs` (default 10 s) is how long hook data and holds wait for their
+ * session to be listed, and holds for a page to be open.
  */
 export async function startServer(opts: {
   port: number;
@@ -102,20 +107,24 @@ export async function startServer(opts: {
   run?: (file: string, args: string[]) => Promise<void>;
   claude?: string;
   pollMs?: number;
+  answerLog?: string;
+  unlistedMs?: number;
 }): Promise<{ url: string; claude: Town["claude"]; close(): Promise<void> }> {
   const run = opts.run ?? defaultRun;
   const claude = opts.claude ?? "claude";
   const pollMs = opts.pollMs ?? 2_000;
   const dist = normalize(join(opts.distDir ?? DEFAULT_DIST, "/"));
   const version = await checkVersion(claude);
-  const town = new TownState(version);
+  const unlistedMs = opts.unlistedMs ?? 10_000;
+  const town = new TownState(version, unlistedMs);
+  const holds = createHolds(town, { unlistedMs, answerLog: opts.answerLog, changed: () => broadcast() });
   const terminals = createTerminals(claude);
   const clients = new Set<ServerResponse>();
   const tokenBytes = Buffer.from(randomBytes(16).toString("hex"));
   const token = tokenBytes.toString();
   let port = 0;
 
-  const stateFrame = () => `event: state\ndata: ${JSON.stringify(town.snapshot())}\n\n`;
+  const stateFrame = () => `event: state\ndata: ${JSON.stringify(town.snapshot(holds.cards()))}\n\n`;
   let lastFrame = "";
   const broadcast = () => {
     const frame = stateFrame();
@@ -142,6 +151,7 @@ export async function startServer(opts: {
     if (list) {
       lastReason = "";
       town.sync(list);
+      holds.refresh();
       broadcast();
     } else {
       town.expire();
@@ -157,17 +167,27 @@ export async function startServer(opts: {
     const bytes = typeof given === "string" ? Buffer.from(given) : null;
     return bytes !== null && bytes.length === tokenBytes.length && timingSafeEqual(bytes, tokenBytes);
   };
-  /** The string `field` of a POST body from the page, or null once it has answered 403, 400 or 413. */
-  const pageField = async (req: IncomingMessage, res: ServerResponse, field: string): Promise<string | null> => {
+  /** The JSON object body of a POST from the page, or null once it has answered 403, 400 or 413. */
+  const pageBody = async (req: IncomingMessage, res: ServerResponse): Promise<Record<string, unknown> | null> => {
     if (!fromPage(req.headers.origin, req.headers["x-funtown-token"])) {
       req.resume();
       res.writeHead(403).end();
       return null;
     }
     const body = await readJson(req, MAX_PAGE_BODY);
-    const value = "value" in body ? (body.value as Record<string, unknown> | null)?.[field] : undefined;
-    if (typeof value !== "string") {
+    if ("status" in body || typeof body.value !== "object" || body.value === null) {
       res.writeHead("status" in body ? body.status : 400).end();
+      return null;
+    }
+    return body.value as Record<string, unknown>;
+  };
+  /** The string `field` of a POST body from the page, or null once it has answered 403, 400 or 413. */
+  const pageField = async (req: IncomingMessage, res: ServerResponse, field: string): Promise<string | null> => {
+    const body = await pageBody(req, res);
+    if (body === null) return null;
+    const value = body[field];
+    if (typeof value !== "string") {
+      res.writeHead(400).end();
       return null;
     }
     return value;
@@ -187,7 +207,7 @@ export async function startServer(opts: {
       return;
     }
 
-    if (req.method === "POST" && path === "/events") {
+    if (req.method === "POST" && (path === "/events" || path === "/hold")) {
       if (req.headers.origin !== undefined) {
         req.resume();
         res.writeHead(403).end();
@@ -199,8 +219,12 @@ export async function startServer(opts: {
         return;
       }
       const event = body.value as HookEvent;
+      if (path === "/hold") {
+        holds.hold(event, res);
+        return;
+      }
       try {
-        town.apply(event);
+        if (town.apply(event)) holds.event(event);
         broadcast();
         res.writeHead(204).end();
       } catch (err) {
@@ -233,6 +257,13 @@ export async function startServer(opts: {
       return;
     }
 
+    if (req.method === "POST" && path === "/answer") {
+      const body = await pageBody(req, res);
+      if (body === null) return;
+      res.writeHead(await holds.answer(body)).end();
+      return;
+    }
+
     if (req.method === "POST" && path === "/sessions") {
       const cwd = await pageField(req, res, "cwd");
       if (cwd === null) return;
@@ -257,7 +288,11 @@ export async function startServer(opts: {
         connection: "keep-alive",
       });
       clients.add(res);
-      res.on("close", () => clients.delete(res));
+      holds.pages(clients.size);
+      res.on("close", () => {
+        clients.delete(res);
+        holds.pages(clients.size);
+      });
       res.write(stateFrame());
       return;
     }
@@ -330,6 +365,7 @@ export async function startServer(opts: {
         closed = true;
         clearTimeout(pollTimer);
         terminals.close();
+        holds.close();
         for (const res of clients) res.end();
         server.close(() => resolve());
         server.closeAllConnections();
