@@ -1,74 +1,141 @@
-# Milestone 6: spikes
+# Milestone 7: terminal room
 
-Serves: the charter's open questions (answer path, minimum Claude Code version), which
-block items 1 and 2: each unproven Claude Code behaviour v2 builds on gets a pass or fail
-before any production code depends on it.
-Estimate: 0 net production lines of a 400 budget (spike code stays outside the repo)
-Mode: away: open the PR after review and continue with the queue
+Serves: charter item 1, "Terminal room": every session in one list; background sessions
+open their live terminal in the app through `claude attach`; a session in a Terminal tab
+shows a hint to send it there; start a new session in a project. Also the start-up version
+check (Constraints) and the rule that sessions come only from `claude agents --json`.
+Not here: background runs in worktrees and the shell tab (m11), adding projects (m10).
+Estimate: ~320 net production lines of an 800 budget (adds ~550, deletes ~230: rebuild.ts
+and the `ps` sweep go)
+Mode: with you
 
 ## Done when
 
-1. `docs/spikes/` has one note per task below (s1-s6, v1), each in the result-note shape
-   under Contracts, with a pass or fail for every criterion in its task row.
-2. `docs/spikes/README.md` answers the charter's two open questions in one line each: the
-   answer path (held permission hook, timeout, fallback) and the minimum Claude Code
-   version that passed.
-3. Every spike note lists the exact commands to reproduce it on Claude Code 2.1.325.
-4. After the spikes, `claude agents --json --all` lists no session a spike started.
-5. `npx eslint . && npx vitest run && npx playwright test` passes, unchanged.
+1. The page shows exactly the sessions `claude agents --json` lists, grouped by project
+   (`cwd`), each with its `name`, its kind (terminal or background) and its stage; a
+   session that leaves the list leaves the page within 5 s (test with the fake `claude`).
+2. Clicking a background session opens its live terminal in the panel. In a real `--bg`
+   session (orchestrator, in this repo, stopped and removed after): typed text, Shift+Enter
+   (a second input line, nothing sent), `!ls`, `/context` and Esc all work; after closing
+   the panel, `claude agents --json` still lists the session.
+3. Clicking a terminal (interactive) session shows the hint "press ← or type /bg in its
+   terminal to open it here" and the Go to terminal button; no live terminal.
+4. "New session" on a project starts `claude --bg` in that project's folder with no
+   worktree (`git worktree list` unchanged), and its terminal opens once it is listed.
+5. With `claude --version` below 2.1.325 or failing, start prints one line per feature that
+   won't work, and the page shows the same list in a banner.
+6. Without the page's token, or from another Origin, `POST /jump`, `POST /sessions` and the
+   `/term` WebSocket are refused (403); the page is served with the CSP below; `/events`
+   reads a multi-byte character split across two chunks intact.
+7. `npm run install-hooks` writes `"async": true` on every Funtown entry; in a real
+   `claude -p` session with a hook that sleeps 3 s, the run takes no 3 s longer (orchestrator).
+8. `npx eslint . && npx vitest run && npx playwright test` passes, and no test runs the
+   real `claude`.
 
 ## Must not
 
-- Add a dependency, service or paid API to the repo. Spike code, and node-pty or xterm.js
-  installs, live in a scratch folder outside the repo.
-- Write to `~/.claude/` or the installed Funtown hooks; spike sessions get their hooks
-  through `claude --settings <file>`. Claude's folder is read only.
-- Push, open a PR or add a remote in a spike repo. Spike repos are new local repos in the
-  scratch folder.
-- Put a real project name, session name, user name or home-folder path in a note; write
-  `~` and placeholders such as `<project>`.
-- Leave a session running: stop every session a spike starts. Spike sessions use
-  `--model haiku` unless the behaviour under test needs another model.
-- Change production code, tests or config.
+- Read Claude's folder (`~/.claude/`) in production code: sessions come only from
+  `claude agents --json`, terminals only from `claude attach`.
+- Run `claude` through a shell or put a session id, cwd or tty into a command string;
+  ids and paths go in as arguments.
+- Start a session in a folder that isn't a project already on the page.
+- Listen anywhere but 127.0.0.1, or change `/events` beyond the decode fix.
+- Add a dependency other than node-pty, @xterm/xterm, @xterm/addon-fit and ws (the
+  orchestrator installs them before the build).
 
 ## Contracts
 
-### Result note
+### The `claude` executable
 
-Produced by tasks 1-6, consumed by the README (orchestrator) and the next milestones.
+Produced by task 1 (calls), consumed by task 3 (the fake). The server runs the executable
+named by `startServer({ claude })` (default `"claude"`; `main.ts` reads `FUNTOWN_CLAUDE`)
+with execFile or node-pty, never a shell, and with every `CLAUDE*` and `AI_AGENT` variable
+removed from the child's environment.
 
 ```
-# <id>: <title>
-Claude Code: <claude --version>   Date: <YYYY-MM-DD>   Verdict: pass | fail | partial
-
-| Criterion | Result | Evidence |
-|---|---|---|
-| <criterion from the task row> | pass/fail | <command output, one line> |
-
-## Reproduce
-<commands, with ~ and placeholders>
-
-## Consequence
-<if fail or partial: which "fail means" from the plan applies, in one line>
+<claude> --version                  stdout "2.1.325 (Claude Code)"; minimum 2.1.325
+<claude> agents --json              stdout: JSON array, every pollMs (default 2000 ms)
+  [{ "sessionId": "2a2362f8-...", "id": "2a2362f8",   // id: background only
+     "name": "s3bg", "kind": "interactive" | <other>, // not "interactive" = background
+     "pid": 123, "cwd": "/abs/path", "startedAt": 1731670000000,
+     "status": "busy" | "idle" | "waiting", "waitingFor": "permission prompt" }]
+<claude> --bg --settings '{"worktree":{"bgIsolation":"none"}}'   cwd: the project; stdout
+                                    carries the new short id (task 1 checks the format)
+<claude> attach <id>                in a pty (xterm-256color, the page's cols and rows)
 ```
+
+A failed or unparsable `agents --json` keeps the last list and writes one stderr line.
+
+### Town state (`server/types.ts`)
+
+Produced by task 1, consumed by tasks 2 and 3.
+
+```ts
+export type Lead = Character & {
+  tty: string | null; termProgram: string | null; subagents: Character[];
+  kind: "terminal" | "background";
+  shortId: string | null;            // the `id` `claude attach` takes; null for terminal
+};
+export type Town = {
+  houses: House[];                   // House unchanged: { project, cwd, leads }
+  claude: { version: string | null; problems: string[] };  // problems: "won't work" lines
+};
+```
+
+- A lead is on the page only while the last good list has it. `name` is the list's
+  `name` (fallback `lead-<n>`). Hook events still set activity, step, subagents and tty;
+  hook data for a session the list doesn't show is dropped after 10 s.
+- Stage: each poll sets it from `status`: busy → working, waiting → needs_you with
+  `needs` = `waitingFor`, idle → needs_you with `needs` "turn ended" (v1's Stop). Hooks
+  change it between polls as today. A lead never shows "gone"; it leaves instead.
+
+### Page endpoints
+
+Produced by task 1, consumed by tasks 2 and 3.
+
+- Token: a random token per server start, injected into the served `index.html` as
+  `<meta name="funtown-token" content="<hex>">`.
+- `POST /jump { lead }` and `POST /sessions { cwd }` need header `x-funtown-token` and the
+  server's own Origin, else 403. `/sessions`: `cwd` must equal a house's `cwd` (else 404);
+  reply 201 `{ "id": "<shortId>" }`, 500 with a text reason when `claude --bg` fails.
+- WebSocket `GET /term?lead=<sessionId>&token=<hex>&cols=<n>&rows=<n>`: own Origin and
+  token, else 403; the lead must be background (else 409). One pty per socket; closing the
+  socket kills the pty, the pty's exit closes the socket. Frames are JSON text, max 1 MB:
+  page → server `{"t":"in","d":"..."}`, `{"t":"resize","c":80,"r":24}`;
+  server → page `{"t":"out","d":"..."}`, `{"t":"shared","n":2}` whenever the number of
+  Funtown sockets on that session changes (n ≥ 2 shows a warning).
+- HTML responses carry `Content-Security-Policy: default-src 'self'; script-src 'self';
+  style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:<port>
+  ws://localhost:<port>; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`.
+
+### `startServer` options
+
+Produced by task 1, consumed by task 3.
+
+`startServer({ port, distDir?, run?, claude?, pollMs? })`. `claudeDir`, `exec`, `sweepMs`
+and `goneAfterMs` go; `run` stays for osascript and `open`.
 
 ## Tasks
 
 | # | Owner | Owned paths | Does | Done when |
 |---|---|---|---|---|
-| 1 | hook | docs/spikes/s1-hook-hold.md, docs/spikes/s6-escalation.md | S1: a PermissionRequest/PreToolUse hook that waits on a local server and returns a decision, in an interactive (pty-driven) and a `--bg` session. S6: AskUserQuestion from a `--bg` lead with a subagent running reaches that hook and the answer returns. | Notes record: answers apply for permission, AskUserQuestion and ExitPlanMode; a killed hook falls back to the normal dialog; what the terminal shows while held; a 2 h timeout honoured (run in the background); whether Esc fires Stop; S6 pass or fail |
-| 2 | attach | docs/spikes/s2-attach.md | S2: node-pty runs `claude attach <id>` behind an xterm.js test page | Note records: render, resize, Shift+Enter, Esc, `!cmd`, a slash command and wheel work; killing the client leaves the session working; paste + Enter sends when idle and queues when busy; what a second attach does |
-| 3 | sessions | docs/spikes/s3-sessions.md | S3 with V3, V5, V7: join `claude agents --json` with hook payloads | Note records: `sessionId` equals hook `session_id` for interactive and `--bg` sessions; `name` stable over a restart; `id` after `/clear`; `status`/`waitingFor` during a pending prompt; hooks fire in `--bg` sessions; whether an idle stopped `--bg` session stays listed |
-| 4 | runs | docs/spikes/s4-runs.md | S4: two `--bg` runs in one scratch repo, each in its own worktree | Note records: no extra worktree, no push, no PR; each run's cwd; whether `--settings` with `bgIsolation: "none"` applies |
-| 5 | cost | docs/spikes/s5-hook-cost.md | S5: an async observe hook (the v1 hook shape) against a local server at 20 simulated sessions | Note records: ms added per tool call (median and p95); server CPU; command hook vs `type: "http"` |
-| 6 | delegation | docs/spikes/v1-delegation.md | V1 with V6: a lead starts a subagent through the Agent tool | Note records: PreToolUse on Agent carries description, prompt and subagent_type; its `tool_use_id` joins SubagentStart's `agent_id` (or how else); SubagentStop's `last_assistant_message` equals the text the lead receives |
-
-No tests row: this milestone adds no production code.
+| 1 | server | server/, hooks/install.ts | Poll `claude agents --json` into the Town (new `server/agents.ts`), version check, token and CSP, `/sessions`, `/term` over ws + node-pty (new `server/terminal.ts`), Buffer.concat for `/events`, `async: true` in the installer; delete `server/rebuild.ts` and the sweep | The contracts hold; `npx eslint .` clean |
+| 2 | ui | web/ | Rows show name, kind, stage; panel holds an xterm.js terminal (fit addon, Shift+Enter sends `\x1b\r`, a warning on `shared` n ≥ 2) for background leads and the hint for terminal leads; "New session" per house; the version banner; the token on every POST and the socket | The contracts hold; `vite build` clean |
+| 3 | tests | tests/, playwright.config.ts | A fake `claude` executable (its list read from a file the test writes, `attach` echoing input); replace rebuild and sweep tests; tests at the seams below | They run, and fail only where code is missing |
 
 ## Test seams
 
-- None in code. Each note's Reproduce section is the seam: the milestone that builds on a
-  spike reruns it before relying on it.
+- Fake `claude agents --json` → `/stream`: catches a listed session missing, one that left
+  the list still shown after 5 s, wrong kind or stage, a failed poll emptying the town.
+- `/events` → Town: catches hook activity lost on a listed lead, and the split UTF-8 decode.
+- `/jump`, `/sessions`, `/term`: catches a missing token or foreign Origin let through, a
+  cwd that isn't a house accepted, a terminal lead attached.
+- `/term` with the fake `attach`: catches input not reaching the pty, resize ignored, pty
+  left running after the socket closes, `shared` not sent.
+- Page (Playwright): catches rows without name or kind, the terminal not opening or not
+  echoing typed text, Shift+Enter sent as `\r`, the hint missing, New session not opening
+  the new session, the version banner missing; served page without the CSP header.
+- `install-hooks`: catches an entry without `async: true`.
 
 ## Stop and ask
 
@@ -76,25 +143,17 @@ Every agent stops and reports BLOCKED when:
 - a contract needs to change;
 - the code or the cause doesn't match this plan;
 - the budget checkpoint fires;
-- a "Done when" can't be met as written;
-- a spike needs the user's hands (a real Terminal tab, a login, a prompt only a person can
-  answer).
+- a "Done when" can't be met as written.
 
 ## Queue
 
 Each needs the one before it merged.
 
-- m7-terminal-room: ~550, budget 800: session list from agents JSON, list view, live attach
-  panel, new session via `--bg`, token/Origin/CSP, version check, v1 bug fixes (incl. the
-  `/events` UTF-8 decode)
-- m8-answer-cards: ~400: decide hook, cards, desk queue, pop-up with sound, focus rule,
-  stuck agents, answer log for the 90% check
-- m9-letters: ~400: letters with reply box, morning view, switch note, error log
-- m10-workflow: ~400: project setup in the app, phase file, roles and tags, steward desk
-  items, PR data from `gh`
-- m11-runs-shell: ~400: background runs per worktree, PR parcels, overlap warnings, shell
-  tab per project
-- m12-town-kit: ~400: inked-clay rig and parts, the standard agent set, keyword roles
-- m13-village: ~400: village, castle, you as king, the queue, the queen, buildings
-- m14-interiors: ~400: inside a building, talk and leave animations
-- m15-looks: ~400: agent `.md` reader, Suggest button, your avatar
+- m8-answer-cards: ~400
+- m9-letters: ~400
+- m10-workflow: ~400
+- m11-runs-shell: ~400
+- m12-town-kit: ~400
+- m13-village: ~400
+- m14-interiors: ~400
+- m15-looks: ~400
