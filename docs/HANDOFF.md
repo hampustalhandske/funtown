@@ -1,6 +1,6 @@
 # Milestone 3: panel-jump — handoff
 
-Verdict: ship. Every Should-fix from the review is applied; tests are green.
+Verdict: ship. Every review finding that holds is applied; tests are green.
 
 ## Review in five minutes
 
@@ -42,13 +42,16 @@ Verdict: ship. Every Should-fix from the review is applied; tests are green.
 - Run timeout is 60 s so the one-time macOS "control Terminal?" prompt can be answered.
 - Cursor and other VS Code forks set `TERM_PROGRAM=vscode`, so the button raises VS Code;
   not needed now, parked.
-- Not applied (Nice-to-have): Escape listener re-added on each state frame, no guard
-  against double-clicked jumps, no body size limit on `/jump` and `/events`, subagent ids
-  matched across all leads, a loose stage assertion in the panel test.
+- Every review finding that holds is applied (R1–R14 in docs/MILESTONE.md), Nice-to-have
+  and small trims included, at the user's call, so the next review doesn't find them again.
+- `/jump` caps its body at 64 KB (413); `/events` has no cap, because an event for a large
+  Write can be several MB and the plan leaves `/events` unchanged.
+- The quality reviewer's "error handling catches too much" was dropped: only `await run()`
+  is inside the try.
 
 ## Remaining work
 
-- None from this milestone's Should-fix list.
+- None from this milestone's review.
 - Next: m4-rebuild (on start, rebuild already-running sessions from the transcripts in
   `~/.claude/projects/`).
 - Charter wording from m1 is still open (needs `workflow approve` after editing): the
@@ -66,6 +69,6 @@ Verdict: ship. Every Should-fix from the review is applied; tests are green.
 ## Numbers
 
     Branch m3-panel-jump vs ea17400
-      Production: +193 -17, net 176 of budget 400
-      Tests:      +248 -16, net 232 (test/prod 1.32 on this branch)
-      Repo:       836 production lines, 774 test lines (test/prod 0.93; band 0.5-0.7)
+      Production: +212 -18, net 194 of budget 400
+      Tests:      +278 -16, net 262 (test/prod 1.35 on this branch)
+      Repo:       854 production lines, 804 test lines (test/prod 0.94; band 0.5-0.7)
