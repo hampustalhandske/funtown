@@ -39,8 +39,15 @@ export async function startServer(opts: {
     if (req.method === "POST" && path === "/events") {
       let body = "";
       for await (const chunk of req) body += chunk;
+      let event: HookEvent;
       try {
-        const gone = town.apply(JSON.parse(body) as HookEvent);
+        event = JSON.parse(body) as HookEvent;
+      } catch {
+        res.writeHead(400).end();
+        return;
+      }
+      try {
+        const gone = town.apply(event);
         if (gone) {
           const timer = setTimeout(() => {
             timers.delete(timer);
@@ -51,8 +58,9 @@ export async function startServer(opts: {
         }
         broadcast();
         res.writeHead(204).end();
-      } catch {
-        res.writeHead(400).end();
+      } catch (err) {
+        console.error(`funtown: failed to handle ${String(event?.hook_event_name)} event`, err);
+        res.writeHead(500).end();
       }
       return;
     }

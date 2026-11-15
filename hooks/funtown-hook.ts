@@ -6,12 +6,30 @@ import { dirname, join } from "node:path";
 const url = process.env.FUNTOWN_URL ?? "http://127.0.0.1:4777";
 const logPath = process.env.FUNTOWN_LOG ?? join(homedir(), ".funtown", "hook.log");
 
+const deadline = Date.now() + 900;
+
+/** Milliseconds left before the overall deadline; throws once it has passed. */
+function remaining(): number {
+  const left = deadline - Date.now();
+  if (left <= 0) throw new Error("deadline exceeded (900 ms)");
+  return left;
+}
+
+function log(line: string): void {
+  try {
+    mkdirSync(dirname(logPath), { recursive: true });
+    appendFileSync(logPath, `${new Date().toISOString()} ${line}\n`);
+  } catch {
+    // Logging is best effort; the hook still exits 0.
+  }
+}
+
 /** Returns a process's tty (null when it has none) and parent pid, or null when it is gone. */
 function psRow(pid: number): { tty: string | null; ppid: number } | null {
   try {
     const out = execFileSync("ps", ["-o", "tty=,ppid=", "-p", String(pid)], {
       encoding: "utf8",
-      timeout: 300,
+      timeout: Math.min(300, remaining()),
     }).trim();
     const [tty, ppid] = out.split(/\s+/);
     if (!ppid) return null;
@@ -25,6 +43,7 @@ function psRow(pid: number): { tty: string | null; ppid: number } | null {
 function findTty(): string | null {
   let pid = process.ppid;
   for (let depth = 0; depth < 4 && pid > 1; depth++) {
+    remaining();
     const row = psRow(pid);
     if (!row) return null;
     if (row.tty) return row.tty;
@@ -41,18 +60,14 @@ try {
     term_program: process.env.TERM_PROGRAM ?? null,
     at: Date.now(),
   };
-  await fetch(`${url}/events`, {
+  const res = await fetch(`${url}/events`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(event),
-    signal: AbortSignal.timeout(800),
+    signal: AbortSignal.timeout(remaining()),
   });
+  if (!res.ok) log(`POST ${url}/events returned ${res.status}`);
 } catch (err) {
-  try {
-    mkdirSync(dirname(logPath), { recursive: true });
-    appendFileSync(logPath, `${new Date().toISOString()} ${String(err)}\n`);
-  } catch {
-    // Logging is best effort; the hook still exits 0.
-  }
+  log(String(err));
 }
 process.exit(0);

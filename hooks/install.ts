@@ -24,18 +24,23 @@ type Settings = { hooks?: Record<string, Group[]> };
 function strip(settings: Settings): void {
   const hooks = settings.hooks;
   if (!hooks) return;
+  let removed = false;
   for (const [event, groups] of Object.entries(hooks)) {
     const kept: Group[] = [];
+    let touched = false;
     for (const group of groups) {
       const rest = group.hooks?.filter((h) => !h.command?.includes(MARKER));
+      if (rest && rest.length !== group.hooks?.length) touched = true;
       if (!group.hooks || !rest || rest.length > 0 || group.hooks.length === 0) {
         kept.push(rest ? { ...group, hooks: rest } : group);
       }
     }
+    if (!touched) continue;
     if (kept.length > 0) hooks[event] = kept;
     else delete hooks[event];
+    removed = true;
   }
-  if (Object.keys(hooks).length === 0) delete settings.hooks;
+  if (removed && Object.keys(hooks).length === 0) delete settings.hooks;
 }
 
 const [action, flag, custom] = process.argv.slice(2);
