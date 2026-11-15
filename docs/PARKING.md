@@ -1,15 +1,13 @@
-- 2026-11-14: Embedded terminal inside Funtown, to type into a session without leaving the view
 - 2026-11-14: Notion intake from the phone, plus an MCP to-do feed per project that Funtown asks about ("should we do this?")
 - 2026-11-14: A mode for non-coders, and sharing Funtown with other people
 - 2026-11-14: Orchestrator agent posting PR links and "review this milestone" prompts in the town
 - 2026-11-14: .dmg packaging and code signing as a downloadable Mac app
-- 2026-11-14: Remote or phone access to Funtown
+- 2026-11-14: Remote or phone access to Funtown, after real login and encryption
 - 2026-11-14: Recent transcript and session cost (summed from transcript token usage) in the character panel
 - 2026-11-14: Exact-tab jump for more terminal apps (iTerm2, VS Code, others)
 - 2026-11-14: Jump straight to a specific subagent inside its lead's Claude terminal, not just the lead's tab
 - 2026-11-14: Settings in the app to pick which projects Funtown shows (e.g. so each user sees only their own)
 - 2026-11-15: Jump to the right app for VS Code forks (Cursor, Windsurf) that also set TERM_PROGRAM=vscode
-- 2026-11-15: Answer a waiting session from Funtown: accept or reject a permission, pick a multiple-choice option
 - 2026-11-15: One plain sentence per character (doing now, doing next, plan steps) instead of the raw command
 - 2026-11-15: Town weather as status (clouds when usage limits get close)
 - 2026-11-15: Away mode as night: the town goes dark with lit windows while runs work without you
@@ -21,4 +19,3 @@
 - 2026-11-15: Projects talking to projects through a channel you set up
 - 2026-11-15: Walk your own character in the town and talk to the agent next to you
 - 2026-11-15: Friday replay of the week's work in the town
-- 2026-11-15: Phone access, after real login and encryption

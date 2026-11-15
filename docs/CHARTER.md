@@ -46,7 +46,7 @@ type and run commands in the app. VS Code stays for reading code and git history
 | Answers through Funtown | Over 5 working days of real use, Funtown's own log shows at least 90% of answers to waiting sessions came from Funtown |
 | No missed waits | Over the same 5 days, no session waited more than 5 minutes without its sound and pop-up firing |
 | Switches noted | Every switch to Terminal or agent view for Claude work in those 5 days has a note in Funtown's local log |
-| Errors logged | Killing the server or a hook mid-event leaves an entry in the local error log with the time and the failing step |
+| Errors logged | A hook that fails mid-event and a server that exits on an error each leave an entry in the local error log with the time and the failing step; after a `kill -9`, the next start logs that the last run ended without shutting down |
 | Live terminal | In a session opened from the app, typing text, `!ls`, a slash command and Esc all work, and closing the panel leaves the session running |
 | Town draws the model | Every agent in the list view appears in the town with its role's hat and its project's colour, and a done or dead agent leaves both within 5 s |
 
@@ -55,7 +55,8 @@ type and run commands in the app. VS Code stays for reading code and git history
 - macOS, a local web page on 127.0.0.1; nothing leaves the machine except the opt-in
   "Suggest" button, which shows the exact text before sending it.
 - Public MIT repo: nothing from claude-setup or private notes; all art code-made, with no
-  outside licence on any file.
+  outside licence on any art file; code from other tools is read for reference, never
+  copied.
 - Works with any Claude Code plugins and agents; your own setup plugs in locally.
 - A minimum Claude Code version, checked at start, with a plain list of what won't work.
 - Libraries approved: node-pty, xterm.js, React Three Fiber and drei, a Markdown renderer,
@@ -63,8 +64,9 @@ type and run commands in the app. VS Code stays for reading code and git history
 - Sessions are listed and attached only through `claude agents --json` and `claude attach`,
   never by reading Claude's internal files.
 - The phase file is `.claude/phase.json` in each project; PRs come from `gh pr list`; the
-  steward is a Claude session like any other. Funtown itself sends nothing; the sessions
-  and `gh` it starts talk to Anthropic and GitHub as they do today.
+  steward is a Claude session like any other. Apart from the "Suggest" button, Funtown
+  itself sends nothing; the sessions and `gh` it starts talk to Anthropic and GitHub as
+  they do today.
 - No cost beyond the Claude subscription; no deadline.
 
 ## Budget
