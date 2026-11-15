@@ -1,69 +1,85 @@
-# Milestone 6: spikes — handoff
+# Milestone 7: terminal room — handoff
 
-Verdict: ship. Every review finding is applied; two checks moved to later milestones with
-the user's approval.
+Verdict: ship. All review findings are applied except the two listed under Remaining
+work; three decisions came from the user.
 
 ## Review in five minutes
 
 **Start here**
-1. `docs/spikes/README.md`: the charter's two open questions answered, and one line per
-   spike on what the next milestone does with it.
-2. `docs/spikes/s1-hook-hold.md`: how answer cards will reach a session (the riskiest
-   behaviour v2 relies on).
-3. `docs/CHARTER.md`: three wording fixes (privacy exception, licence rule, error check).
+1. `server/terminal.ts`: `/term` runs `claude attach` in a pty per socket. This is the
+   riskiest part, because a page that gets in can type into a session.
+2. `server/app.ts` `fromPage` and the `/sessions` and `/term` handlers: the token, Origin,
+   CSP and the "listed project only" rule.
+3. `server/town.ts` `sync` and `apply`: the list decides which sessions show, hooks fill in
+   activity, and out-of-order events are ignored.
 
 **Verify**
 
     npx eslint . && npx vitest run && npx playwright test
 
 **Needs you**
-- Re-approve the charter: run `workflow approve` in your terminal (three lines changed).
-- Before m7: `workflow budget 800 m7-terminal-room`.
+- Nothing to approve. To see it: `npm start`, open http://127.0.0.1:4777, click New session
+  on a project, type in the terminal, close the panel.
 
 ## Summary
 
-- Serves the charter's open questions, which block items 1 and 2. Seven spikes on Claude
-  Code 2.1.325: held hooks answer permission, question and plan prompts (s1, s6); a live
-  terminal through `claude attach` in node-pty works (s2); `claude agents --json` replaces
-  v1's file reading (s3); background runs get their own worktree (s4); the async event
-  hook doesn't slow Claude (s5); subagents join their lead's task (v1).
-- No production code; scripts live in the notes, the runs in a scratch folder.
+- Charter item 1, terminal room: the page lists exactly what `claude agents --json` lists.
+  Background sessions open a live terminal (node-pty + xterm.js over a WebSocket). Sessions
+  in a Terminal tab show the "← or /bg" hint. New session starts `claude --bg` in the
+  project folder with no worktree.
+- Constraints: a start-up version check (minimum 2.1.325) prints, and shows in a banner,
+  what won't work. `rebuild.ts` and the `ps` sweep are gone, so production code no longer
+  reads Claude's folder.
+- Security: a per-start page token plus the page's own Origin on `/jump`, `/sessions` and
+  `/term`, and a fixed CSP. `/events` decodes split UTF-8 correctly.
+- Hooks are installed with `async: true`. SessionEnd is no longer registered.
 
 ## Decisions
 
-- The 2 h hold moved to m8 and the background-run push/PR check to m11 (user, 2026-11-15).
-- The 50 ms bar was the architect's, not the user's; an `async: true` command hook doesn't
-  make Claude wait, so it passes and m7 keeps today's hook shape; `type: "http"` (3 ms) is
-  the fallback (user, 2026-11-15).
-- Charter fixes ride in this PR instead of a charter PR of their own (user).
-- PARKING.md: the embedded terminal and answering from Funtown are now in scope and left
-  the list; the two phone entries became one.
-- A copy of the s3 driver for the pending-prompt case is described in prose with its
-  exact command, not inlined.
+- `ws` added as a dependency (user), with `@types/ws` and a postinstall that restores
+  node-pty's `spawn-helper` exec bit (user, in review).
+- New sessions run in the project folder with `bgIsolation: "none"`; worktrees are m11's
+  background runs (user).
+- Only live sessions are listed (no `--all`). Stage comes from the list's status, and idle
+  shows as "needs you: turn ended", as v1's Stop did.
+- A second attach to one session gets a warning (`shared`), not a block.
+- Child `claude` processes keep `CLAUDE_CONFIG_DIR` and lose every other `CLAUDE*` and
+  `AI_AGENT` variable (user, in review).
+- Async hooks can arrive out of order: an event older (`funtown.at`) than the last one
+  applied to the same character is ignored.
+- "Go to terminal" shows only for sessions in a Terminal tab.
 
 ## Remaining work
 
-- m7-terminal-room, next in the queue (needs this PR merged).
-- s5's "Claude doesn't wait for an async hook" rests on Claude Code's documented async
-  behaviour; the live runs couldn't separate it from model latency. m7 checks it in a
-  real session.
-- `tests/hook.test.ts` "exits within 1 s" failed once at 1.1 s under load (load average
-  13 during the spikes) and passed three reruns. It's a timing test that can trip on a
-  busy Mac.
+- Not fixed: a test that hook data for a session never listed expires after 10 s. A real
+  10 s wait slows every run, and `startServer` has no option to shorten it.
+- Not fixed: the fake `--bg` doesn't record its environment, so the `CLAUDE_CONFIG_DIR` test
+  covers `attach` only.
+- Next: m8-answer-cards (charter item 2).
 
 ## Notes
 
-- Every new spike folder needs the trust prompt accepted once, by a person.
-- Never pass `--help` after `claude --bg`: it starts a real session.
-- A pty child started from a Claude session registers in `claude agents` only with every
-  `CLAUDE*` and `AI_AGENT` variable removed from its environment.
-- node-pty's `spawn-helper` installs without its exec bit: `chmod +x` it.
-- The s1 driver accepted the trust prompt for its own folder by sending keys; plan mode
-  wrote two files to `~/.claude/plans/` (Claude Code itself).
+- Checked in real sessions before the review fixes: New session → no worktree; typed text,
+  Shift+Enter (two lines, nothing sent), Esc Esc, `!ls` and `/context` in the panel; the
+  session stays listed after the panel closes; no CSP violations. An async 10 s hook:
+  5–6 s per `claude -p` run against 16 s with a sync one.
+- For m8, from a review of m6's notes:
+  - a PreToolUse hold (AskUserQuestion, ExitPlanMode) shows only a "running PreToolUse
+    hooks" spinner in the terminal, not the dialog, so the terminal can't answer while held;
+  - s6's claim that a subagent's tool calls carry `agent_id` was never logged for a
+    subagent question; rerun it before cards depend on it;
+  - the charter's Open questions still read as unanswered; m6's README answers them.
+- `claude --bg` prints a bare 8-hex id; the server takes the first 8-hex word of stdout.
+- The xterm bundle trips Vite's 500 kB chunk-size warning.
+- A pty child must lose `CLAUDE*`/`AI_AGENT` to register in `claude agents` (s3); the
+  server does this for every child.
 
 ## Numbers
 
-    Branch m6-spikes vs dea4ec4
-      Production: +0 -0, net 0 of budget 400
-      Tests:      +0 -0, net 0 (test/prod n/a on this branch)
-      Repo:       1,109 production lines, 1,221 test lines (test/prod 1.10; band 0.5-0.7)
+    Branch m7-terminal-room vs d6e9518
+      Production: +621 -382, net 239 of budget 800
+      Tests:      +742 -531, net 211 (test/prod 0.88 on this branch)
+      Repo:       1,348 production lines, 1,432 test lines (test/prod 1.06; band 0.5-0.7)
+
+Gross production is 1,003 lines because `rebuild.ts` and the sweep (382 deleted) were
+replaced by the agents list.

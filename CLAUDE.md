@@ -5,44 +5,41 @@ Charter: docs/CHARTER.md. Current state: docs/HANDOFF.md. Parked ideas: docs/PAR
 ## Map
 
 Parts
-- `hooks/funtown-hook.ts`: command hook Claude Code runs on each event; adds the session's
-  tty and POSTs to the server; 800 ms deadline, always exits 0.
-- `hooks/install.ts`: adds and removes Funtown's entries in `~/.claude/settings.json`;
-  records what it created in `~/.funtown/installed.json`.
-- `server/`: HTTP server on 127.0.0.1:4777. `town.ts` turns events into the Town state;
-  `app.ts` serves `/events`, `/stream` (SSE), `/jump` and the page, and every 5 s sweeps for
-  sessions that died without SessionEnd; `rebuild.ts` rebuilds live sessions on start.
-- `web/`: React page (Vite), emoji houses and characters, a details panel per character.
-  `tests/`: Vitest at the seams, Playwright in `tests/e2e/`.
-- `docs/spikes/`: the Claude Code 2.1.325 behaviours v2 builds on, one note each (m6);
-  rerun a note's Reproduce before relying on it. `docs/history/`: v1's charter.
+- `hooks/funtown-hook.ts`: async command hook on each event; adds tty and `at`, POSTs to
+  the server; 800 ms deadline, always exits 0. `hooks/install.ts`: adds and removes its
+  nine entries in `~/.claude/settings.json`, recorded in `~/.funtown/installed.json`.
+- `server/` on 127.0.0.1:4777: `agents.ts` runs `claude` (version, `agents --json`, `--bg`);
+  `town.ts` merges the 2 s list poll and hook events into the Town; `terminal.ts` runs
+  `claude attach` in node-pty per `/term` socket; `app.ts` serves the endpoints and page.
+- `web/`: React page (Vite), sessions by project, a panel with an xterm.js terminal for
+  background sessions. `tests/`: Vitest at the seams, Playwright in `tests/e2e/`, a fake
+  `claude` (`fake-claude.cjs`, steered by `fake-claude.ts`).
+- `docs/spikes/`: Claude Code 2.1.325 behaviours v2 builds on (m6); rerun a note's
+  Reproduce before relying on it. `docs/history/`: v1's charter.
 
 Contracts (source of truth: docs/MILESTONE.md of the milestone that set them)
-- Hook event: POST `/events`, Claude Code's hook JSON plus `funtown: { tty, term_program, at }`.
-- Town state: `server/types.ts`, streamed as SSE `state` events; `web/` and `tests/` import it.
-- `POST /jump { lead }` from the page's own Origin: focuses the lead's terminal (m3).
-- `startServer({ port, goneAfterMs?, distDir?, run?, claudeDir?, exec?, sweepMs? })`: entry
-  for tests; `run` and `exec` replace execFile so tests never run osascript or ps; no
-  `claudeDir`, no rebuild and no sweep (m5).
-- Claude folder input: `sessions/<pid>.json`, `projects/*/<sessionId>.jsonl` and
-  `projects/*/<sessionId>/subagents/agent-<id>.{meta.json,jsonl}` (m4).
-- Live check: `env LC_ALL=C TZ=UTC ps -wwE -o lstart=,tty=,command= -p <pid>`; live when
-  `lstart` equals the session file's `procStart` (m5).
-- Test env: `FUNTOWN_PORT`, `FUNTOWN_URL`, `FUNTOWN_LOG`, `FUNTOWN_STATE`, `FUNTOWN_CLAUDE_DIR`.
+- Hook event: POST `/events`, hook JSON plus `funtown: { tty, term_program, at }`; an event
+  older than the last applied to the same character is ignored (m7).
+- Town state: `server/types.ts`, SSE `state` events; a lead shows only while listed (m7).
+- `claude` calls: `--version` (min 2.1.325), `agents --json`, `--bg --settings
+  {"worktree":{"bgIsolation":"none"}}`, `attach <id>`; never a shell; children lose every
+  `CLAUDE*`/`AI_AGENT` variable except `CLAUDE_CONFIG_DIR` (m7).
+- Page: token in `<meta name="funtown-token">`, needed with the page's Origin by `/jump`,
+  `/sessions { cwd }` and the `/term` socket (JSON `in`/`resize`/`out`/`shared`); fixed CSP (m7).
+- `startServer({ port, distDir?, run?, claude?, pollMs? })`: tests pass the fake as
+  `claude`; `run` replaces execFile for osascript/open.
+- Env: `FUNTOWN_PORT`, `FUNTOWN_URL`, `FUNTOWN_LOG`, `FUNTOWN_STATE`, `FUNTOWN_CLAUDE`.
 
-Commands
-- Run: `npm start` → http://127.0.0.1:4777. Hooks: `npm run install-hooks` / `uninstall-hooks`
-  (`--settings <path>` points the installer elsewhere, for tests).
-- Test: `npx eslint . && npx vitest run && npx playwright test`
+Commands: `npm start` (http://127.0.0.1:4777); `npm run install-hooks` / `uninstall-hooks`
+(`--settings <path>` for tests); test: `npx eslint . && npx vitest run && npx playwright test`
 
 Decisions that bind
-- Nothing leaves the machine (v2's one exception: the opt-in "Suggest" button); listen on
-  127.0.0.1 only; `Host` must be 127.0.0.1 or localhost.
-- `POST /events` refuses any `Origin` header and has no body limit (a large Write event can
-  be several MB); `/jump` needs the server's own Origin, caps at 64 KB, and passes the tty to
-  osascript only as an argument.
-- The Claude folder is read only; an unreadable file skips that session with one stderr
-  line. The sweep ends only a lead it saw live, never on a failed `ps`, an unreadable file
-  or a hook during the sweep.
-- All code our own; MIT tools are reference only. Tests never use real names or the home folder.
+- Nothing leaves the machine (v2's one exception: the opt-in "Suggest" button); 127.0.0.1
+  only; `Host` must be 127.0.0.1 or localhost.
+- Sessions only from `claude agents --json`, terminals only from `claude attach`; no reading
+  Claude's folder. A failed list keeps the last one. New sessions only in a listed project.
+- `/events` refuses any `Origin` and has no body limit (Write events run to MB); page POSTs
+  cap at 64 KB, `/term` frames at 1 MB; ids, cwds and ttys reach children only as arguments.
+- All code our own; MIT tools are reference only. Tests never run the real `claude`, use
+  real names or the home folder.
 - Personal files stay gitignored: docs/ideas.md, .claude/settings.json, .claude/never-push.
