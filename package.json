@@ -8,7 +8,6 @@
   "scripts": {
     "build": "vite build",
     "start": "vite build && node server/main.ts",
-    "dev": "vite",
     "install-hooks": "node hooks/install.ts install",
     "uninstall-hooks": "node hooks/install.ts uninstall",
     "test": "eslint . && vitest run && playwright test"

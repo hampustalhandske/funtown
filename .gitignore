@@ -3,7 +3,9 @@ dist/
 web/dist/
 test-results/
 playwright-report/
-data/
+/data/
+.claude/ui-review/
+.playwright-mcp/
 .env*
 *.gguf
 *.safetensors
