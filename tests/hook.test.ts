@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -45,7 +45,6 @@ it("hook_posts_the_event_unchanged_plus_a_funtown_block_to_events", async () => 
   const port = (server.address() as { port: number }).port;
 
   // spawnSync would block the server's event loop, so run the hook asynchronously.
-  const { spawn } = await import("node:child_process");
   const child = spawn("node", [HOOK], {
     env: {
       ...process.env,
@@ -87,7 +86,6 @@ it("hook_exits_0_within_1s_and_logs_one_line_when_the_server_never_replies", asy
   await new Promise<void>((r) => server!.listen(0, "127.0.0.1", r));
   const port = (server.address() as { port: number }).port;
 
-  const { spawn } = await import("node:child_process");
   const t0 = Date.now();
   const child = spawn("node", [HOOK], {
     env: { ...process.env, FUNTOWN_URL: `http://127.0.0.1:${port}`, FUNTOWN_LOG: log },
@@ -114,7 +112,6 @@ it("hook_exits_0_and_logs_the_status_when_the_server_answers_500", async () => {
   await new Promise<void>((r) => server!.listen(0, "127.0.0.1", r));
   const port = (server.address() as { port: number }).port;
 
-  const { spawn } = await import("node:child_process");
   const child = spawn("node", [HOOK], {
     env: { ...process.env, FUNTOWN_URL: `http://127.0.0.1:${port}`, FUNTOWN_LOG: log },
   });

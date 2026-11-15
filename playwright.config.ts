@@ -1,9 +1,9 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { defineConfig } from "@playwright/test";
 
-const emptyClaudeDir = mkdtempSync(join(tmpdir(), "funtown-e2e-claude-"));
+// A path that does not exist: the rebuild finds no sessions there.
+const emptyClaudeDir = join(tmpdir(), "funtown-e2e-no-claude-dir");
 
 export default defineConfig({
   testDir: "tests/e2e",

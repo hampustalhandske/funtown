@@ -2,20 +2,18 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach } from "vitest";
+import { startServer } from "../server/app.ts";
+import type { Session } from "../server/rebuild.ts";
 import type { Town } from "../server/types.ts";
 
 export type Json = Record<string, unknown>;
 
-type Server = Awaited<ReturnType<typeof import("../server/app.ts").startServer>>;
-type StartOptions = { goneAfterMs?: number; distDir?: string; run?: (file: string, args: string[]) => Promise<void>;
-  claudeDir?: string;
-  exec?: (file: string, args: string[]) => Promise<string>;
-};
+type Server = Awaited<ReturnType<typeof startServer>>;
+type StartOptions = Omit<Parameters<typeof startServer>[0], "port">;
 const open: Server[] = [];
 
 /** Starts a server on a free port; it is closed after each test. */
 export async function start(opts: StartOptions = {}): Promise<Server> {
-  const { startServer } = await import("../server/app.ts");
   const s = await startServer({ port: 0, ...opts });
   open.push(s);
   return s;
@@ -68,13 +66,8 @@ export async function townWhere(url: string, ok: (t: Town) => boolean, ms = 3000
 
 export const leadsOf = (t: Town) => t.houses.flatMap((h) => h.leads);
 
-/** A pid that belonged to a process that has already exited. */
-export async function deadPid(): Promise<number> {
-  const { spawnSync } = await import("node:child_process");
-  return spawnSync(process.execPath, ["-e", ""]).pid!;
-}
-
-type Session = { pid: number; sessionId: string; cwd: string; startedAt: number; status: string };
+/** A pid above macOS's maximum (99999), so no process has it. */
+export const deadPid = (): number => 999999;
 
 /** Fixture Claude folder: sessions/<pid>.json plus optional transcripts under projects/p/. */
 export class ClaudeDir {
@@ -86,6 +79,18 @@ export class ClaudeDir {
   }
   session(s: Session): this {
     writeFileSync(join(this.dir, "sessions", `${s.pid}.json`), JSON.stringify({ ...s, entrypoint: "cli" }));
+    return this;
+  }
+  /** Writes sessions/<pid>.json with `text` as its exact content. */
+  rawSession(pid: number, text: string): this {
+    writeFileSync(join(this.dir, "sessions", `${pid}.json`), text);
+    return this;
+  }
+  /** Writes only agent-<agentId>.meta.json, with `metaText` as its exact content and no transcript. */
+  subagentMeta(sessionId: string, agentId: string, metaText: string): this {
+    const d = join(this.dir, "projects", "p", sessionId, "subagents");
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, `agent-${agentId}.meta.json`), metaText);
     return this;
   }
   /** Writes the lead transcript; each line is JSON-stringified unless it is a raw string. */
