@@ -1,97 +1,74 @@
-# Milestone 5: live check
+# Milestone 6: spikes
 
-Serves: charter item 3 ("gone: the session exited, removed after 10 min") and m4's remaining
-work ("a ghost lead can appear when a killed session's pid is reused, and it never leaves"):
-a session that died without a SessionEnd hook (killed with `-9`, crashed) or whose pid was
-reused no longer stays on screen.
-Estimate: ~70 net production lines of a 400 budget
-Mode: away: open the PR after review and continue with the queue (empty)
+Serves: the charter's open questions (answer path, minimum Claude Code version), which
+block items 1 and 2: each unproven Claude Code behaviour v2 builds on gets a pass or fail
+before any production code depends on it.
+Estimate: 0 net production lines of a 400 budget (spike code stays outside the repo)
+Mode: away: open the PR after review and continue with the queue
 
 ## Done when
 
-1. Started with a Claude folder holding a session file whose pid is alive but whose
-   `procStart` differs from the start time `ps` reports for that pid, the first `/stream`
-   frame has no character for it.
-2. A session file whose `procStart` matches (whitespace runs count as one space) rebuilds
-   exactly as in m4: stage, step, subagents, tty and `termProgram`. A session file without
-   `procStart` rebuilds as in m4 (pid alive is enough).
-3. With `claudeDir` and `sweepMs`, a lead that a sweep or the rebuild once saw live becomes
-   `gone` within one `sweepMs` after its session file disappears, its pid dies, or its pid's
-   start time stops matching; it is then removed after `goneAfterMs`, as after SessionEnd.
-4. A sweep never marks gone: a lead it has not yet seen live (its hook arrived before its
-   session file), a lead whose `ps` call failed in that sweep, or a lead whose session file
-   (`sessions/<pid>.json` for the pid it was last seen live with) exists but can't be read or
-   parsed in that sweep (Claude may be rewriting it). Added after the plan; approved by
-   the user in review.
-5. A hook event for a lead the sweep marked gone brings it back, as after SessionEnd today.
-6. Without `claudeDir`, no sweep runs and nothing reads a Claude folder.
-7. By hand (you): with Funtown running, `kill -9` a `claude` session's pid. Its character
-   shows "gone" within 5 s. Restarting Funtown, every live session still comes back with
-   its tty.
-8. The test command passes.
+1. `docs/spikes/` has one note per task below (s1-s6, v1), each in the result-note shape
+   under Contracts, with a pass or fail for every criterion in its task row.
+2. `docs/spikes/README.md` answers the charter's two open questions in one line each: the
+   answer path (held permission hook, timeout, fallback) and the minimum Claude Code
+   version that passed.
+3. Every spike note lists the exact commands to reproduce it on Claude Code 2.1.325.
+4. After the spikes, `claude agents --json` lists no session a spike started.
+5. `npx eslint . && npx vitest run && npx playwright test` passes, unchanged.
 
 ## Must not
 
-- Add a dependency, service or paid API without asking.
-- Change `/events`, `/jump`, the hook, the installer, the page, `server/town.ts` or the Town
-  shapes.
-- Read anything in the Claude folder beyond `sessions/*.json` and what m4 reads.
-- Run any command in a test: tests inject `exec`.
+- Add a dependency, service or paid API to the repo. Spike code, and node-pty or xterm.js
+  installs, live in a scratch folder outside the repo.
+- Write to `~/.claude/` or the installed Funtown hooks; spike sessions get their hooks
+  through `claude --settings <file>`. Claude's folder is read only.
+- Push, open a PR or add a remote in a spike repo. Spike repos are new local repos in the
+  scratch folder.
+- Put a real project name, session name, user name or home-folder path in a note; write
+  `~` and placeholders such as `<project>`.
+- Leave a session running: stop every session a spike starts. Spike sessions use
+  `--model haiku` unless the behaviour under test needs another model.
+- Change production code, tests or config.
 
 ## Contracts
 
-### Session file field
+### Result note
 
-Consumed by tasks 1 and 2. `procStart` is the process start time as `ps -o lstart=` prints
-it in UTC, e.g. `"Fri Nov 13 12:37:09 2026"`. It may be absent.
+Produced by tasks 1-6, consumed by the README (orchestrator) and the next milestones.
 
-```ts
-type Session = { pid: number; sessionId: string; cwd: string; startedAt: number; status?: string; procStart?: string };
 ```
+# <id>: <title>
+Claude Code: <claude --version>   Date: <YYYY-MM-DD>   Verdict: pass | fail | partial
 
-### The one `ps` call per session file with a live pid
+| Criterion | Result | Evidence |
+|---|---|---|
+| <criterion from the task row> | pass/fail | <command output, one line> |
 
-Produced by task 1, faked by task 2. Replaces m4's `ps -wwE -o tty=,command=` call, at
-rebuild and in every sweep. `LC_ALL=C` added in review, approved by the user: `ps`
-prints `lstart` in the user's locale otherwise (`Sön 15 Nov ...`).
+## Reproduce
+<commands, with ~ and placeholders>
 
-```ts
-exec("env", ["LC_ALL=C", "TZ=UTC", "ps", "-wwE", "-o", "lstart=,tty=,command=", "-p", String(pid)])
-// stdout: "Fri Nov 13 12:37:09 2026     ttys008  claude --resume ... TERM_PROGRAM=Apple_Terminal ..."
-// the first 5 whitespace-separated tokens are lstart, the 6th is the tty ("??" when none)
-```
-
-Those 5 tokens differing from `procStart` (both with whitespace runs collapsed) means the
-pid now belongs to another process: the session counts as not live. A failing call writes
-one stderr line, as in m4; the rebuild skips that session and the sweep leaves it as it is.
-
-### `startServer` option
-
-Produced by task 1, consumed by task 2.
-
-```ts
-startServer({ port, goneAfterMs?, distDir?, run?, claudeDir?, exec?, sweepMs? })
-// sweepMs: how often the Claude folder is checked for sessions that ended; default 5000.
-// Only with claudeDir. close() stops the sweep.
+## Consequence
+<if fail or partial: which "fail means" from the plan applies, in one line>
 ```
 
 ## Tasks
 
 | # | Owner | Owned paths | Does | Done when |
 |---|---|---|---|---|
-| 1 | server | server/rebuild.ts, server/app.ts | The new `ps` call with the start-time match, shared by the rebuild and a sweep every `sweepMs` that ends leads no longer live through the same path as SessionEnd | Done when 1–6 hold |
-| 2 | tests | tests/rebuild.test.ts, tests/sweep.test.ts | Updates the fake `exec` to the new call; adds the seams below | They run, and fail only where code is missing |
+| 1 | hook | docs/spikes/s1-hook-hold.md, docs/spikes/s6-escalation.md | S1: a PermissionRequest/PreToolUse hook that waits on a local server and returns a decision, in an interactive (pty-driven) and a `--bg` session. S6: AskUserQuestion from a `--bg` lead with a subagent running reaches that hook and the answer returns. | Notes record: answers apply for permission, AskUserQuestion and ExitPlanMode; a killed hook falls back to the normal dialog; what the terminal shows while held; a 2 h timeout honoured (run in the background); whether Esc fires Stop; S6 pass or fail |
+| 2 | attach | docs/spikes/s2-attach.md | S2: node-pty runs `claude attach <id>` behind an xterm.js test page | Note records: render, resize, Shift+Enter, Esc, `!cmd`, a slash command and wheel work; killing the client leaves the session working; paste + Enter sends when idle and queues when busy; what a second attach does |
+| 3 | sessions | docs/spikes/s3-sessions.md | S3 with V3, V5, V7: join `claude agents --json` with hook payloads | Note records: `sessionId` equals hook `session_id` for interactive and `--bg` sessions; `name` stable over a restart; `id` after `/clear`; `status`/`waitingFor` during a pending prompt; hooks fire in `--bg` sessions; whether an idle stopped `--bg` session stays listed |
+| 4 | runs | docs/spikes/s4-runs.md | S4: two `--bg` runs in one scratch repo, each in its own worktree | Note records: no extra worktree, no push, no PR; each run's cwd; whether `--settings` with `bgIsolation: "none"` applies |
+| 5 | cost | docs/spikes/s5-hook-cost.md | S5: an async observe hook (the v1 hook shape) against a local server at 20 simulated sessions | Note records: ms added per tool call (median and p95); server CPU; command hook vs `type: "http"` |
+| 6 | delegation | docs/spikes/v1-delegation.md | V1 with V6: a lead starts a subagent through the Agent tool | Note records: PreToolUse on Agent carries description, prompt and subagent_type; its `tool_use_id` joins SubagentStart's `agent_id` (or how else); SubagentStop's `last_assistant_message` equals the text the lead receives |
+
+No tests row: this milestone adds no production code.
 
 ## Test seams
 
-- `startServer({ claudeDir, exec })` first `/stream` frame: catches a reused pid showing as
-  a lead, a matching session dropped, a session without `procStart` dropped, and the tty
-  read from the wrong token after lstart was added.
-- `startServer({ claudeDir, exec, sweepMs, goneAfterMs })` later `/stream` frames, with the
-  fixture folder and fake `exec` changed between sweeps: catches a dead, reused or deleted
-  session staying on screen; a lead marked gone before it was ever seen live; a failed `ps`
-  ending a live lead; a gone lead not removed after `goneAfterMs`; a hook event not
-  reviving it; a sweep still running after `close()`.
+- None in code. Each note's Reproduce section is the seam: the milestone that builds on a
+  spike reruns it before relying on it.
 
 ## Stop and ask
 
@@ -99,8 +76,25 @@ Every agent stops and reports BLOCKED when:
 - a contract needs to change;
 - the code or the cause doesn't match this plan;
 - the budget checkpoint fires;
-- a "Done when" can't be met as written.
+- a "Done when" can't be met as written;
+- a spike needs the user's hands (a real Terminal tab, a login, a prompt only a person can
+  answer).
 
 ## Queue
 
-- none
+Each needs the one before it merged.
+
+- m7-terminal-room: ~550, budget 800: session list from agents JSON, list view, live attach
+  panel, new session via `--bg`, token/Origin/CSP, version check, v1 bug fixes (incl. the
+  `/events` UTF-8 decode)
+- m8-answer-cards: ~400: decide hook, cards, desk queue, pop-up with sound, focus rule,
+  stuck agents, answer log for the 90% check
+- m9-letters: ~400: letters with reply box, morning view, switch note, error log
+- m10-workflow: ~400: project setup in the app, phase file, roles and tags, steward desk
+  items, PR data from `gh`
+- m11-runs-shell: ~400: background runs per worktree, PR parcels, overlap warnings, shell
+  tab per project
+- m12-town-kit: ~400: inked-clay rig and parts, the standard agent set, keyword roles
+- m13-village: ~400: village, castle, you as king, the queue, the queen, buildings
+- m14-interiors: ~400: inside a building, talk and leave animations
+- m15-looks: ~400: agent `.md` reader, Suggest button, your avatar
