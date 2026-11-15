@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // A stand-in for the `claude` executable. State lives in files next to this script:
 //   list.json (the `agents --json` output, written raw), version, and the switches
-//   list-fail, version-fail, bg-fail. `--bg` appends to started.json and lists a new
+//   list-fail, version-fail, bg-fail. `--bg` appends (cwd, argv, CLAUDE*/AI_AGENT variable
+//   names) to started.json and lists a new
 //   background session; `attach <id>` echoes every input chunk as `got:<JSON string>`.
 const fs = process.getBuiltinModule("fs");
 const path = process.getBuiltinModule("path");
@@ -29,7 +30,8 @@ if (argv[0] === "--version") {
   }
   const id = crypto.randomBytes(4).toString("hex");
   const started = JSON.parse(read("started.json", "[]"));
-  started.push({ cwd: process.cwd(), argv });
+  const leaked = Object.keys(process.env).filter((k) => /^(CLAUDE|AI_AGENT)/.test(k));
+  started.push({ cwd: process.cwd(), argv, env: leaked });
   fs.writeFileSync(file("started.json"), JSON.stringify(started));
   const list = JSON.parse(read("list.json", "[]"));
   list.push({

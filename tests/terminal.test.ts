@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from "vitest";
 import WebSocket from "ws";
-import { listed, listedBg, leadsOf, start, tokenOf, townWhere, until } from "./helpers.ts";
+import { listed, listedBg, leadsOf, realDir, start, tokenOf, townWhere, until } from "./helpers.ts";
 
 const SID = "abcd1234-0000-4000-8000-000000000000";
 const SHORT = "abcd1234";
@@ -135,4 +135,27 @@ it("shared_reports_the_number_of_funtown_sockets_on_a_session_as_it_changes", as
   await until(() => a.shared.at(-1) === 2 && b.shared.at(-1) === 2);
   b.ws.close();
   await until(() => a.shared.at(-1) === 1);
+});
+
+it("sessions_passes_claude_config_dir_to_claude_bg_and_no_other_claude_variable", async () => {
+  process.env.CLAUDE_CONFIG_DIR = "/custom/config";
+  process.env.CLAUDE_CODE_ENTRYPOINT = "cli";
+  process.env.AI_AGENT = "x";
+  try {
+    const cwd = realDir();
+    const s = await start();
+    s.fake.list([listed("s1", cwd)]);
+    await townWhere(s.url, (t) => leadsOf(t).length === 1);
+    const res = await fetch(`${s.url}/sessions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: s.url, "x-funtown-token": await tokenOf(s.url) },
+      body: JSON.stringify({ cwd }),
+    });
+    expect(res.status).toBe(201);
+    expect(s.fake.started().map((c) => c.env)).toEqual([["CLAUDE_CONFIG_DIR"]]);
+  } finally {
+    delete process.env.CLAUDE_CONFIG_DIR;
+    delete process.env.CLAUDE_CODE_ENTRYPOINT;
+    delete process.env.AI_AGENT;
+  }
 });
