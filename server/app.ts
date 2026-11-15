@@ -6,6 +6,7 @@ import type { AddressInfo } from "node:net";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { TownState, type HookEvent } from "./town.ts";
+import { rebuild } from "./rebuild.ts";
 
 const DEFAULT_DIST = fileURLToPath(new URL("../web/dist/", import.meta.url));
 const TYPES: Record<string, string> = {
@@ -52,6 +53,9 @@ const defaultRun = async (file: string, args: string[]) => {
   await execFileAsync(file, args, { timeout: 60_000 });
 };
 
+const defaultExec = async (file: string, args: string[]) =>
+  (await execFileAsync(file, args, { timeout: 5_000 })).stdout;
+
 const MAX_JUMP_BODY = 64 * 1024;
 
 /** The command that brings a lead's terminal to the front, or null for an unknown terminal. */
@@ -72,18 +76,23 @@ function jumpCommand(termProgram: string | null, tty: string | null): [string, s
  * picks a free port. `distDir` is the built page (default web/dist/). `/events` rejects any
  * request with an `Origin` header, so web pages cannot post to it. `POST /jump` takes
  * `{ lead }` from the page's own origin only and runs `run` (default: execFile, 60 s timeout) to
- * bring that lead's terminal to the front.
+ * bring that lead's terminal to the front. With `claudeDir`, sessions already running there
+ * are rebuilt into the Town before listening, reading their tty with `exec` (default:
+ * execFile, 5 s timeout; returns stdout).
  */
 export async function startServer(opts: {
   port: number;
   goneAfterMs?: number;
   distDir?: string;
   run?: (file: string, args: string[]) => Promise<void>;
+  claudeDir?: string;
+  exec?: (file: string, args: string[]) => Promise<string>;
 }): Promise<{ url: string; close(): Promise<void> }> {
   const run = opts.run ?? defaultRun;
   const goneAfterMs = opts.goneAfterMs ?? 600_000;
   const dist = normalize(join(opts.distDir ?? DEFAULT_DIST, "/"));
   const town = new TownState();
+  if (opts.claudeDir) await rebuild(town, opts.claudeDir, opts.exec ?? defaultExec);
   const clients = new Set<ServerResponse>();
   const timers = new Map<string, NodeJS.Timeout>();
   let port = 0;
