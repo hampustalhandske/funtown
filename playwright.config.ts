@@ -17,7 +17,16 @@ export default defineConfig({
   webServer: {
     command: "vite build && node server/main.ts",
     url: "http://127.0.0.1:4799",
-    env: { FUNTOWN_PORT: "4799", FUNTOWN_CLAUDE: fake.path, FUNTOWN_JOURNAL: join(E2E_FAKE_DIR, "journal.jsonl") },
+    // Every file the server writes goes to the run's temp folder, never the home folder.
+    env: {
+      FUNTOWN_PORT: "4799",
+      FUNTOWN_CLAUDE: fake.path,
+      FUNTOWN_JOURNAL: join(E2E_FAKE_DIR, "journal.jsonl"),
+      FUNTOWN_ANSWERS: join(E2E_FAKE_DIR, "answers.jsonl"),
+      FUNTOWN_LOG: join(E2E_FAKE_DIR, "errors.log"),
+      FUNTOWN_RUN: join(E2E_FAKE_DIR, "running.json"),
+      FUNTOWN_SWITCHES: join(E2E_FAKE_DIR, "switches.jsonl"),
+    },
     reuseExistingServer: false,
   },
 });

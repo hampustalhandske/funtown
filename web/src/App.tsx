@@ -5,6 +5,7 @@ import { MorningButton } from "./Morning.tsx";
 import { LazyBoundary } from "./LazyBoundary.tsx";
 import { NeedsList, NotifyButton, Toasts, useAlerts, useMute, useNextKey, waitingList, type Waiting } from "./needs.tsx";
 import { funtownToken } from "./token.ts";
+import { SwitchButton } from "./Switch.tsx";
 
 // The Markdown renderer and the terminal load only when a panel shows them, keeping them out of the first page load.
 const Letters = lazy(() => import("./Letters.tsx").then((m) => ({ default: m.Letters })));
@@ -275,6 +276,8 @@ export function App() {
       return "Couldn't reach Funtown.";
     }
   }, []);
+  const openCwd = lead && town?.houses.find((house) => house.leads.includes(lead))?.cwd;
+  const openSession = selected && openCwd ? { id: selected.id, name: selected.name, cwd: openCwd } : null;
   const waiting = waitingList(town);
   const [muted, toggleMute] = useMute();
   const openWaiting = useCallback((w: Waiting) => setSelection({ lead: w.lead, id: w.id }), []);
@@ -288,6 +291,7 @@ export function App() {
           {muted ? "Unmute" : "Mute"}
         </button>
         <NotifyButton />
+        <SwitchButton open={openSession} />
         <MorningButton waiting={waiting} town={town} onOpen={openWaiting} />
       </header>
       {restarted && (

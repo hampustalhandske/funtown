@@ -63,20 +63,43 @@ test("the_morning_view_shows_done_stuck_and_next_for_the_project_and_a_next_row_
   await expect(panel(page, "beta")).toBeVisible();
 });
 
-test("the_window_starts_when_the_view_was_last_closed_and_survives_a_reload", async ({ page }) => {
+test("the_window_starts_when_the_view_last_loaded_and_survives_a_reload", async ({ page }) => {
   await openPage(page);
-  await hook(sidA, "Stop", { last_assistant_message: "Before the first close." });
+  await hook(sidA, "Stop", { last_assistant_message: "Before the first load." });
   await openButton(page).click();
-  await expect(view(page)).toContainText("Before the first close.");
+  await expect(view(page)).toContainText("Before the first load.");
   await closeView(page);
 
   await page.waitForTimeout(100);
-  await hook(sidA, "Stop", { last_assistant_message: "After the first close." });
+  await hook(sidA, "Stop", { last_assistant_message: "After the first load." });
   await page.reload();
   await expect(openButton(page)).toBeVisible();
   await openButton(page).click();
-  await expect(view(page)).toContainText("After the first close.");
-  await expect(view(page)).not.toContainText("Before the first close.");
+  await expect(view(page)).toContainText("After the first load.");
+  await expect(view(page)).not.toContainText("Before the first load.");
+});
+
+test("a_letter_written_while_the_view_is_open_shows_on_the_next_open_and_a_failed_load_does_not_move_the_window", async ({ page }) => {
+  await openPage(page);
+  // Two leads, since Done keeps only each lead's newest letter.
+  await hook(sidB, "Stop", { last_assistant_message: "Before the first load." });
+  await openButton(page).click();
+  await expect(view(page)).toContainText("Before the first load.");
+  await page.waitForTimeout(100);
+  await hook(sidA, "Stop", { last_assistant_message: "While the view was open." });
+  await page.waitForTimeout(100);
+  await closeView(page);
+
+  await page.route("**/morning?**", (r) => r.fulfill({ status: 500, body: "boom" }));
+  await openButton(page).click();
+  await expect(view(page).getByRole("alert")).toBeVisible();
+  await page.waitForTimeout(100);
+  await closeView(page);
+  await page.unroute("**/morning?**");
+
+  await openButton(page).click();
+  await expect(view(page)).toContainText("While the view was open.");
+  await expect(view(page)).not.toContainText("Before the first load.");
 });
 
 test("the_view_never_opens_or_takes_focus_when_events_arrive", async ({ page }) => {

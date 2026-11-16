@@ -1,7 +1,7 @@
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CWD, ev, leadsOf, listed, post, realDir, start, tokenOf, townWhere, until, type Json } from "./helpers.ts";
+import { CWD, ev, fakeClaude, jsonLines, leadsOf, leadWhere, listed, post, realDir, sleep, start, tokenOf, townWhere, until, type Json } from "./helpers.ts";
 import type { JournalEntry, Letter, Morning } from "../server/types.ts";
 
 const sub = { agent_id: "x1", agent_type: "Explore" };
@@ -9,12 +9,10 @@ const handback = (message: string, agent = sub) =>
   ev("PostToolUse", { ...agent, tool_name: "SubagentHandback", tool_input: { message } });
 
 const journalPath = () => join(realDir(), "journal.jsonl");
-const lines = (path: string): string[] => (existsSync(path) ? readFileSync(path, "utf8").split("\n").filter(Boolean) : []);
-const entries = (path: string) => lines(path).map((l) => JSON.parse(l) as JournalEntry);
+const entries = (path: string) => jsonLines<JournalEntry>(path);
 
 async function listedServer(journal?: string, extra: Record<string, unknown> = {}) {
-  const s = await start({ journal, ...extra });
-  s.fake.list([listed("s1", CWD)]);
+  const s = await start({ journal, ...extra, fake: fakeClaude().list([listed("s1", CWD)]) });
   await townWhere(s.url, (t) => leadsOf(t).length === 1);
   const token = await tokenOf(s.url);
   const letters = async (lead = "s1") =>
@@ -49,7 +47,7 @@ describe("the journal", () => {
     const s = await listedServer(path);
     const stop = ev("Stop", { last_assistant_message: "All done.", cwd: "/somewhere/else" });
     await s.send(stop);
-    await until(() => lines(path).length >= 1);
+    await until(() => entries(path).length >= 1);
     expect(entries(path)).toMatchObject([
       { kind: "letter", at: stop.funtown.at, cwd: CWD, lead: "s1", letter: { from: "s1", text: "All done." } },
     ]);
@@ -61,7 +59,7 @@ describe("the journal", () => {
     const noCwd: Json = { ...ev("Stop", { last_assistant_message: "from nowhere" }, "ghost") };
     delete noCwd.cwd;
     await s.send(noCwd, ev("Stop", { last_assistant_message: "marker" }));
-    await until(() => lines(path).length >= 1);
+    await until(() => entries(path).length >= 1);
     expect(entries(path).map((e) => (e.kind === "letter" ? e.letter.text : e.kind))).toEqual(["marker"]);
   });
 
@@ -132,7 +130,7 @@ describe("the journal", () => {
       ev("SubagentStop", { ...sub, last_assistant_message: "from the subagent" }),
       ev("Stop", { last_assistant_message: "own letter" }),
     );
-    await until(() => lines(path).length >= 2);
+    await until(() => entries(path).length >= 2);
     await first.close();
 
     const second = await listedServer(path);
@@ -145,6 +143,52 @@ describe("the journal", () => {
     const all = await second.letters();
     expect(all).toHaveLength(3);
     expect(new Set(all.map((l) => l.id)).size).toBe(3);
+  });
+});
+
+describe("the journal across list failures and restarts", () => {
+  const failed = () => fakeClaude().list([listed("s1", CWD, { state: "failed" })]);
+  const stuckEntries = (path: string) => entries(path).filter((e) => e.kind === "stuck");
+
+  it("a_failed_turn_the_list_keeps_reporting_is_journaled_once_even_after_a_hook_unsticks_it_but_a_new_failure_is_journaled", async () => {
+    const path = journalPath();
+    const s = await start({ journal: path, fake: failed() });
+    await until(() => stuckEntries(path).length === 1);
+    expect(await post(s.url, ev("UserPromptSubmit"))).toBe(204);
+    await sleep(500); // about five polls that still say failed
+    expect(stuckEntries(path)).toHaveLength(1);
+
+    // The list stops saying failed; once a poll has applied that, the hook unsticks the lead and the list fails again.
+    const asked = s.fake.list([listed("s1", CWD, { status: "busy" })]).listAsks();
+    await until(() => s.fake.listAsks() >= asked + 2);
+    expect(await post(s.url, ev("UserPromptSubmit"))).toBe(204);
+    await leadWhere(s.url, (l) => l?.stage === "working");
+    s.fake.list([listed("s1", CWD, { state: "failed" })]);
+    await until(() => stuckEntries(path).length === 2);
+  });
+
+  it("a_failure_the_list_reports_at_start_is_journaled_even_when_the_leads_newest_entry_is_an_older_stuck_mark", async () => {
+    // The lead was stuck in a loop, got a new prompt and failed while Funtown was down: the
+    // journal can't tell that apart from the same failure, so it records it rather than miss it.
+    const path = journalPath();
+    const at = Date.now() - 60_000;
+    writeFileSync(path, `${JSON.stringify({ kind: "stuck", at, cwd: CWD, lead: "s1", who: "s1", name: "s1", reason: "loop: Bash: npm test" })}\n`);
+    const s = await start({ journal: path, fake: failed() });
+    await leadWhere(s.url, (l) => l?.needs === "stuck");
+    await until(() => stuckEntries(path).length === 2);
+  });
+
+  it("start_skips_a_journaled_letter_without_a_string_id_or_from_or_a_numeric_at", async () => {
+    const path = journalPath();
+    const at = Date.now() - 1000;
+    const whole = { id: "ok", from: "s1", name: "s1", text: "whole", at };
+    const line = (letter: Json) => JSON.stringify({ kind: "letter", at, cwd: CWD, lead: "s1", letter });
+    writeFileSync(
+      path,
+      [line(whole), line({ ...whole, id: undefined, text: "no id" }), line({ ...whole, id: "f", from: 7, text: "numeric from" }), line({ ...whole, id: "a", at: "yesterday", text: "text at" })].join("\n") + "\n",
+    );
+    const s = await listedServer(path);
+    expect((await s.letters()).map((l) => l.text)).toEqual(["whole"]);
   });
 });
 

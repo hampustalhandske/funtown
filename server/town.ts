@@ -101,6 +101,8 @@ export class TownState {
   private readonly idPrefix = randomUUID();
   // session id + agent id of the subagents whose handback report is already their letter
   private handedBack = new Map<string, true>();
+  // session ids whose failed turn the list reported and the journal already holds, while the list keeps saying failed
+  private failedSeen = new Set<string>();
   private readonly journal: Journal | undefined;
   private readonly claude: Town["claude"];
   private readonly unlistedMs: number;
@@ -109,19 +111,13 @@ export class TownState {
   /**
    * `claude` is the version check's result, carried on every snapshot; `unlistedMs` how long
    * unlisted hook data is kept. With a `journal`, each kept letter and each time a character
-   * becomes stuck is appended to it, and the letters it holds are the starting letters.
+   * becomes stuck is appended to it, and the letters it kept at open are the starting letters.
    */
   constructor(claude: Town["claude"], unlistedMs: number, journal?: Journal) {
     this.claude = claude;
     this.unlistedMs = unlistedMs;
     this.journal = journal;
-    let entries: ReturnType<Journal["read"]> = [];
-    try {
-      entries = journal?.read() ?? [];
-    } catch (err) {
-      console.error(`funtown: couldn't restore letters from the journal: ${(err as Error).message}`);
-    }
-    for (const e of entries.sort((a, b) => b.at - a.at)) {
+    for (const e of [...(journal?.kept ?? [])].sort((a, b) => b.at - a.at)) {
       if (e.kind !== "letter") continue;
       const list = this.letterLists.get(e.lead) ?? [];
       if (list.length < MAX_LETTERS) this.letterLists.set(e.lead, [...list, e.letter]);
@@ -268,6 +264,9 @@ export class TownState {
       } else if (s.status === "idle") {
         this.mark(lead, "needs_you", null, Date.now(), "turn ended");
       }
+      if (s.state !== "failed") this.failedSeen.delete(s.sessionId);
+      else if (this.failedSeen.has(s.sessionId)) stuckBefore.add(lead.id);
+      else this.failedSeen.add(s.sessionId);
       this.noteStuck(lead, stuckBefore, Date.now(), s.cwd);
       next.set(s.sessionId, s.cwd);
     }
@@ -316,6 +315,7 @@ export class TownState {
     this.leadHeardAt.delete(sessionId);
     this.turnEnded.delete(sessionId);
     this.letterLists.delete(sessionId);
+    this.failedSeen.delete(sessionId);
     this.dropSession(sessionId, [this.agentCounts, this.lastAt, this.calls, this.handedBack]);
   }
 

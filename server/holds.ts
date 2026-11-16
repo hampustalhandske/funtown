@@ -2,6 +2,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import type { ServerResponse } from "node:http";
 import { basename, dirname } from "node:path";
+import type { LogError } from "./errors.ts";
 import type { HookEvent, TownState } from "./town.ts";
 import type { Card } from "./types.ts";
 
@@ -58,8 +59,8 @@ function hookOutput(card: Card, body: Record<string, unknown>): object | null {
  * Every card that closes appends one line to `answerLog`, when given. `changed` runs
  * whenever the open cards change.
  */
-export function createHolds(town: TownState, opts: { unlistedMs: number; answerLog?: string; changed: () => void }) {
-  const { unlistedMs, answerLog, changed } = opts;
+export function createHolds(town: TownState, opts: { unlistedMs: number; answerLog?: string; logError: LogError; changed: () => void }) {
+  const { unlistedMs, answerLog, logError, changed } = opts;
   const holds = new Map<string, Hold>();
   // when the last page left (or the server started), or null while a page is open
   let noPageSince: number | null = Date.now();
@@ -72,7 +73,7 @@ export function createHolds(town: TownState, opts: { unlistedMs: number; answerL
       mkdirSync(dirname(answerLog), { recursive: true });
       appendFileSync(answerLog, `${JSON.stringify(line)}\n`);
     } catch (err) {
-      console.error(`funtown: couldn't write the answer log ${answerLog}`, err);
+      logError("answer log", err);
     }
   };
 

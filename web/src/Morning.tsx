@@ -7,13 +7,13 @@ import { funtownToken } from "./token.ts";
 // The Markdown renderer loads only when a letter is shown, keeping it out of the first page load.
 const LetterView = lazy(() => import("./Letters.tsx").then((m) => ({ default: m.LetterView })));
 
-const CLOSED_KEY = "funtown-morning-closed";
+const LOADED_KEY = "funtown-morning-loaded";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** When the morning view was last closed (kept in localStorage when it can be); 24 hours ago the first time. */
+/** When the morning view last loaded successfully (the time its request was sent; kept in localStorage when it can be); 24 hours ago the first time. */
 function windowStart(): number {
   try {
-    const saved = Number(localStorage.getItem(CLOSED_KEY));
+    const saved = Number(localStorage.getItem(LOADED_KEY));
     if (saved > 0) return saved;
   } catch {
     // storage unavailable: fall through
@@ -23,7 +23,7 @@ function windowStart(): number {
 
 function remember(at: number): void {
   try {
-    localStorage.setItem(CLOSED_KEY, String(at));
+    localStorage.setItem(LOADED_KEY, String(at));
   } catch {
     // storage unavailable: the window then always starts 24 hours ago
   }
@@ -43,24 +43,25 @@ function sections(morning: Morning, waiting: Waiting[]): Section[] {
 /**
  * The "Morning" button and, once clicked, the view of what the journal holds since the window's start:
  * per project the newest letter of each lead (Done), who got stuck (Stuck) and who waits now (Next; a click opens its panel).
- * Closing moves the window's start to now. Nothing opens or takes focus on its own.
+ * A successful load moves the window's start to the time its request was sent; a failed load leaves it. Nothing opens or takes focus on its own.
  */
 export function MorningButton({ waiting, town, onOpen }: { waiting: Waiting[]; town: Town | null; onOpen: (w: Waiting) => void }) {
   const [view, setView] = useState<{ since: number; morning: Morning | null; error: string } | null>(null);
   async function open() {
     const since = windowStart();
+    const sent = Date.now();
     setView({ since, morning: null, error: "" });
     try {
       const reply = await fetch(`/morning?since=${since}`, { headers: { "x-funtown-token": funtownToken() } });
       if (!reply.ok) throw new Error(String(reply.status));
       const morning = (await reply.json()) as Morning;
+      remember(sent);
       setView((v) => v && { ...v, morning });
     } catch {
       setView((v) => v && { ...v, error: "The morning view failed to load." });
     }
   }
   function close() {
-    remember(Date.now());
     setView(null);
   }
   const names: Record<string, string> = {};

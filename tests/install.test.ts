@@ -1,8 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expect, it } from "vitest";
+import { realDir, refusedUrl } from "./helpers.ts";
 
 const INSTALL = resolve(import.meta.dirname, "../hooks/install.ts");
 const LETTER = resolve(import.meta.dirname, "../hooks/letter.md");
@@ -132,7 +133,7 @@ it("install_adds_the_two_hold_entries_without_async_and_uninstall_leaves_none", 
   expect(perm.matcher).toBeUndefined();
   expect(perm.hooks).toHaveLength(1);
   expect(perm.hooks[0]).toMatchObject({ type: "command", timeout: 7200 });
-  expect(perm.hooks[0].command).toMatch(/^node ".*\/hooks\/funtown-hold\.ts"$/);
+  expect(perm.hooks[0].command).toMatch(/^node '.*\/hooks\/funtown-hold\.ts'$/);
   expect(perm.hooks[0].async).toBeUndefined();
 
   const [ask, ...askMore] = holds("PreToolUse");
@@ -182,12 +183,12 @@ function printed(override?: string): string {
   }
 }
 
-it("install_adds_one_sync_session_start_letter_entry_for_startup_clear_compact_and_uninstall_removes_it", () => {
+it("install_adds_one_sync_session_start_letter_entry_for_startup_resume_clear_compact_and_uninstall_removes_it", () => {
   const s = setup({});
   s.run("install");
   const ours = letterEntries(s.run("install"));
   expect(ours).toHaveLength(1);
-  expect(ours[0].matcher).toBe("startup|clear|compact");
+  expect(ours[0].matcher).toBe("startup|resume|clear|compact");
   expect(ours[0].hooks).toHaveLength(1);
   expect(ours[0].hooks[0].type).toBe("command");
   expect(ours[0].hooks[0].async).toBeUndefined();
@@ -210,4 +211,32 @@ it("the_repo_letter_file_exists_is_not_empty_and_fits_session_start_contexts_100
   const text = readFileSync(LETTER, "utf8");
   expect(text.trim().length).toBeGreaterThan(0);
   expect(text.length).toBeLessThan(10_000);
+});
+
+it("hooks_installed_from_a_checkout_whose_path_holds_shell_characters_still_run", async () => {
+  // `$`, `"`, a backtick and `'` in the path: each breaks a command that quotes the path wrongly.
+  const repo = join(realDir(), `it's a $repo "with" \`ticks\``);
+  const root = resolve(import.meta.dirname, "..");
+  for (const part of ["hooks", "server", "package.json"]) cpSync(join(root, part), join(repo, part), { recursive: true });
+  const dir = realDir();
+  const settings = join(dir, "settings.json");
+  const env = { ...process.env, HOME: join(dir, "home"), FUNTOWN_STATE: join(dir, "installed.json"), FUNTOWN_LOG: join(dir, "errors.log") };
+  mkdirSync(env.HOME);
+  const r = spawnSync(process.execPath, [join(repo, "hooks", "install.ts"), "install", "--settings", settings], { encoding: "utf8", env });
+  expect(r.status, r.stderr).toBe(0);
+  const hooks = JSON.parse(readFileSync(settings, "utf8")).hooks as Record<string, Entry[]>;
+  const command = (event: string, marker: string) =>
+    hooks[event].flatMap((e) => e.hooks).find((h) => h.command.includes(marker))!.command;
+
+  // Run the way Claude runs them: through a shell. Funtown isn't running, so each hook exits 0 and prints nothing.
+  const url = await refusedUrl();
+  const sh = (cmd: string, input = "") => spawnSync("sh", ["-c", cmd], { encoding: "utf8", env: { ...env, FUNTOWN_URL: url }, input, cwd: dir });
+  const event = JSON.stringify({ hook_event_name: "Stop", session_id: "abc123", cwd: "/work/demo-app" });
+  for (const [name, marker] of [["Stop", "funtown-hook.ts"], ["PermissionRequest", "funtown-hold.ts"]]) {
+    const ran = sh(command(name, marker), event);
+    expect({ status: ran.status, stdout: ran.stdout, stderr: ran.stderr }, marker).toEqual({ status: 0, stdout: "", stderr: "" });
+  }
+  const letter = sh(command("SessionStart", "letter.md"));
+  expect(letter.status, letter.stderr).toBe(0);
+  expect(letter.stdout).toBe(readFileSync(join(repo, "hooks", "letter.md"), "utf8"));
 });
