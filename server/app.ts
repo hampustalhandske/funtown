@@ -307,6 +307,10 @@ export async function startServer(opts: {
       const body = await pageBody(req, res);
       if (body === null) return;
       const { reason, open } = body;
+      if (Array.isArray(body)) {
+        res.writeHead(400).end();
+        return;
+      }
       const isOpen = (o: unknown): o is { id: string; name: string; cwd: string } =>
         typeof o === "object" && o !== null && ["id", "name", "cwd"].every((k) => typeof (o as Record<string, unknown>)[k] === "string");
       if ((reason !== undefined && (typeof reason !== "string" || reason.length > MAX_REASON)) || (open !== undefined && !isOpen(open))) {
