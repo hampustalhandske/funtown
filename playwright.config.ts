@@ -6,6 +6,8 @@ const fake = FakeClaude.install(E2E_FAKE_DIR);
 
 export default defineConfig({
   testDir: "tests/e2e",
+  // Every spec steers the one fake `claude` list, so spec files must not run side by side.
+  workers: 1,
   use: { baseURL: "http://127.0.0.1:4799" },
   webServer: {
     command: "vite build && node server/main.ts",
