@@ -287,6 +287,22 @@ export async function startServer(opts: {
       return;
     }
 
+    if (req.method === "GET" && path === "/letters") {
+      const given = req.headers["x-funtown-token"];
+      const bytes = typeof given === "string" ? Buffer.from(given) : null;
+      if (bytes === null || bytes.length !== tokenBytes.length || !timingSafeEqual(bytes, tokenBytes)) {
+        res.writeHead(403).end();
+        return;
+      }
+      const letters = town.letters(new URL(req.url ?? "/", "http://127.0.0.1").searchParams.get("lead") ?? "");
+      if (!letters) {
+        res.writeHead(404).end();
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(letters));
+      return;
+    }
+
     if (req.method === "GET" && path === "/stream") {
       res.writeHead(200, {
         "content-type": "text/event-stream",

@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import type { Listed } from "./agents.ts";
-import type { Card, Character, House, Lead, Stage, Town } from "./types.ts";
+import type { Card, Character, House, Lead, Letter, Stage, Town } from "./types.ts";
 
 /** The hook payload fields the reducer reads. */
 export type HookEvent = {
@@ -14,8 +14,13 @@ export type HookEvent = {
   agent_type?: string;
   notification_type?: string;
   error?: string;
+  last_assistant_message?: string;
   funtown?: { tty?: string | null; term_program?: string | null; at?: number };
 };
+
+/** Letters kept per lead, and the longest letter text. */
+const MAX_LETTERS = 20;
+const MAX_LETTER_TEXT = 64 * 1024;
 
 /** Text shown for a tool call: "Bash: <command>" for Bash, the tool name otherwise. */
 function describeTool(event: HookEvent): string | null {
@@ -77,6 +82,9 @@ export class TownState {
   // session ids whose lead's own last turn event was Stop: a "busy" list (background
   // commands still running) doesn't make them working again
   private turnEnded = new Set<string>();
+  // session id -> its letters (its own and its subagents'), newest first
+  private letterLists = new Map<string, Letter[]>();
+  private letterCount = 0;
   private readonly claude: Town["claude"];
   private readonly unlistedMs: number;
   private readonly started = Date.now();
@@ -159,6 +167,7 @@ export class TownState {
       }
       case "Stop":
         set(lead, "needs_you", null, "turn ended");
+        this.addLetter(lead, lead, event, when);
         break;
       case "StopFailure":
         this.mark(inSubagent ? this.agent(lead, event) : lead, "needs_you", null, when, "stuck", (event.error ?? "").replace(/_/g, " ").trim() || "error");
@@ -167,7 +176,9 @@ export class TownState {
         this.agent(lead, event).stage = "working";
         break;
       case "SubagentStop": {
-        set(this.agent(lead, event), "done", null);
+        const sub = this.agent(lead, event);
+        set(sub, "done", null);
+        this.addLetter(lead, sub, event, when);
         break;
       }
     }
@@ -226,6 +237,11 @@ export class TownState {
     return this.listed.has(sessionId) ? this.leads.get(sessionId) : undefined;
   }
 
+  /** The listed lead's letters, newest first (at most 20), or undefined when it is not listed. */
+  letters(sessionId: string): Letter[] | undefined {
+    return this.listed.has(sessionId) ? [...(this.letterLists.get(sessionId) ?? [])] : undefined;
+  }
+
   /**
    * The listed sessions, one house per cwd in list order, with `cards` (open cards of listed
    * leads): while a card is open, the subagent it names, or else its lead, needs the user
@@ -249,6 +265,7 @@ export class TownState {
     this.heard.delete(sessionId);
     this.leadHeardAt.delete(sessionId);
     this.turnEnded.delete(sessionId);
+    this.letterLists.delete(sessionId);
     this.dropSession(sessionId, [this.agentCounts, this.lastAt, this.calls]);
   }
 
@@ -274,6 +291,16 @@ export class TownState {
     else delete c.needs;
     if (reason !== undefined && needs === "stuck") c.reason = reason;
     else delete c.reason;
+  }
+
+  /** Keeps the event's non-empty `last_assistant_message` as a letter from `writer` on `lead`. */
+  private addLetter(lead: Lead, writer: Character, event: HookEvent, at: number): void {
+    const message = event.last_assistant_message;
+    if (typeof message !== "string" || message.trim() === "") return;
+    const text = message.length > MAX_LETTER_TEXT ? `${message.slice(0, MAX_LETTER_TEXT - 1)}…` : message;
+    const letter: Letter = { id: `letter-${++this.letterCount}`, from: writer.id, name: writer.name, text, at };
+    this.letterLists.set(lead.id, [letter, ...(this.letterLists.get(lead.id) ?? [])].slice(0, MAX_LETTERS));
+    writer.letter = at;
   }
 
   private newLead(sid: string): Lead {

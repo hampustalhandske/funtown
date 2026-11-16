@@ -10,6 +10,21 @@ export type Character = {
   since?: number;
   /** Why it is stuck, when needs is "stuck": "rate limit", "server error", "loop: Bash: npm test", ... */
   reason?: string;
+  /** `at` of its newest letter; absent when it has none. */
+  letter?: number;
+};
+/** A lead's end-of-turn message or a subagent's result. */
+export type Letter = {
+  /** Server-made, unique per start. */
+  id: string;
+  /** The writer's character id: the lead's session id or the subagent's agent id. */
+  from: string;
+  /** The writer's name when it was written. */
+  name: string;
+  /** `last_assistant_message` as sent (Markdown); over 64 KB it is cut and ends with "…". */
+  text: string;
+  /** The event's `funtown.at`, or the server's Date.now() when absent. */
+  at: number;
 };
 export type Lead = Character & {
   tty: string | null;
