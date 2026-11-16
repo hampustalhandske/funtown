@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { CWD, errorLines, ev, leadsOf, listed, post, realDir, sleep, start, townWhere, until } from "./helpers.ts";
+import { CWD, errorLines, ev, leadsOf, listed, post, realDir, sleep, start, tokenOf, townWhere, until } from "./helpers.ts";
 
 it("a_journal_write_that_fails_after_start_is_logged_as_server_journal", async () => {
   const dir = realDir();
@@ -33,4 +33,24 @@ it("a_failing_poll_logs_one_line_until_a_poll_succeeds_and_a_later_failure_logs_
   await townWhere(s.url, (t) => leadsOf(t)[0]?.id === "s2");
   s.fake.failList();
   await until(() => polls().length === 2);
+});
+
+it("a_failed_session_start_logs_the_start_session_step_with_the_folder_in_the_message", async () => {
+  const dir = realDir();
+  const log = join(dir, "errors.log");
+  const cwd = join(realDir(), "a: b"); // a ": " in the folder must not move the step's end
+  mkdirSync(cwd);
+  const s = await start({ errorLog: log });
+  s.fake.list([listed("s1", cwd)]).failBg();
+  await townWhere(s.url, (t) => leadsOf(t).length === 1);
+  const token = await tokenOf(s.url);
+  const res = await fetch(`${s.url}/sessions`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: s.url, "x-funtown-token": token },
+    body: JSON.stringify({ cwd }),
+  });
+  expect(res.status).toBe(500);
+  const lines = errorLines(log).filter((l) => l.source === "server");
+  expect(lines).toEqual([expect.objectContaining({ step: "start session" })]);
+  expect(lines[0].message.startsWith(`${cwd}: `)).toBe(true);
 });

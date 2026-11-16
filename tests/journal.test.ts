@@ -167,16 +167,15 @@ describe("the journal across list failures and restarts", () => {
     await until(() => stuckEntries(path).length === 2);
   });
 
-  it("a_restart_while_the_list_still_says_failed_does_not_journal_the_same_failure_again", async () => {
+  it("a_failure_the_list_reports_at_start_is_journaled_even_when_the_leads_newest_entry_is_an_older_stuck_mark", async () => {
+    // The lead was stuck in a loop, got a new prompt and failed while Funtown was down: the
+    // journal can't tell that apart from the same failure, so it records it rather than miss it.
     const path = journalPath();
-    const first = await start({ journal: path, fake: failed() });
-    await until(() => stuckEntries(path).length === 1);
-    await first.close();
-
-    const second = await start({ journal: path, fake: failed() });
-    await leadWhere(second.url, (l) => l?.needs === "stuck");
-    await sleep(300); // a few more polls
-    expect(stuckEntries(path)).toHaveLength(1);
+    const at = Date.now() - 60_000;
+    writeFileSync(path, `${JSON.stringify({ kind: "stuck", at, cwd: CWD, lead: "s1", who: "s1", name: "s1", reason: "loop: Bash: npm test" })}\n`);
+    const s = await start({ journal: path, fake: failed() });
+    await leadWhere(s.url, (l) => l?.needs === "stuck");
+    await until(() => stuckEntries(path).length === 2);
   });
 
   it("start_skips_a_journaled_letter_without_a_string_id_or_from_or_a_numeric_at", async () => {
