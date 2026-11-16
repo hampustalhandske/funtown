@@ -2,6 +2,7 @@
 
 One line per change, newest first.
 
+- 2026-11-16 15:30 · Pull requests run the lint, unit and browser tests on GitHub Actions (macOS, fake `claude`, no secrets).
 - 2026-11-16 15:10 · The page offers a reload after Funtown restarts (its terminals failed silently before), and a session Claude lists as failed shows stuck.
 - 2026-11-16 14:50 · A session whose turn ended shows "turn ended", not "thinking", while its background commands still run.
 - 2026-11-16 15:00 · `npm start` reinstalls the hooks (following CLAUDE_CONFIG_DIR); README and CLAUDE.md now say what stays local and what Funtown touches.
