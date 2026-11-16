@@ -16,15 +16,26 @@ const components = {
   ),
 };
 
+const PREVIEW_LINES = 12;
+
 const LetterView = memo(function LetterView({ letter }: { letter: Letter }) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = letter.text.split("\n");
+  const long = lines.length > PREVIEW_LINES;
+  const text = long && !expanded ? lines.slice(0, PREVIEW_LINES).join("\n") : letter.text;
   return (
     <article className="letter">
       <h3>
         ✉ {letter.name} <time dateTime={new Date(letter.at).toISOString()}>{new Date(letter.at).toLocaleString()}</time>
       </h3>
       <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={components}>
-        {letter.text}
+        {text}
       </Markdown>
+      {long && (
+        <button type="button" onClick={() => setExpanded(!expanded)}>
+          {expanded ? "Show less" : "Show all"}
+        </button>
+      )}
     </article>
   );
 });
