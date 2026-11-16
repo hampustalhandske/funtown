@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { errorLines, refusedUrl } from "./helpers.ts";
+import { refusedUrl, runScript } from "./helpers.ts";
 
 const HOOK = resolve(import.meta.dirname, "../hooks/funtown-hook.ts");
 const event = {
@@ -17,18 +17,7 @@ const event = {
   extra_unknown_key: { keep: ["me", 1] },
 };
 
-/** Runs the hook against `url` with `input` on stdin; resolves with its exit code, stdout, run time and error-log lines. */
-async function runHook(url: string, input = JSON.stringify(event)) {
-  const log = join(mkdtempSync(join(tmpdir(), "funtown-hook-")), "errors.log");
-  const t0 = Date.now();
-  // Asynchronous, as spawnSync would block a test server's event loop.
-  const child = spawn("node", [HOOK], { env: { ...process.env, FUNTOWN_URL: url, FUNTOWN_LOG: log } });
-  let out = "";
-  child.stdout.on("data", (c) => (out += c));
-  child.stdin.end(input);
-  const code = await new Promise((r) => child.on("close", r));
-  return { code, out, ms: Date.now() - t0, lines: errorLines(log) };
-}
+const input = JSON.stringify(event);
 
 /** Starts `server` on a free loopback port and returns its URL. */
 async function listen(s: Server): Promise<string> {
@@ -83,7 +72,7 @@ it("hook_posts_the_event_unchanged_plus_a_funtown_block_to_events", async () => 
 });
 
 it("hook_exits_0_within_1s_prints_nothing_and_logs_nothing_when_funtown_is_not_running", async () => {
-  const r = await runHook(await refusedUrl());
+  const r = await runScript(HOOK, await refusedUrl(), input);
   expect(r).toMatchObject({ code: 0, out: "", lines: [] });
   expect(r.ms).toBeLessThan(1000);
 });
@@ -96,7 +85,7 @@ it("hook_exits_0_within_1s_and_logs_post_events_when_the_server_never_replies", 
   s.on("connection", (c) => sockets.push(c));
   const url = await listen(s);
 
-  const r = await runHook(url);
+  const r = await runScript(HOOK, url, input);
   sockets.forEach((c) => c.destroy());
 
   expect(r).toMatchObject({ code: 0, out: "" });
@@ -114,7 +103,7 @@ it("hook_exits_0_and_logs_post_events_with_the_status_when_the_server_answers_50
       });
     }),
   );
-  const r = await runHook(url);
+  const r = await runScript(HOOK, url, input);
   expect(r).toMatchObject({ code: 0, out: "" });
   expect(r.lines).toEqual([expect.objectContaining({ source: "hook", step: "post /events" })]);
   expect(r.lines[0].message).toContain("500");
@@ -122,14 +111,22 @@ it("hook_exits_0_and_logs_post_events_with_the_status_when_the_server_answers_50
 
 it("hook_exits_0_and_logs_post_events_when_the_server_drops_the_connection", async () => {
   const url = await listen(createServer((req) => req.socket.destroy()));
-  const r = await runHook(url);
+  const r = await runScript(HOOK, url, input);
   expect(r).toMatchObject({ code: 0, out: "" });
   expect(r.lines).toEqual([expect.objectContaining({ source: "hook", step: "post /events" })]);
 });
 
 it("hook_exits_0_logs_read_event_and_posts_nothing_when_stdin_is_not_json", async () => {
   const { port, bodies } = await captureServer();
-  const r = await runHook(`http://127.0.0.1:${port}`, "not json {");
+  const r = await runScript(HOOK, `http://127.0.0.1:${port}`, "not json {");
+  expect(r).toMatchObject({ code: 0, out: "" });
+  expect(r.lines).toEqual([expect.objectContaining({ source: "hook", step: "read event" })]);
+  expect(bodies).toEqual([]);
+});
+
+it("hook_logs_read_event_not_post_events_and_posts_nothing_when_stdin_is_json_null", async () => {
+  const { port, bodies } = await captureServer();
+  const r = await runScript(HOOK, `http://127.0.0.1:${port}`, "null");
   expect(r).toMatchObject({ code: 0, out: "" });
   expect(r.lines).toEqual([expect.objectContaining({ source: "hook", step: "read event" })]);
   expect(bodies).toEqual([]);

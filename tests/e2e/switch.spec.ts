@@ -3,7 +3,7 @@ import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { E2E_FAKE_DIR, FakeClaude, listed } from "../fake-claude.ts";
+import { E2E_FAKE_DIR, FakeClaude, listed, listedBg } from "../fake-claude.ts";
 
 const fake = FakeClaude.at(E2E_FAKE_DIR);
 let cwd = "";
@@ -75,4 +75,44 @@ test("the_box_opens_only_on_click_esc_closes_it_without_saving_and_note_it_saves
   await expect(noted(page)).toBeVisible();
   expect(sent).toHaveLength(1);
   expect(sent[0]).not.toHaveProperty("open");
+});
+
+test("note_it_can_be_clicked_while_a_wide_panel_is_open", async ({ page }) => {
+  const sent = await recordSwitches(page);
+  // A background lead's panel is the wide one, spanning most of the width under the header.
+  fake.list([listedBg(sid, cwd, { name: "alpha" })]);
+  await page.goto("/");
+  await row(page).click({ position: { x: 5, y: 5 } });
+  await expect(panel(page)).toBeVisible();
+  await switchButton(page).click();
+  // A box under the panel fails here: the panel intercepts the click.
+  await page.getByRole("button", { name: "Note it" }).click({ timeout: 3000 });
+  await expect(noted(page)).toBeVisible();
+  expect(sent).toHaveLength(1);
+});
+
+test("esc_in_the_box_closes_the_box_and_leaves_the_open_panel_open", async ({ page }) => {
+  await openPage(page);
+  await row(page).click({ position: { x: 5, y: 5 } });
+  await expect(panel(page)).toBeVisible();
+  await switchButton(page).click();
+  await expect(why(page)).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(why(page)).toHaveCount(0);
+  await expect(panel(page)).toBeVisible();
+});
+
+test("at_390_px_the_box_and_note_it_stay_inside_the_viewport_and_the_page_does_not_widen", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await openPage(page);
+  const pageWidth = () => page.evaluate(() => document.documentElement.scrollWidth);
+  const before = await pageWidth();
+  await switchButton(page).click();
+  await expect(why(page)).toBeVisible();
+  for (const part of [page.getByRole("form", { name: "I had to switch" }), page.getByRole("button", { name: "Note it" })]) {
+    const box = (await part.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(390);
+  }
+  expect(await pageWidth()).toBe(before);
 });

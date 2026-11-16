@@ -322,3 +322,12 @@ test("a_letters_chunk_that_fails_to_load_shows_a_reload_line_and_keeps_the_sessi
   await expect(panel(page, "alpha")).toContainText("This part of the page is out of date. Reload the page.");
   await expect(row(page, "alpha")).toBeVisible();
 });
+
+test("a_letters_reply_that_breaks_rendering_says_the_part_couldnt_be_shown_not_that_the_page_is_out_of_date", async ({ page }) => {
+  // An object where the panel expects a list of letters: a render error, not a failed chunk load.
+  await page.route("**/letters?**", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "{}" }));
+  await openWith(page);
+  await openPanel(page);
+  await expect(panel(page, "alpha").getByRole("alert")).toHaveText("This part of the page couldn't be shown.");
+  await expect(row(page, "alpha")).toBeVisible();
+});

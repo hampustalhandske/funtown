@@ -1,9 +1,9 @@
-import { mkdtempSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Card } from "../server/types.ts";
-import { leadsOf, listed, listedBg, post, sleep, start, tokenOf, townWhere, until, type Json } from "./helpers.ts";
+import { jsonLines, leadsOf, listed, listedBg, post, sleep, start, tokenOf, townWhere, until, type Json } from "./helpers.ts";
 
 
 const CWD = "/work/demo-app";
@@ -295,7 +295,7 @@ describe("the answer log", () => {
   it("each_way_a_card_closes_adds_one_line_with_the_right_by", async () => {
     const log = join(mkdtempSync(join(tmpdir(), "funtown-answers-")), "answers.jsonl");
     const s = await room({ answerLog: log });
-    const lines = () => (existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
+    const lines = () => jsonLines(log);
     const line = (kind: string, by: string) => ({ at: expect.any(Number), lead: "s1", project: "demo-app", kind, by });
 
     const a = await held(s, permission(100));

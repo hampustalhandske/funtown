@@ -120,3 +120,12 @@ it("a_sigint_stop_removes_the_run_file_and_exits_0", async () => {
   expect(await main.exited).toBe(0);
   expect(existsSync(m.run)).toBe(false);
 }, 15_000);
+
+it("a_run_file_that_does_not_parse_logs_unclean_exit_instead_of_passing_for_a_clean_stop", async () => {
+  const m = mainEnv();
+  writeFileSync(m.run, ""); // what a power loss can leave behind
+  const main = startMain(m.env);
+  await main.running();
+  await runFileOf(m.run, main.child.pid);
+  expect(errorLines(m.log).filter((l) => l.step === "unclean-exit")).toEqual([expect.objectContaining({ source: "server" })]);
+}, 15_000);

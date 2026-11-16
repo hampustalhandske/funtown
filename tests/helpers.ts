@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -148,6 +149,27 @@ export function errorLines(path: string): ErrorLine[] {
     if (!m || new Date(m[1]).toISOString() !== m[1]) throw new Error(`not an error-log line: ${JSON.stringify(line)}`);
     return { source: m[2], step: m[3], message: m[4] };
   });
+}
+
+/** The JSON lines of the file at `path`, parsed (none when the file doesn't exist). */
+export function jsonLines<T = Json>(path: string): T[] {
+  return existsSync(path) ? readFileSync(path, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as T) : [];
+}
+
+/**
+ * Runs the hook `script` against `url` with `input` on stdin and its error log in a fresh temp
+ * folder; resolves with its exit code, stdout, run time and error-log lines.
+ */
+export async function runScript(script: string, url: string, input: string) {
+  const log = join(realDir(), "errors.log");
+  const t0 = Date.now();
+  // Asynchronous, as spawnSync would block a test server's event loop.
+  const child = spawn(process.execPath, [script], { env: { ...process.env, FUNTOWN_URL: url, FUNTOWN_LOG: log } });
+  let out = "";
+  child.stdout.on("data", (c) => (out += c));
+  child.stdin.end(input);
+  const code = await new Promise((r) => child.on("close", r));
+  return { code, out, ms: Date.now() - t0, lines: errorLines(log) };
 }
 
 /**
