@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -156,15 +156,35 @@ export function jsonLines<T = Json>(path: string): T[] {
   return existsSync(path) ? readFileSync(path, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as T) : [];
 }
 
+let fakePsDir: string | undefined;
+
+/**
+ * A folder holding a `ps` that answers at once "no tty, parent 1", made once per test worker
+ * in the run's temp folder. It is run once here, so macOS's first-run check of a new
+ * executable (about a second) never lands inside a hook's 300 ms ps timeout.
+ */
+function fakePs(): string {
+  if (!fakePsDir) {
+    fakePsDir = mkdtempSync(join(tmpdir(), "funtown-fake-ps-"));
+    const ps = join(fakePsDir, "ps");
+    writeFileSync(ps, "#!/bin/sh\necho '?? 1'\n");
+    chmodSync(ps, 0o755);
+    execFileSync(ps);
+  }
+  return fakePsDir;
+}
+
 /**
  * Runs the hook `script` against `url` with `input` on stdin and its error log in a fresh temp
- * folder; resolves with its exit code, stdout, run time and error-log lines.
+ * folder; resolves with its exit code, stdout, run time and error-log lines. Its tty lookup
+ * uses the fake `ps`, so how fast the machine's own `ps` is never adds a line.
  */
 export async function runScript(script: string, url: string, input: string) {
   const log = join(realDir(), "errors.log");
   const t0 = Date.now();
+  const env = { ...process.env, PATH: `${fakePs()}:${process.env.PATH}`, FUNTOWN_URL: url, FUNTOWN_LOG: log };
   // Asynchronous, as spawnSync would block a test server's event loop.
-  const child = spawn(process.execPath, [script], { env: { ...process.env, FUNTOWN_URL: url, FUNTOWN_LOG: log } });
+  const child = spawn(process.execPath, [script], { env });
   let out = "";
   child.stdout.on("data", (c) => (out += c));
   child.stdin.end(input);
