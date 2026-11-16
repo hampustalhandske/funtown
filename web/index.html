@@ -68,6 +68,8 @@
       .overlap { display: block; font-size: 0.8rem; color: #8a5a00; }
       .parcels { list-style: none; padding: 0; margin: 0.5rem 0; font-size: 0.85rem; }
       .parcel .review { margin-left: 0.5rem; font-size: 0.75rem; }
+      /* Long titles, notes and file paths wrap instead of widening the page. */
+      .phase-note, .overlap, .parcels { overflow-wrap: anywhere; }
       .mail { margin-left: 0.4rem; }
       .morning { position: fixed; top: 1rem; left: 50%; transform: translateX(-50%); width: min(50rem, calc(100vw - 4rem));
         max-height: calc(100vh - 2rem); overflow: auto; background: #fff; border: 2px solid #c8a97e; border-radius: 8px; padding: 1rem; z-index: 5; }
