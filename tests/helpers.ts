@@ -1,4 +1,5 @@
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach } from "vitest";
@@ -168,4 +169,13 @@ export function mainEnv() {
     FUNTOWN_JOURNAL: join(dir, "journal.jsonl"),
   };
   return { dir, ...paths, env };
+}
+
+/** A loopback URL with no listener: a free port, closed again, so a connection to it is refused. */
+export async function refusedUrl(): Promise<string> {
+  const s = createNetServer();
+  await new Promise<void>((r) => s.listen(0, "127.0.0.1", r));
+  const port = (s.address() as { port: number }).port;
+  await new Promise((r) => s.close(r));
+  return `http://127.0.0.1:${port}`;
 }

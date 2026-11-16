@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { errorLines } from "./helpers.ts";
+import { errorLines, refusedUrl } from "./helpers.ts";
 
 const HOOK = resolve(import.meta.dirname, "../hooks/funtown-hook.ts");
 const event = {
@@ -83,8 +83,7 @@ it("hook_posts_the_event_unchanged_plus_a_funtown_block_to_events", async () => 
 });
 
 it("hook_exits_0_within_1s_prints_nothing_and_logs_nothing_when_funtown_is_not_running", async () => {
-  // Port 1 on loopback has no listener: the connection is refused.
-  const r = await runHook("http://127.0.0.1:1");
+  const r = await runHook(await refusedUrl());
   expect(r).toMatchObject({ code: 0, out: "", lines: [] });
   expect(r.ms).toBeLessThan(1000);
 });

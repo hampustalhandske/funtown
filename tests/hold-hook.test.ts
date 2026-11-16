@@ -4,7 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { errorLines } from "./helpers.ts";
+import { errorLines, refusedUrl } from "./helpers.ts";
 
 const HOLD = resolve(import.meta.dirname, "../hooks/funtown-hold.ts");
 const event = {
@@ -74,8 +74,7 @@ it("hold_hook_prints_nothing_and_exits_0_on_204_and_on_500_and_logs_post_hold_wi
 });
 
 it("hold_hook_prints_nothing_exits_0_at_once_and_logs_nothing_when_no_server_is_running", async () => {
-  // Port 1 on loopback has no listener: the connection is refused.
-  const r = await runHold("http://127.0.0.1:1");
+  const r = await runHold(await refusedUrl());
   expect(r).toMatchObject({ code: 0, out: "", lines: [] });
   expect(r.ms).toBeLessThan(2000);
 });
