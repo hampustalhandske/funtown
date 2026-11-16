@@ -3,7 +3,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import type { Letter } from "../../server/types.ts";
-import { funtownToken } from "./Terminal.tsx";
+import { funtownToken } from "./token.ts";
 import "./hljs.css";
 
 /** Raw HTML is never rendered by react-markdown; an image becomes a link so nothing is fetched. */
@@ -18,7 +18,8 @@ const components = {
 
 const PREVIEW_LINES = 12;
 
-const LetterView = memo(function LetterView({ letter }: { letter: Letter }) {
+/** One letter as written, headed with `name`, else the name it was written with, else its writer's id (first 8 characters), and its time; long ones show 12 lines until "Show all". */
+export const LetterView = memo(function LetterView({ letter, name }: { letter: Letter; name?: string }) {
   const [expanded, setExpanded] = useState(false);
   const lines = letter.text.split("\n");
   const long = lines.length > PREVIEW_LINES;
@@ -26,7 +27,7 @@ const LetterView = memo(function LetterView({ letter }: { letter: Letter }) {
   return (
     <article className="letter">
       <h3>
-        ✉ {letter.name} <time dateTime={new Date(letter.at).toISOString()}>{new Date(letter.at).toLocaleString()}</time>
+        ✉ {name || letter.name || letter.from.slice(0, 8)} <time dateTime={new Date(letter.at).toISOString()}>{new Date(letter.at).toLocaleString()}</time>
       </h3>
       <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={components}>
         {text}
@@ -42,10 +43,11 @@ const LetterView = memo(function LetterView({ letter }: { letter: Letter }) {
 
 /**
  * The letters of `lead`, newest first, refetched whenever `stamp` changes (the newest letter times
- * of the lead and its subagents). With `only`, just that character's. A 404 means no letters; any other
+ * of the lead and its subagents). With `only`, just that character's. A heading shows the writer's name
+ * from `names` (character id to current name) when listed there. A 404 means no letters; any other
  * failure shows an error line and keeps the letters already shown. Renders nothing when empty.
  */
-export function Letters({ lead, stamp, only }: { lead: string; stamp: string; only?: string }) {
+export function Letters({ lead, stamp, only, names }: { lead: string; stamp: string; only?: string; names: Record<string, string> }) {
   const [letters, setLetters] = useState<Letter[]>([]);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -74,22 +76,22 @@ export function Letters({ lead, stamp, only }: { lead: string; stamp: string; on
     <section className="letters" aria-label="Letters">
       {error && <p role="alert" className="error">{error}</p>}
       {shown.map((letter) => (
-        <LetterView key={letter.id} letter={letter} />
+        <LetterView key={letter.id} letter={letter} name={names[letter.from]} />
       ))}
     </section>
   );
 }
 
-/** Reply box of a background lead: Send (or ⌘Enter) hands the text to `send`, which types it as one prompt and returns whether it went out.
- * The box clears only when it did; otherwise the text stays and an error shows. */
-export function ReplyBox({ send }: { send: (text: string) => boolean }) {
+/** Reply box of a background lead: Send (or ⌘Enter) hands the text to `send`, which types it as one prompt and gives null when it went out, else the reason.
+ * The box clears only when it went out; otherwise the text stays and the reason shows. */
+export function ReplyBox({ send }: { send: (text: string) => string | null }) {
   const [text, setText] = useState("");
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
   const submit = () => {
     if (!text.trim()) return;
-    const sent = send(text);
-    setFailed(!sent);
-    if (sent) setText("");
+    const failure = send(text);
+    setFailed(failure);
+    if (!failure) setText("");
   };
   return (
     <form className="reply" onSubmit={(e) => { e.preventDefault(); submit(); }}>
@@ -101,7 +103,7 @@ export function ReplyBox({ send }: { send: (text: string) => boolean }) {
         onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) { e.preventDefault(); submit(); } }}
       />
       <button type="submit">Send</button>
-      {failed && <p role="alert" className="error">Not sent: the terminal isn't connected.</p>}
+      {failed && <p role="alert" className="error">{failed}</p>}
     </form>
   );
 }

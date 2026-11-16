@@ -22,8 +22,10 @@ export const E2E_FAKE_DIR = join(tmpdir(), "funtown-e2e-claude");
 
 const SOURCE = join(import.meta.dirname, "fake-claude.cjs");
 
+const SOURCE_TEXT = readFileSync(SOURCE, "utf8");
+
 /** True when `path` holds the current fake script. */
-const isCurrent = (path: string) => existsSync(path) && readFileSync(path, "utf8") === readFileSync(SOURCE, "utf8");
+const isCurrent = (path: string) => existsSync(path) && readFileSync(path, "utf8") === SOURCE_TEXT;
 
 /**
  * The one executable copy of the fake in this temp folder. Every installed fake is a hard link

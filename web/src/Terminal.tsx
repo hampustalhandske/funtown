@@ -2,18 +2,14 @@ import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-
-/** The page's token, injected by the server as `<meta name="funtown-token">`. */
-export function funtownToken(): string {
-  return document.querySelector<HTMLMetaElement>('meta[name="funtown-token"]')?.content ?? "";
-}
+import { funtownToken } from "./token.ts";
 
 /**
  * Live terminal of one background session: an xterm.js view over the `/term` WebSocket; closing it
  * closes the socket. `reply` is set to a function that types a text into the session
- * as one prompt (bracketed paste, then Enter); it returns true only when both frames were sent.
+ * as one prompt (bracketed paste, then Enter); it gives null when both frames were sent, else the reason it wasn't.
  */
-export function SessionTerminal({ lead, reply }: { lead: string; reply: MutableRefObject<((text: string) => boolean) | null> }) {
+export function SessionTerminal({ lead, reply }: { lead: string; reply: MutableRefObject<((text: string) => string | null) | null> }) {
   const host = useRef<HTMLDivElement>(null);
   const [shared, setShared] = useState(1);
   const [closed, setClosed] = useState(false);
@@ -35,11 +31,17 @@ export function SessionTerminal({ lead, reply }: { lead: string; reply: MutableR
     const send = (frame: object) => socket.readyState === WebSocket.OPEN && socket.send(JSON.stringify(frame));
 
     reply.current = (text) => {
-      if (socket.readyState !== WebSocket.OPEN) return false;
-      const clean = text.replaceAll("\x1b[200~", "").replaceAll("\x1b[201~", "");
-      send({ t: "in", d: "\x1b[200~" + clean + "\x1b[201~" });
+      if (socket.readyState !== WebSocket.OPEN) return "Not sent: the terminal isn't connected.";
+      let clean = text;
+      for (let before = ""; before !== clean; ) {
+        before = clean;
+        clean = clean.replaceAll("\x1b[200~", "").replaceAll("\x1b[201~", "");
+      }
+      const paste = JSON.stringify({ t: "in", d: "\x1b[200~" + clean + "\x1b[201~" });
+      if (new TextEncoder().encode(paste).length > 1_048_576) return "Not sent: the reply is too long.";
+      socket.send(paste);
       send({ t: "in", d: "\r" });
-      return true;
+      return null;
     };
 
     socket.onmessage = (event) => {

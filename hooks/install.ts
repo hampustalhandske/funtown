@@ -16,7 +16,8 @@ const EVENTS = [
 ];
 const MARKER = "funtown-hook.ts";
 const HOLD = "funtown-hold.ts";
-const MARKERS = [MARKER, HOLD];
+const LETTER = "funtown-letter";
+const MARKERS = [MARKER, HOLD, LETTER];
 
 type Command = { type?: string; command?: string; timeout?: number; async?: boolean };
 type Group = { matcher?: string; hooks?: Command[] };
@@ -80,6 +81,9 @@ if (action === "install") {
   const hold = { type: "command", command: `node "${join(import.meta.dirname, HOLD)}"`, timeout: 7200 };
   settings.hooks.PermissionRequest.push({ hooks: [hold] });
   settings.hooks.PreToolUse.push({ matcher: "AskUserQuestion|ExitPlanMode", hooks: [hold] });
+  // Prints the user's own letter file when there is one (empty = off), else the repo's shape.
+  const shape = `f="$HOME/.funtown/letter.md"; if [ -e "$f" ]; then cat "$f"; else cat "${join(import.meta.dirname, "letter.md")}"; fi # ${LETTER}`;
+  settings.hooks.SessionStart.push({ matcher: "startup|clear|compact", hooks: [{ type: "command", command: shape, timeout: 5 }] });
   state[key] = { createdHooksKey, createdEvents };
 } else {
   delete state[key];

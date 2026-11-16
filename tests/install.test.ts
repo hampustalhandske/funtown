@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { expect, it } from "vitest";
 
 const INSTALL = resolve(import.meta.dirname, "../hooks/install.ts");
+const LETTER = resolve(import.meta.dirname, "../hooks/letter.md");
 const EVENTS = [
   "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse",
   "PermissionRequest", "Notification", "Stop", "SubagentStart", "SubagentStop", "StopFailure",
@@ -155,4 +156,58 @@ it("install_without_settings_flag_writes_into_CLAUDE_CONFIG_DIR_when_it_is_set",
   const after = JSON.parse(readFileSync(join(dir, "settings.json"), "utf8"));
   for (const name of EVENTS) expect(funtownEntries(after.hooks[name]), name).toHaveLength(1);
   rmSync(dir, { recursive: true });
+});
+
+type Entry = { matcher?: string; hooks: { type: string; command: string; async?: boolean }[] };
+const letterEntries = (s: { hooks?: Record<string, Entry[]> }) =>
+  (s.hooks?.SessionStart ?? []).filter((e) => e.hooks.some((h) => h.command.includes("letter.md")));
+
+/**
+ * What the installed SessionStart letter command prints, run the way Claude runs it, in a fresh HOME that
+ * holds `.funtown/letter.md` with `override` when one is given.
+ */
+function printed(override?: string): string {
+  const home = mkdtempSync(join(tmpdir(), "funtown-home-"));
+  try {
+    if (override !== undefined) {
+      mkdirSync(join(home, ".funtown"));
+      writeFileSync(join(home, ".funtown", "letter.md"), override);
+    }
+    const [entry] = letterEntries(setup({}).run("install"));
+    const r = spawnSync("sh", ["-c", entry.hooks[0].command], { encoding: "utf8", env: { ...process.env, HOME: home }, cwd: home });
+    expect(r.status, r.stderr).toBe(0);
+    return r.stdout;
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+it("install_adds_one_sync_session_start_letter_entry_for_startup_clear_compact_and_uninstall_removes_it", () => {
+  const s = setup({});
+  s.run("install");
+  const ours = letterEntries(s.run("install"));
+  expect(ours).toHaveLength(1);
+  expect(ours[0].matcher).toBe("startup|clear|compact");
+  expect(ours[0].hooks).toHaveLength(1);
+  expect(ours[0].hooks[0].type).toBe("command");
+  expect(ours[0].hooks[0].async).toBeUndefined();
+  expect(letterEntries(s.run("uninstall"))).toEqual([]);
+});
+
+it("the_letter_command_prints_the_repo_file_when_the_user_has_no_override", () => {
+  expect(printed()).toBe(readFileSync(LETTER, "utf8"));
+});
+
+it("the_letter_command_prints_the_users_override_instead_of_the_repo_file", () => {
+  expect(printed("My own shape.\n")).toBe("My own shape.\n");
+});
+
+it("an_empty_override_is_the_off_switch_and_prints_nothing", () => {
+  expect(printed("")).toBe("");
+});
+
+it("the_repo_letter_file_exists_is_not_empty_and_fits_session_start_contexts_10000_character_cap", () => {
+  const text = readFileSync(LETTER, "utf8");
+  expect(text.trim().length).toBeGreaterThan(0);
+  expect(text.length).toBeLessThan(10_000);
 });

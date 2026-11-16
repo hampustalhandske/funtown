@@ -1,4 +1,4 @@
-/* Syntax colours for highlighted code blocks, light and dark. */
+/* Syntax colours for highlighted code blocks, light. */
 :root {
   --code-bg: #f4f1ea;
   --code-text: #2b2b2b;
@@ -9,19 +9,6 @@
   --code-title: #1f5fa8;
   --code-builtin: #0f7a82;
   --code-attr: #9a6b00;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --code-bg: #1f2420;
-    --code-text: #e2e6dc;
-    --code-keyword: #d79be8;
-    --code-string: #8fd6a0;
-    --code-number: #f0a671;
-    --code-comment: #8f9a8a;
-    --code-title: #8ec0f5;
-    --code-builtin: #7fd3d9;
-    --code-attr: #e6c068;
-  }
 }
 pre code.hljs { display: block; overflow-x: auto; padding: 0.5rem; background: var(--code-bg); color: var(--code-text); }
 code.hljs { padding: 0 0.25rem; }

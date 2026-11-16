@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useState, useRef } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState, useRef } from "react";
 import type { Card, Character, House, Lead, Stage, Town } from "../../server/types.ts";
 import { AnswerCard } from "./AnswerCard.tsx";
-import { Letters, ReplyBox } from "./Letters.tsx";
-import { SessionTerminal, funtownToken } from "./Terminal.tsx";
+import { MorningButton } from "./Morning.tsx";
+import { LazyBoundary } from "./LazyBoundary.tsx";
 import { NeedsList, NotifyButton, Toasts, useAlerts, useMute, useNextKey, waitingList, type Waiting } from "./needs.tsx";
+import { funtownToken } from "./token.ts";
+
+// The Markdown renderer and the terminal load only when a panel shows them, keeping them out of the first page load.
+const Letters = lazy(() => import("./Letters.tsx").then((m) => ({ default: m.Letters })));
+const ReplyBox = lazy(() => import("./Letters.tsx").then((m) => ({ default: m.ReplyBox })));
+const SessionTerminal = lazy(() => import("./Terminal.tsx").then((m) => ({ default: m.SessionTerminal })));
 
 const STAGE_LABEL: Record<Stage, string> = {
   working: "🟢 working",
@@ -141,7 +147,7 @@ function HouseCard({
 function Panel({ character, lead, cards, onClose }: { character: Character; lead: Lead; cards: Card[]; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const reply = useRef<((text: string) => boolean) | null>(null);
+  const reply = useRef<((text: string) => string | null) | null>(null);
   const stamp = [lead, ...lead.subagents].map((c) => c.letter ?? 0).join(",");
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -188,12 +194,18 @@ function Panel({ character, lead, cards, onClose }: { character: Character; lead
           ))}
         </ul>
       )}
-      <Letters lead={lead.id} stamp={stamp} only={character.id === lead.id ? undefined : character.id} />
+      <LazyBoundary>
+        <Suspense fallback={null}>
+          <Letters lead={lead.id} stamp={stamp} names={Object.fromEntries([lead, ...lead.subagents].map((c) => [c.id, c.name]))} only={character.id === lead.id ? undefined : character.id} />
+        </Suspense>
+      </LazyBoundary>
       {character.id === lead.id && lead.kind === "background" && (
-        <>
-          <ReplyBox send={(text) => reply.current?.(text) ?? false} />
-          <SessionTerminal lead={lead.id} reply={reply} />
-        </>
+        <LazyBoundary>
+          <Suspense fallback={null}>
+            <ReplyBox send={(text) => (reply.current ? reply.current(text) : "Not sent: the terminal isn't connected.")} />
+            <SessionTerminal lead={lead.id} reply={reply} />
+          </Suspense>
+        </LazyBoundary>
       )}
       {character.id === lead.id && lead.kind === "terminal" && (
         <p className="hint">press ← or type /bg in its terminal to open it here</p>
@@ -276,6 +288,7 @@ export function App() {
           {muted ? "Unmute" : "Mute"}
         </button>
         <NotifyButton />
+        <MorningButton waiting={waiting} town={town} onOpen={openWaiting} />
       </header>
       {restarted && (
         <div className="alert" role="alert">

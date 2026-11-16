@@ -15,7 +15,7 @@ export type Character = {
 };
 /** A lead's end-of-turn message or a subagent's result. */
 export type Letter = {
-  /** Server-made, unique per start. */
+  /** Server-made, unique across restarts. */
   id: string;
   /** The writer's character id: the lead's session id or the subagent's agent id. */
   from: string;
@@ -25,6 +25,24 @@ export type Letter = {
   text: string;
   /** The event's `funtown.at`, or the server's Date.now() when absent. */
   at: number;
+};
+/** One line of the journal file. */
+export type JournalEntry =
+  | { kind: "letter"; at: number; cwd: string; lead: string; letter: Letter }
+  | { kind: "stuck"; at: number; cwd: string; lead: string; who: string; name: string; reason: string };
+/** What the morning view shows from the journal. */
+export type Morning = {
+  since: number;
+  /** One per cwd with entries at or after `since`, newest entry first. */
+  projects: {
+    /** basename of cwd */
+    project: string;
+    cwd: string;
+    /** Per lead, its newest letter of its own (from === lead) in the window; newest first. */
+    done: (Letter & { lead: string })[];
+    /** Newest first. */
+    stuck: { at: number; lead: string; who: string; name: string; reason: string }[];
+  }[];
 };
 export type Lead = Character & {
   tty: string | null;
