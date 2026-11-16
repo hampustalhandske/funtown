@@ -26,6 +26,9 @@ export default defineConfig({
       FUNTOWN_LOG: join(E2E_FAKE_DIR, "errors.log"),
       FUNTOWN_RUN: join(E2E_FAKE_DIR, "running.json"),
       FUNTOWN_SWITCHES: join(E2E_FAKE_DIR, "switches.jsonl"),
+      // The fake `claude` also answers `gh pr list`, so no test runs the real gh.
+      FUNTOWN_GH: fake.path,
+      FUNTOWN_STEWARD: join(E2E_FAKE_DIR, "steward"),
     },
     reuseExistingServer: false,
   },

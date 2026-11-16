@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState, useRef } from "react";
-import type { Card, Character, House, Lead, Stage, Town } from "../../server/types.ts";
+import type { Card, Character, House, Lead, Parcel, Stage, Town } from "../../server/types.ts";
 import { AnswerCard } from "./AnswerCard.tsx";
 import { MorningButton } from "./Morning.tsx";
 import { LazyBoundary } from "./LazyBoundary.tsx";
@@ -50,7 +50,7 @@ function CharacterRow({
   avatar: string;
   onSelect: (id: string) => void;
 }) {
-  const { name, stage, activity, needs, letter } = character;
+  const { name, stage, activity, needs, letter, role, tags } = character;
   return (
     <button
       type="button"
@@ -64,12 +64,43 @@ function CharacterRow({
           <span className="name">{name}</span>
           {"kind" in character && <span className="kind">{character.kind === "background" ? "background" : "terminal"}</span>}
           <span className="stage">{STAGE_LABEL[stage]}</span>
+          {role && <span className="badge role">{role}</span>}
+          {tags?.map((tag) => <span key={tag} className="badge tag">{tag}</span>)}
           {letter !== undefined && <span className="mail" role="img" aria-label="has a letter">✉</span>}
         </span>
         {stage === "needs_you" && needs && <span className="activity">waiting for you: {needs}</span>}
         {stage === "working" && <span className="activity">{activity ?? "thinking"}</span>}
+        <Overlaps overlaps={(character as Partial<Lead>).overlaps} />
       </span>
     </button>
+  );
+}
+
+/** Warnings for files this lead's run and another listed run both touched. */
+function Overlaps({ overlaps }: { overlaps: Lead["overlaps"] }) {
+  return (overlaps ?? []).map((o) => (
+    <span key={`${o.file}|${o.with}`} className="overlap">⚠ also editing {o.file} with {o.withName}</span>
+  ));
+}
+
+const REVIEW_LABEL = { queued: "queued", reviewing: "reviewing", ready: "review ready ✉" } as const;
+
+/** An open PR: number, title, draft mark, a link, and (for a ready PR) its review, which opens the steward's panel. */
+function ParcelItem({ parcel, onOpen }: { parcel: Parcel; onOpen: (steward: string) => void }) {
+  const { review } = parcel;
+  return (
+    <li className="parcel">
+      <a href={parcel.url} target="_blank" rel="noreferrer">#{parcel.number} {parcel.title}</a>
+      {parcel.draft && <span className="badge">draft</span>}
+      {review &&
+        (review.steward ? (
+          <button type="button" className="review" data-state={review.state} onClick={() => onOpen(review.steward as string)}>
+            {REVIEW_LABEL[review.state]}
+          </button>
+        ) : (
+          <span className="review" data-state={review.state}>{REVIEW_LABEL[review.state]}</span>
+        ))}
+    </li>
   );
 }
 
@@ -130,12 +161,23 @@ function HouseCard({
   const needsYou = house.leads.some((lead) => lead.stage === "needs_you");
   return (
     <section className={`house${needsYou ? " needs_you" : ""}`} aria-label={house.project} title={house.cwd}>
-      <h2>🏠 {house.project}</h2>
+      <h2>
+        🏠 {house.project}
+        {house.phase && <span className="badge phase">{house.phase.phase}</span>}
+        {house.phase?.note && <span className="phase-note">{house.phase.note}</span>}
+      </h2>
       <ul>
         {house.leads.map((lead) => (
           <LeadItem key={lead.id} lead={lead} cards={cards} onSelect={onSelect} />
         ))}
       </ul>
+      {house.parcels && house.parcels.length > 0 && (
+        <ul className="parcels" aria-label={`${house.project} pull requests`}>
+          {house.parcels.map((parcel) => (
+            <ParcelItem key={parcel.number} parcel={parcel} onOpen={(id) => onSelect(id, id)} />
+          ))}
+        </ul>
+      )}
       <button type="button" onClick={start} disabled={pending}>
         New session
       </button>
@@ -185,6 +227,13 @@ function Panel({ character, lead, cards, onClose }: { character: Character; lead
       <p>{STAGE_LABEL[character.stage]}</p>
       <p className="activity">Step: {character.step ?? "nothing yet"}</p>
       {character.stage === "needs_you" && character.needs && <p>waiting for you: {character.needs}</p>}
+      {(character.role || character.tags?.length) && (
+        <p>
+          {character.role && <span className="badge role">{character.role}</span>}
+          {character.tags?.map((tag) => <span key={tag} className="badge tag">{tag}</span>)}
+        </p>
+      )}
+      {character.id === lead.id && <Overlaps overlaps={lead.overlaps} />}
       <Cards lead={lead} cards={cards} only={character.id} />
       {character.id === lead.id && lead.subagents.length > 0 && (
         <ul aria-label="Subagents">

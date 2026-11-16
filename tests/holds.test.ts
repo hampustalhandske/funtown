@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Card } from "../server/types.ts";
-import { jsonLines, leadsOf, listed, listedBg, post, sleep, start, tokenOf, townWhere, until, type Json } from "./helpers.ts";
+import { hold, jsonLines, leadsOf, listed, listedBg, post, sleep, start, tokenOf, townWhere, until, type Json } from "./helpers.ts";
 
 
 const CWD = "/work/demo-app";
@@ -50,20 +50,6 @@ function connectPage(url: string) {
   const ctl = new AbortController();
   aborts.push(ctl);
   fetch(`${url}/stream`, { signal: ctl.signal }).then((r) => r.body!.pipeTo(new WritableStream())).catch(() => {});
-}
-
-/** POSTs a hook payload to /hold; `reply` settles when the server answers, `abort` closes the request. */
-function hold(url: string, payload: Json, headers: Record<string, string> = {}) {
-  const ctl = new AbortController();
-  aborts.push(ctl);
-  const reply = fetch(`${url}/hold`, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...headers },
-    body: JSON.stringify(payload),
-    signal: ctl.signal,
-  });
-  reply.catch(() => {});
-  return { reply, abort: () => ctl.abort() };
 }
 
 const cardsWhere = async (url: string, ok: (c: Card[]) => boolean) => (await townWhere(url, (t) => ok(t.cards))).cards;
