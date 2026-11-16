@@ -103,7 +103,6 @@ export class TownState {
   private handedBack = new Map<string, true>();
   // session ids whose failed turn the list reported and the journal already holds, while the list keeps saying failed
   private failedSeen = new Set<string>();
-  private synced = false;
   private readonly journal: Journal | undefined;
   private readonly claude: Town["claude"];
   private readonly unlistedMs: number;
@@ -278,10 +277,6 @@ export class TownState {
     }
     for (const sid of this.listed.keys()) if (!next.has(sid)) this.forget(sid);
     this.listed = next;
-    if (!this.synced) {
-      this.synced = true;
-      for (const sid of this.letterLists.keys()) if (!next.has(sid) && !this.leads.has(sid)) this.letterLists.delete(sid);
-    }
     this.expire();
   }
 
