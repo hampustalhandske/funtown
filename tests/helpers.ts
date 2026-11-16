@@ -188,8 +188,8 @@ function fakePs(): string {
  */
 export async function runScript(script: string, url: string, input: string) {
   const log = join(realDir(), "errors.log");
-  const t0 = Date.now();
   const env = { ...process.env, PATH: `${fakePs()}:${process.env.PATH}`, FUNTOWN_URL: url, FUNTOWN_LOG: log };
+  const t0 = Date.now();
   // Asynchronous, as spawnSync would block a test server's event loop.
   const child = spawn(process.execPath, [script], { env });
   let out = "";
