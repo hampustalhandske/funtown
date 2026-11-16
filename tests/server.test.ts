@@ -223,3 +223,19 @@ describe("a hook event that arrives while the list is being asked for", () => {
     await townWhere(url, (t) => leadsOf(t)[0]?.stage === "working", 4000);
   });
 });
+
+it("close_resolves_only_once_a_running_agents_list_call_has_exited", async () => {
+  const s = await start();
+  s.fake.delayList(500);
+  await until(() => s.fake.agentsPids().length > 0);
+  await s.close();
+  const alive = s.fake.agentsPids().filter((pid) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  expect(alive).toEqual([]);
+});

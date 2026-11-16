@@ -88,7 +88,7 @@ export class FakeClaude {
   }
   /** Empties the list and the `--bg` record and clears every failure switch. */
   reset(): this {
-    for (const n of ["started.json", "prs.json", "pr-calls.jsonl", "list-fail", "version-fail", "bg-fail", "bg-unlisted", "attach-chatty", "attach-sticky", "list-delay", "list-asks"]) rmSync(join(this.dir, n), { force: true });
+    for (const n of ["started.json", "prs.json", "pr-calls.jsonl", "list-fail", "version-fail", "bg-fail", "bg-unlisted", "attach-chatty", "attach-sticky", "list-delay", "list-asks", "agents.pids"]) rmSync(join(this.dir, n), { force: true });
     return this.list([]);
   }
   /** Sets what `agents --json` prints. */
@@ -106,6 +106,11 @@ export class FakeClaude {
     this.flag("list-delay", ms > 0);
     if (ms > 0) this.put("list-delay", String(ms));
     return this;
+  }
+  /** Pids of every `agents --json` process since the last reset. */
+  agentsPids(): number[] {
+    const f = join(this.dir, "agents.pids");
+    return existsSync(f) ? readFileSync(f, "utf8").split("\n").filter(Boolean).map(Number) : [];
   }
   /** How many times `agents --json` has been asked since the last reset. */
   listAsks(): number {

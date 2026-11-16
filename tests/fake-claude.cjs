@@ -3,7 +3,7 @@
 //   list.json (the `agents --json` output, written raw), version, and the switches
 //   list-fail, version-fail, bg-fail; list-delay (ms `agents --json` waits before printing
 //   what list.json held when it was asked) and list-asks (one character per `agents --json`
-//   call). `--bg` appends (cwd, argv, CLAUDE*/AI_AGENT variable names) to started.json and lists a new background session (none
+//   call; its pid goes to agents.pids). `--bg` appends (cwd, argv, CLAUDE*/AI_AGENT variable names) to started.json and lists a new background session (none
 //   with bg-unlisted); `attach <id>` echoes every input chunk as `got:<JSON string>` and appends it to attach-<id>.input, and
 //   with attach-chatty also prints a dot every 100 ms, so its output never pauses, and with
 //   attach-sticky outlives a hangup by a second.
@@ -28,6 +28,7 @@ if (argv[0] === "--version") {
     process.exit(1);
   }
   fs.appendFileSync(file("list-asks"), "x");
+  fs.appendFileSync(file("agents.pids"), `${process.pid}\n`);
   const text = read("list.json", "[]");
   const delay = Number(read("list-delay", "0"));
   if (delay > 0) setTimeout(() => out(text), delay);
