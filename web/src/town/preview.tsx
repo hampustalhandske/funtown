@@ -17,15 +17,16 @@ const HATS: [HatKind, string][] = [
   ["tophat", "*review*"], ["cap", "any other role"],
 ];
 
-const page = { current: document.getElementById("root")! };
+// Labels go in their own element beside the React root: drei's default target changes once the canvas connects,
+// which leaves the first label empty.
+const labels = { current: document.getElementById("labels")! };
 
 /** Lays `items` (name, part, height of its top) along x, centred, at depth `z`, each named just above its top. */
 function Row({ z, gap, items }: { z: number; gap: number; items: [string, ReactNode, number][] }) {
   return items.map(([name, part, top], i) => (
     <group key={name} position={[(i - (items.length - 1) / 2) * gap, 0, z]}>
       {part}
-      {/* A fixed portal: drei's default target changes once the canvas connects, which leaves the first label empty. */}
-      <Html center portal={page} zIndexRange={[100, 1]} position={[0, top + 0.35, 0]} className="label">{name}</Html>
+      <Html center portal={labels} zIndexRange={[100, 1]} position={[0, top + 0.35, 0]} className="label">{name}</Html>
     </group>
   ));
 }
@@ -52,4 +53,4 @@ function Preview() {
   );
 }
 
-createRoot(page.current).render(<Preview />);
+createRoot(document.getElementById("root")!).render(<Preview />);
