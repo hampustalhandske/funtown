@@ -60,6 +60,8 @@ export class TownState {
   private agentCounts = new Map<string, number>();
   // session id + agent id ("" for the lead) -> `funtown.at` of the last event applied to it
   private lastAt = new Map<string, number>();
+  // session id -> when the server last applied an event of its lead (Date.now())
+  private leadHeardAt = new Map<string, number>();
   private readonly claude: Town["claude"];
   private readonly unlistedMs: number;
 
@@ -92,6 +94,7 @@ export class TownState {
     if (event.funtown?.term_program) lead.termProgram = event.funtown.term_program;
 
     const inSubagent = event.agent_id !== undefined;
+    if (!inSubagent) this.leadHeardAt.set(sid, Date.now());
     switch (event.hook_event_name) {
       case "SessionStart":
       case "UserPromptSubmit":
@@ -138,9 +141,10 @@ export class TownState {
   /**
    * Makes `list` (one good `claude agents --json` result) the sessions on the Town: sets each
    * one's name, kind, short id and stage, and forgets sessions that left the list and hook data
-   * unlisted for longer than `unlistedMs`.
+   * unlisted for longer than `unlistedMs`. `askedAt` is when the list was asked for: a lead
+   * whose hook events arrived after that keeps the stage they set, since the list is older.
    */
-  sync(list: Listed[]): void {
+  sync(list: Listed[], askedAt: number): void {
     const next = new Map<string, string>();
     for (const s of list) {
       const lead = this.leads.get(s.sessionId) ?? this.newLead(s.sessionId);
@@ -148,7 +152,10 @@ export class TownState {
       lead.name = s.name || lead.name || `lead-${this.nextNumber(`${s.cwd}\0lead`)}`;
       lead.kind = s.kind === "interactive" ? "terminal" : "background";
       lead.shortId = lead.kind === "background" ? (s.id ?? null) : null;
-      if (s.status === "busy") {
+      const hookIsNewer = (this.leadHeardAt.get(s.sessionId) ?? -Infinity) > askedAt;
+      if (hookIsNewer) {
+        // keep the stage the newer hook event set
+      } else if (s.status === "busy") {
         lead.stage = "working";
         delete lead.needs;
       } else if (s.status === "waiting") {
@@ -195,6 +202,7 @@ export class TownState {
   private forget(sessionId: string): void {
     this.leads.delete(sessionId);
     this.heard.delete(sessionId);
+    this.leadHeardAt.delete(sessionId);
     for (const map of [this.agentCounts, this.lastAt]) {
       for (const key of map.keys()) if (key.startsWith(`${sessionId}\0`)) map.delete(key);
     }

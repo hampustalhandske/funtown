@@ -69,15 +69,12 @@ Decisions with their reasons.
 
 ## Remaining work
 
-- A first `/code-review` run reviewed main's head (m7's code) by mistake and found ten
-  issues there, none rechecked: `poll()` stops and the rejection is unhandled if `sync`
-  throws (`server/app.ts:150`); a poll's stale "busy" overrides a newer Stop
-  (`server/town.ts:131`); the postinstall `chmod` fails where node-pty has no prebuilds;
-  no backpressure on pty output (`server/terminal.ts:43`); a resize before the socket
-  opens is lost (`web/src/Terminal.tsx:46`); a newly listed session takes the selection
-  from an open panel (`web/src/App.tsx:190`); `listAgents` checks only `sessionId` and
-  `cwd`; `--bg`'s id is the first 8-hex word; the version check delays listening up to
-  30 s; `E2E_FAKE_DIR` is shared between runs. Proposed: a `fix/m7-review` branch.
+- The ten findings a code review raised on m7's code are settled: four fixed in
+  `fix/m7-review` (poll keeps running, newer hooks beat an older list, terminal size on
+  connect, a new session leaves an open panel alone), two dropped as unlikely (version
+  check wait, pty backpressure on loopback), four dropped as not issues (macOS prebuilds
+  exist, Claude's own JSON types, the `--bg` id is the first hex word, the e2e fake is
+  used by one spec).
 - The event hook stamps `funtown.at` after up to four `ps` calls, so its events read up to
   800 ms late against holds; move the stamp first when the event hook may change.
 - Next: m9-needs-queue (charter item 2, rest).

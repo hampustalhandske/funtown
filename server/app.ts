@@ -138,6 +138,7 @@ export async function startServer(opts: {
   let lastReason = "";
   const poll = async () => {
     let list: Awaited<ReturnType<typeof listAgents>> | undefined;
+    const askedAt = Date.now();
     try {
       list = await listAgents(claude);
     } catch (err) {
@@ -148,16 +149,21 @@ export async function startServer(opts: {
       }
     }
     if (closed) return;
-    if (list) {
-      lastReason = "";
-      town.sync(list);
-      holds.refresh();
+    try {
+      if (list) {
+        lastReason = "";
+        town.sync(list, askedAt);
+        holds.refresh();
+      } else {
+        town.expire();
+      }
       broadcast();
-    } else {
-      town.expire();
-      broadcast();
+    } catch (err) {
+      console.error("funtown: failed to apply the session list", err);
+    } finally {
+      // The next poll is always scheduled, so one bad list never stops the updates.
+      pollTimer = setTimeout(() => void poll(), pollMs);
     }
-    pollTimer = setTimeout(() => void poll(), pollMs);
   };
 
   const hostOk = (host: string | undefined) => host === `127.0.0.1:${port}` || host === `localhost:${port}`;
