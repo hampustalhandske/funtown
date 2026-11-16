@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_FAKE_DIR, FakeClaude, listed, listedBg } from "../fake-claude.ts";
+import { hook as postHook } from "./stream.ts";
 
 const fake = FakeClaude.at(E2E_FAKE_DIR);
 let cwd = "";
@@ -18,17 +19,7 @@ test.beforeEach(() => {
   fake.reset();
 });
 
-let clock = Date.now();
-/** Posts one hook event for `sid` to the e2e server, with a `funtown.at` later than the last one. */
-async function hook(name: string, extra: Record<string, unknown> = {}) {
-  const at = (clock = Math.max(clock + 1, Date.now()));
-  const res = await fetch("http://127.0.0.1:4799/events", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ hook_event_name: name, session_id: sid, cwd, funtown: { tty: null, term_program: null, at }, ...extra }),
-  });
-  expect(res.status).toBe(204);
-}
+const hook = (name: string, extra: Record<string, unknown> = {}) => postHook(sid, cwd, name, extra);
 const letter = (text: string) => hook("Stop", { last_assistant_message: text });
 const sub = { agent_id: "x1", agent_type: "Explore" };
 
@@ -285,4 +276,24 @@ test("a_letter_over_12_lines_shows_its_first_12_until_show_all_and_a_short_one_h
   await expect(box).toContainText("long line 30");
   await expect(box.getByRole("button", { name: "Show less" })).toHaveCount(1);
   await expect(box.getByRole("button", { name: "Show all" })).toHaveCount(0);
+});
+
+test("a_reply_whose_removal_of_one_marker_forms_another_reaches_attach_with_exactly_one_paste_start_and_end", async ({ page }) => {
+  const frames = await recordTermFrames(page);
+  await openWith(page, true);
+  await openPanel(page);
+  const p = panel(page, "alpha");
+  await expect(p.locator(".xterm-rows")).toContainText(`attached ${sid.slice(0, 8)}`);
+  // removing the start marker from this text leaves the end marker "\x1b[201~"
+  await p.getByRole("textbox", { name: "Reply" }).fill("\x1b[2\x1b[200~01~");
+  await p.getByRole("button", { name: "Send" }).click();
+
+  const START = "\x1b[200~";
+  const END = "\x1b[201~";
+  await expect.poll(() => frames.filter((f) => (f as { t: string }).t === "in").length).toBe(2);
+  const [paste] = frames.filter((f) => (f as { t: string }).t === "in") as { d: string }[];
+  expect(paste.d.split(START)).toHaveLength(2);
+  expect(paste.d.split(END)).toHaveLength(2);
+  expect(paste.d.startsWith(START)).toBe(true);
+  expect(paste.d.endsWith(END)).toBe(true);
 });

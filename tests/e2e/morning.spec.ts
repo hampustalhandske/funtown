@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, realpathSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_FAKE_DIR, FakeClaude, listed } from "../fake-claude.ts";
+import { hook as postHook } from "./stream.ts";
 
 const fake = FakeClaude.at(E2E_FAKE_DIR);
 let cwd = "";
@@ -19,17 +20,7 @@ test.beforeEach(() => {
   fake.reset();
 });
 
-let clock = Date.now();
-/** Posts one hook event for `sid` to the e2e server, with a `funtown.at` later than the last one. */
-async function hook(sid: string, name: string, extra: Record<string, unknown> = {}) {
-  const at = (clock = Math.max(clock + 1, Date.now()));
-  const res = await fetch("http://127.0.0.1:4799/events", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ hook_event_name: name, session_id: sid, cwd, funtown: { tty: null, term_program: null, at }, ...extra }),
-  });
-  expect(res.status).toBe(204);
-}
+const hook = (sid: string, name: string, extra: Record<string, unknown> = {}) => postHook(sid, cwd, name, extra);
 const sub = { agent_id: "x1", agent_type: "Explore" };
 
 const panel = (page: Page, name: string) => page.getByRole("dialog", { name: `${name} details` });
@@ -42,11 +33,9 @@ async function openPage(page: Page) {
   await page.goto("/");
   await expect(page.locator(`section[aria-label="${project}"] .character`).filter({ hasText: "alpha" }).first()).toBeVisible();
 }
-/** Closes the open view with its close button when it has one, else with Escape. */
+/** Closes the open view with its close button. */
 async function closeView(page: Page) {
-  const close = view(page).getByRole("button", { name: /close/i });
-  if (await close.count()) await close.first().click();
-  else await page.keyboard.press("Escape");
+  await view(page).getByRole("button", { name: /close/i }).click();
   await expect(view(page)).toHaveCount(0);
 }
 
@@ -112,4 +101,39 @@ test("a_letter_heading_shows_the_writers_new_name_after_a_rename", async ({ page
   await expect(box).toContainText("Written under the old name.");
   await expect(box).toContainText("gamma");
   await expect(box).not.toContainText("alpha");
+});
+
+test("a_done_heading_shows_the_writers_new_name_after_a_rename_while_it_is_listed", async ({ page }) => {
+  await openPage(page);
+  await hook(sidA, "Stop", { last_assistant_message: "Written under the old name." });
+  fake.list([listed(sidA, cwd, { name: "gamma" }), listed(sidB, cwd, { name: "beta" })]);
+  await expect(page.locator(`section[aria-label="${project}"] .character`).filter({ hasText: "gamma" }).first()).toBeVisible({ timeout: 8000 });
+  await openButton(page).click();
+  const done = view(page).locator(`section[title="${cwd}"]`).locator('[aria-label="Done"]');
+  await expect(done).toContainText("Written under the old name.");
+  await expect(done).toContainText("gamma");
+  await expect(done).not.toContainText("alpha");
+});
+
+test("a_waiting_character_shows_under_its_own_project_only_when_two_projects_share_a_basename", async ({ page }) => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "funtown-e2e-same-")));
+  const x = join(root, "x", "app");
+  const y = join(root, "y", "app");
+  mkdirSync(x, { recursive: true });
+  mkdirSync(y, { recursive: true });
+  fake.list([listed(sidA, x, { name: "alpha" }), listed(sidB, y, { name: "beta" })]);
+  await page.goto("/");
+  await expect(page.locator(".character").filter({ hasText: "alpha" }).first()).toBeVisible();
+  await postHook(sidA, x, "Stop", { last_assistant_message: "Done in x." });
+  await postHook(sidB, y, "Stop", { last_assistant_message: "Done in y." });
+  fake.list([listed(sidA, x, { name: "alpha", status: "waiting", waitingFor: "input needed" }), listed(sidB, y, { name: "beta" })]);
+  await expect(page.locator(".needs-list")).toContainText("alpha", { timeout: 8000 });
+
+  await openButton(page).click();
+  const inX = view(page).locator(`section[title="${x}"]`);
+  const inY = view(page).locator(`section[title="${y}"]`);
+  await expect(inX.locator('[aria-label="Next"]')).toContainText("alpha");
+  await expect(inY).toContainText("Done in y.");
+  await expect(inY.locator('[aria-label="Next"]')).toContainText("beta");
+  await expect(inY).not.toContainText("alpha");
 });

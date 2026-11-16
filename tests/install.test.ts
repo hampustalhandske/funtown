@@ -156,3 +156,50 @@ it("install_without_settings_flag_writes_into_CLAUDE_CONFIG_DIR_when_it_is_set",
   for (const name of EVENTS) expect(funtownEntries(after.hooks[name]), name).toHaveLength(1);
   rmSync(dir, { recursive: true });
 });
+
+type Entry = { matcher?: string; hooks: { type: string; command: string; async?: boolean }[] };
+const letterEntries = (s: { hooks?: Record<string, Entry[]> }) =>
+  (s.hooks?.SessionStart ?? []).filter((e) => e.hooks.some((h) => h.command.includes("letter.md")));
+
+/** What the installed SessionStart letter command prints, run the way Claude runs it, with HOME = `home`. */
+function printed(home: string): string {
+  const [entry] = letterEntries(setup({}).run("install"));
+  const r = spawnSync("sh", ["-c", entry.hooks[0].command], { encoding: "utf8", env: { ...process.env, HOME: home }, cwd: home });
+  expect(r.status, r.stderr).toBe(0);
+  return r.stdout;
+}
+const tempHome = () => mkdtempSync(join(tmpdir(), "funtown-home-"));
+
+it("install_adds_one_sync_session_start_letter_entry_for_startup_clear_compact_and_uninstall_removes_it", () => {
+  const s = setup({});
+  s.run("install");
+  const ours = letterEntries(s.run("install"));
+  expect(ours).toHaveLength(1);
+  expect(ours[0].matcher).toBe("startup|clear|compact");
+  expect(ours[0].hooks).toHaveLength(1);
+  expect(ours[0].hooks[0].type).toBe("command");
+  expect(ours[0].hooks[0].async).toBeUndefined();
+  expect(letterEntries(s.run("uninstall"))).toEqual([]);
+});
+
+it("the_letter_command_prints_the_repo_file_when_the_user_has_no_override", () => {
+  const home = tempHome();
+  expect(printed(home)).toBe(readFileSync(resolve(import.meta.dirname, "../hooks/letter.md"), "utf8"));
+  rmSync(home, { recursive: true, force: true });
+});
+
+it("the_letter_command_prints_the_users_override_instead_of_the_repo_file", () => {
+  const home = tempHome();
+  mkdirSync(join(home, ".funtown"));
+  writeFileSync(join(home, ".funtown", "letter.md"), "My own shape.\n");
+  expect(printed(home)).toBe("My own shape.\n");
+  rmSync(home, { recursive: true, force: true });
+});
+
+it("an_empty_override_is_the_off_switch_and_prints_nothing", () => {
+  const home = tempHome();
+  mkdirSync(join(home, ".funtown"));
+  writeFileSync(join(home, ".funtown", "letter.md"), "");
+  expect(printed(home)).toBe("");
+  rmSync(home, { recursive: true, force: true });
+});

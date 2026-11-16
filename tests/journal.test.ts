@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CWD, ev, leadsOf, listed, post, realDir, start, tokenOf, townWhere, until, type Json } from "./helpers.ts";
@@ -85,12 +85,25 @@ describe("the journal", () => {
     });
     const day = 86_400_000;
     writeFileSync(path, [entry(Date.now() - 8 * day, "ancient"), "{not json", JSON.stringify(entry(Date.now() - day, "recent"))].join("\n") + "\n");
-    const s = await listedServer(path);
-    await until(() => !readFileSync(path, "utf8").includes("ancient"));
+    await listedServer(path);
     const text = readFileSync(path, "utf8");
     expect(text).toContain("recent");
-    const m = await fetch(`${s.url}/morning?since=0`, { headers: { "x-funtown-token": s.token } });
-    expect(m.status).toBe(200);
+    expect(text).not.toContain("ancient");
+  });
+
+  it("start_leaves_a_journal_it_cannot_read_untouched_instead_of_emptying_it", async () => {
+    const path = journalPath();
+    const old = JSON.stringify({ kind: "letter", at: Date.now() - 8 * 86_400_000, cwd: CWD, lead: "s1", letter: { id: "a", from: "s1", name: "s1", text: "ancient", at: 1 } });
+    const recent = JSON.stringify({ kind: "letter", at: Date.now(), cwd: CWD, lead: "s1", letter: { id: "b", from: "s1", name: "s1", text: "recent", at: 1 } });
+    const content = `${old}\n${recent}\n`;
+    writeFileSync(path, content);
+    chmodSync(path, 0o200); // write-only: reading fails, writing would work
+    try {
+      await listedServer(path);
+    } finally {
+      chmodSync(path, 0o600);
+    }
+    expect(readFileSync(path, "utf8")).toBe(content);
   });
 
   it("after_a_restart_the_leads_journaled_letters_return_in_its_panel_and_new_letter_ids_never_repeat_them", async () => {
