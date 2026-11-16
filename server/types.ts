@@ -21,7 +21,7 @@ export type Letter = {
   from: string;
   /** The writer's name when it was written. */
   name: string;
-  /** `last_assistant_message` as sent (Markdown); over 64 KB it is cut and ends with "…". */
+  /** `last_assistant_message` as sent (Markdown); over 65,536 characters (UTF-16 units) it is cut, never inside a surrogate pair, and ends with "…". */
   text: string;
   /** The event's `funtown.at`, or the server's Date.now() when absent. */
   at: number;

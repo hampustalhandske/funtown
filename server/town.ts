@@ -15,12 +15,22 @@ export type HookEvent = {
   notification_type?: string;
   error?: string;
   last_assistant_message?: string;
+  background_tasks?: { id: string; type: string; status: string }[];
   funtown?: { tty?: string | null; term_program?: string | null; at?: number };
 };
 
 /** Letters kept per lead, and the longest letter text. */
 const MAX_LETTERS = 20;
-const MAX_LETTER_TEXT = 64 * 1024;
+const MAX_LETTER_TEXT = 65_536;
+
+/** How many of a hook event's `background_tasks` are subagents still running or pending, leaving out `except`. */
+function runningAgents(tasks: HookEvent["background_tasks"], except?: string): number {
+  return (tasks ?? []).filter((t) => t.type === "subagent" && (t.status === "running" || t.status === "pending") && t.id !== except).length;
+}
+
+function waitingOn(n: number): string {
+  return `waiting on ${n} ${n === 1 ? "agent" : "agents"}`;
+}
 
 /** Text shown for a tool call: "Bash: <command>" for Bash, the tool name otherwise. */
 function describeTool(event: HookEvent): string | null {
@@ -166,9 +176,9 @@ export class TownState {
         break;
       }
       case "Stop": {
-        // Subagents still working keep the lead working until a Stop finds none.
-        const busy = lead.subagents.filter((a) => a.stage === "working").length;
-        if (busy > 0) set(lead, "working", `waiting on ${busy} ${busy === 1 ? "agent" : "agents"}`);
+        // Running subagents keep the lead working until a Stop finds none.
+        const busy = runningAgents(event.background_tasks);
+        if (busy > 0) set(lead, "working", waitingOn(busy));
         else set(lead, "needs_you", null, "turn ended");
         this.addLetter(lead, lead, event, when);
         break;
@@ -182,6 +192,10 @@ export class TownState {
       case "SubagentStop": {
         const sub = this.agent(lead, event);
         set(sub, "done", null);
+        if (lead.stage === "working" && lead.activity?.startsWith("waiting on ") && this.turnEnded.has(sid)) {
+          const left = runningAgents(event.background_tasks, event.agent_id);
+          set(lead, "working", left > 0 ? waitingOn(left) : null);
+        }
         this.addLetter(lead, sub, event, when);
         break;
       }
@@ -301,7 +315,12 @@ export class TownState {
   private addLetter(lead: Lead, writer: Character, event: HookEvent, at: number): void {
     const message = event.last_assistant_message;
     if (typeof message !== "string" || message.trim() === "") return;
-    const text = message.length > MAX_LETTER_TEXT ? `${message.slice(0, MAX_LETTER_TEXT - 1)}…` : message;
+    let text = message;
+    if (message.length > MAX_LETTER_TEXT) {
+      let cut = message.slice(0, MAX_LETTER_TEXT - 1);
+      if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1);
+      text = `${cut}…`;
+    }
     const letter: Letter = { id: `letter-${++this.letterCount}`, from: writer.id, name: writer.name, text, at };
     this.letterLists.set(lead.id, [letter, ...(this.letterLists.get(lead.id) ?? [])].slice(0, MAX_LETTERS));
     writer.letter = at;

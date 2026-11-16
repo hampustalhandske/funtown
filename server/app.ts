@@ -167,12 +167,14 @@ export async function startServer(opts: {
   };
 
   const hostOk = (host: string | undefined) => host === `127.0.0.1:${port}` || host === `localhost:${port}`;
-  /** True for a request from the served page: its own Origin and the page's token. */
-  const fromPage = (origin: string | undefined, given: unknown) => {
-    if (origin !== `http://127.0.0.1:${port}` && origin !== `http://localhost:${port}`) return false;
+  /** True when `given` is the page's token. */
+  const tokenOk = (given: unknown) => {
     const bytes = typeof given === "string" ? Buffer.from(given) : null;
     return bytes !== null && bytes.length === tokenBytes.length && timingSafeEqual(bytes, tokenBytes);
   };
+  /** True for a request from the served page: its own Origin and the page's token. */
+  const fromPage = (origin: string | undefined, given: unknown) =>
+    (origin === `http://127.0.0.1:${port}` || origin === `http://localhost:${port}`) && tokenOk(given);
   /** The JSON object body of a POST from the page, or null once it has answered 403, 400 or 413. */
   const pageBody = async (req: IncomingMessage, res: ServerResponse): Promise<Record<string, unknown> | null> => {
     if (!fromPage(req.headers.origin, req.headers["x-funtown-token"])) {
@@ -288,9 +290,7 @@ export async function startServer(opts: {
     }
 
     if (req.method === "GET" && path === "/letters") {
-      const given = req.headers["x-funtown-token"];
-      const bytes = typeof given === "string" ? Buffer.from(given) : null;
-      if (bytes === null || bytes.length !== tokenBytes.length || !timingSafeEqual(bytes, tokenBytes)) {
+      if (!tokenOk(req.headers["x-funtown-token"])) {
         res.writeHead(403).end();
         return;
       }
