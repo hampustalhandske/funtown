@@ -10,8 +10,8 @@ playwright-report/
 *.gguf
 *.safetensors
 
-# Local only: personal notes and per-user settings
-docs/ideas.md
+# Local only: planning notes and personal docs (the whole docs/ folder), per-user settings
+/docs/
 .claude/settings.json
 .claude/settings.local.json
 .claude/never-push
