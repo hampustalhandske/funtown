@@ -3,6 +3,7 @@ import type { Duplex } from "node:stream";
 import { spawn, type IPty } from "node-pty";
 import { WebSocketServer, type WebSocket } from "ws";
 import { claudeEnv } from "./agents.ts";
+import type { LogError } from "./errors.ts";
 
 type Frame = { t?: unknown; d?: unknown; c?: unknown; r?: unknown } | null;
 
@@ -16,7 +17,7 @@ export const isSize = (n: unknown): n is number => Number.isInteger(n) && (n as 
  * `{"t":"out","d"}` out, and `{"t":"shared","n"}` to every socket on a session whenever the
  * number of sockets on it changes.
  */
-export function createTerminals(claude: string) {
+export function createTerminals(claude: string, logError: LogError) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
   const bySession = new Map<string, Set<WebSocket>>();
   const ptys = new Set<IPty>();
@@ -34,7 +35,7 @@ export function createTerminals(claude: string) {
         try {
           pty = spawn(claude, ["attach", shortId], { name: "xterm-256color", cols, rows, env: claudeEnv() });
         } catch (err) {
-          console.error(`funtown: couldn't start claude attach ${shortId}`, err);
+          logError("term", err);
           ws.close(1011, "couldn't start claude attach");
           return;
         }
@@ -49,7 +50,7 @@ export function createTerminals(claude: string) {
           ws.close();
         });
         ws.on("error", (err) => {
-          console.error(`funtown: /term socket error on ${shortId}: ${err.message}`);
+          logError("term", err);
           ws.close();
         });
         ws.on("message", (data) => {

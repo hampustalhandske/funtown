@@ -1,11 +1,12 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
+import type { LogError } from "./errors.ts";
 import type { JournalEntry, Morning } from "./types.ts";
 
 const KEEP_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type Journal = {
-  /** Adds one line; a failed write logs one line to stderr and changes nothing else. */
+  /** Adds one line; a failed write is logged and changes nothing else. */
   append(entry: JournalEntry): void;
   /** Every entry in the file, in file order; lines that don't parse are skipped. An absent file gives none; any other read error throws. */
   read(): JournalEntry[];
@@ -23,9 +24,9 @@ function parse(line: string): JournalEntry | null {
 
 /**
  * The journal file at `path`: JSON lines. Opening it drops the lines older than 7 days and the
- * lines that don't parse.
+ * lines that don't parse. Failures go to `logError`.
  */
-export function openJournal(path: string): Journal {
+export function openJournal(path: string, logError: LogError): Journal {
   const read = (): JournalEntry[] => {
     try {
       return readFileSync(path, "utf8").split("\n").filter(Boolean).map(parse).filter((e) => e !== null);
@@ -38,13 +39,13 @@ export function openJournal(path: string): Journal {
   try {
     kept = read().filter((e) => e.at >= Date.now() - KEEP_MS);
   } catch (err) {
-    console.error(`funtown: couldn't read the journal ${path}: ${(err as Error).message}`);
+    logError("journal", err);
   }
   if (kept && existsSync(path)) {
     try {
       writeFileSync(path, kept.map((e) => `${JSON.stringify(e)}\n`).join(""));
     } catch (err) {
-      console.error(`funtown: couldn't prune the journal ${path}: ${(err as Error).message}`);
+      logError("journal", err);
     }
   }
   return {
@@ -54,7 +55,7 @@ export function openJournal(path: string): Journal {
         mkdirSync(dirname(path), { recursive: true });
         appendFileSync(path, `${JSON.stringify(entry)}\n`);
       } catch (err) {
-        console.error(`funtown: couldn't write the journal ${path}: ${(err as Error).message}`);
+        logError("journal", err);
       }
     },
   };

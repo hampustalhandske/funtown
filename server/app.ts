@@ -3,12 +3,15 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AddressInfo } from "node:net";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { TownState, type HookEvent } from "./town.ts";
 import type { Town } from "./types.ts";
 import { checkVersion, execFileAsync, listAgents, startBackground } from "./agents.ts";
 import { createTerminals, isSize } from "./terminal.ts";
 import { createHolds } from "./holds.ts";
+import { serverLogger } from "./errors.ts";
 import { morning, openJournal } from "./journal.ts";
 
 const DEFAULT_DIST = fileURLToPath(new URL("../web/dist/", import.meta.url));
@@ -56,6 +59,7 @@ const defaultRun = async (file: string, args: string[]) => {
 };
 
 const MAX_PAGE_BODY = 64 * 1024;
+const MAX_REASON = 1_000;
 
 /** The command that brings a lead's terminal to the front, or null for an unknown terminal. */
 function jumpCommand(termProgram: string | null, tty: string | null): [string, string[]] | null {
@@ -102,7 +106,9 @@ async function readJson(req: IncomingMessage, max = Infinity): Promise<{ value: 
  * closed card. `journal` (a JSONL path) gets a line per kept letter and per character that
  * becomes stuck, and feeds `GET /morning?since=<ms>` (page token). `unlistedMs` (default 10 s)
  * is how long hook data and holds wait for their session to be listed, and holds for a page to
- * be open.
+ * be open. `errorLog` (a path) gets one line per server error, besides stderr. `POST /switch` (page
+ * Origin and token) appends `{ at, reason?, open? }` to `switchLog` (a JSONL path); without one it
+ * answers 500.
  */
 export async function startServer(opts: {
   port: number;
@@ -113,6 +119,8 @@ export async function startServer(opts: {
   answerLog?: string;
   journal?: string;
   unlistedMs?: number;
+  errorLog?: string;
+  switchLog?: string;
 }): Promise<{ url: string; claude: Town["claude"]; close(): Promise<void> }> {
   const run = opts.run ?? defaultRun;
   const claude = opts.claude ?? "claude";
@@ -120,10 +128,11 @@ export async function startServer(opts: {
   const dist = normalize(join(opts.distDir ?? DEFAULT_DIST, "/"));
   const version = await checkVersion(claude);
   const unlistedMs = opts.unlistedMs ?? 10_000;
-  const journal = opts.journal ? openJournal(opts.journal) : undefined;
-  const town = new TownState(version, unlistedMs, journal);
-  const holds = createHolds(town, { unlistedMs, answerLog: opts.answerLog, changed: () => broadcast() });
-  const terminals = createTerminals(claude);
+  const logError = serverLogger(opts.errorLog);
+  const journal = opts.journal ? openJournal(opts.journal, logError) : undefined;
+  const town = new TownState(version, unlistedMs, logError, journal);
+  const holds = createHolds(town, { unlistedMs, answerLog: opts.answerLog, logError, changed: () => broadcast() });
+  const terminals = createTerminals(claude, logError);
   const clients = new Set<ServerResponse>();
   const tokenBytes = Buffer.from(randomBytes(16).toString("hex"));
   const token = tokenBytes.toString();
@@ -149,7 +158,7 @@ export async function startServer(opts: {
     } catch (err) {
       const reason = (err as Error).message.replace(/\s*\n\s*/g, " ").trim();
       if (reason !== lastReason) {
-        console.error(`funtown: claude agents --json failed, keeping the last list: ${reason}`);
+        logError("poll", `claude agents --json failed, keeping the last list: ${reason}`);
         lastReason = reason;
       }
     }
@@ -164,7 +173,7 @@ export async function startServer(opts: {
       }
       broadcast();
     } catch (err) {
-      console.error("funtown: failed to apply the session list", err);
+      logError("poll", err);
     } finally {
       // The next poll is always scheduled, so one bad list never stops the updates.
       pollTimer = setTimeout(() => void poll(), pollMs);
@@ -241,7 +250,7 @@ export async function startServer(opts: {
         broadcast();
         res.writeHead(204).end();
       } catch (err) {
-        console.error(`funtown: failed to handle ${String(event?.hook_event_name)} event`, err);
+        logError(`event ${String(event?.hook_event_name)}`, err);
         res.writeHead(500).end();
       }
       return;
@@ -264,7 +273,7 @@ export async function startServer(opts: {
         await run(...command);
         res.writeHead(204).end();
       } catch (err) {
-        console.error(`funtown: failed to jump to ${command[0]}`, err);
+        logError("jump", err);
         res.writeHead(500, text).end("Couldn't open the terminal.");
       }
       return;
@@ -288,8 +297,31 @@ export async function startServer(opts: {
         const id = await startBackground(claude, cwd);
         res.writeHead(201, { "content-type": "application/json" }).end(JSON.stringify({ id }));
       } catch (err) {
-        console.error(`funtown: claude --bg failed in ${cwd}`, err);
+        logError("start session", err);
         res.writeHead(500, text).end(`Couldn't start a session: ${(err as Error).message}`);
+      }
+      return;
+    }
+
+    if (req.method === "POST" && path === "/switch") {
+      const body = await pageBody(req, res);
+      if (body === null) return;
+      const { reason, open } = body;
+      const isOpen = (o: unknown): o is { id: string; name: string; cwd: string } =>
+        typeof o === "object" && o !== null && ["id", "name", "cwd"].every((k) => typeof (o as Record<string, unknown>)[k] === "string");
+      if ((reason !== undefined && (typeof reason !== "string" || reason.length > MAX_REASON)) || (open !== undefined && !isOpen(open))) {
+        res.writeHead(400).end();
+        return;
+      }
+      try {
+        if (!opts.switchLog) throw new Error("no switch log is set");
+        const line = { at: Date.now(), ...(reason ? { reason } : {}), ...(open ? { open: { id: open.id, name: open.name, cwd: open.cwd } } : {}) };
+        mkdirSync(dirname(opts.switchLog), { recursive: true });
+        appendFileSync(opts.switchLog, `${JSON.stringify(line)}\n`);
+        res.writeHead(204).end();
+      } catch (err) {
+        logError("switch", err);
+        res.writeHead(500).end();
       }
       return;
     }
@@ -323,7 +355,7 @@ export async function startServer(opts: {
       try {
         entries = journal?.read() ?? [];
       } catch (err) {
-        console.error(`funtown: couldn't read the journal: ${(err as Error).message}`);
+        logError("journal", err);
         res.writeHead(500).end();
         return;
       }
@@ -366,7 +398,7 @@ export async function startServer(opts: {
           return;
         } catch (err) {
           if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-            console.error(`funtown: failed to read ${file}`, err);
+            logError("serve page", err);
             res.writeHead(500).end();
             return;
           }
@@ -382,7 +414,7 @@ export async function startServer(opts: {
   });
 
   server.on("upgrade", (req, socket, head) => {
-    const onError = (err: Error) => console.error("funtown: /term socket error", err.message);
+    const onError = (err: Error) => logError("term", err);
     socket.on("error", onError);
     const refuse = (status: number) =>
       void socket.end(`HTTP/1.1 ${status} ${STATUS_CODES[status]}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);

@@ -1,10 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { appendError, defaultErrorLog, isRefused } from "../server/errors.ts";
 
 const url = process.env.FUNTOWN_URL ?? "http://127.0.0.1:4777";
-const logPath = process.env.FUNTOWN_LOG ?? join(homedir(), ".funtown", "hook.log");
+const logPath = process.env.FUNTOWN_LOG ?? defaultErrorLog();
 
 const deadline = Date.now() + 800;
 
@@ -15,14 +14,7 @@ function remaining(): number {
   return left;
 }
 
-function log(line: string): void {
-  try {
-    mkdirSync(dirname(logPath), { recursive: true });
-    appendFileSync(logPath, `${new Date().toISOString()} ${line}\n`);
-  } catch {
-    // Logging is best effort; the hook still exits 0.
-  }
-}
+const log = (step: string, err: unknown) => appendError(logPath, "hook", step, err);
 
 /** Returns a process's tty (null when it has none) and parent pid, or null when it is gone. */
 function psRow(pid: number): { tty: string | null; ppid: number } | null {
@@ -34,7 +26,8 @@ function psRow(pid: number): { tty: string | null; ppid: number } | null {
     const [tty, ppid] = out.split(/\s+/);
     if (!ppid) return null;
     return { tty: tty === "??" || tty === "?" ? null : tty, ppid: Number(ppid) };
-  } catch {
+  } catch (err) {
+    log("find tty", err);
     return null;
   }
 }
@@ -54,7 +47,13 @@ function findTty(): string | null {
 
 // The hook must never fail or stall Claude: any error is logged and the exit code stays 0.
 try {
-  const event = JSON.parse(readFileSync(0, "utf8"));
+  let event;
+  try {
+    event = JSON.parse(readFileSync(0, "utf8"));
+  } catch (err) {
+    log("read event", err);
+    process.exit(0);
+  }
   const at = Date.now();
   event.funtown = {
     tty: findTty(),
@@ -67,8 +66,8 @@ try {
     body: JSON.stringify(event),
     signal: AbortSignal.timeout(remaining()),
   });
-  if (!res.ok) log(`POST ${url}/events returned ${res.status}`);
+  if (!res.ok) log("post /events", `returned ${res.status}`);
 } catch (err) {
-  log(String(err));
+  if (!isRefused(err)) log("post /events", err);
 }
 process.exit(0);

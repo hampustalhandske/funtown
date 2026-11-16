@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { basename } from "node:path";
 import type { Listed } from "./agents.ts";
+import type { LogError } from "./errors.ts";
 import type { Journal } from "./journal.ts";
 import type { Card, Character, House, Lead, Letter, Stage, Town } from "./types.ts";
 
@@ -108,10 +109,10 @@ export class TownState {
 
   /**
    * `claude` is the version check's result, carried on every snapshot; `unlistedMs` how long
-   * unlisted hook data is kept. With a `journal`, each kept letter and each time a character
+   * unlisted hook data is kept; `logError` gets a journal that can't be read. With a `journal`, each kept letter and each time a character
    * becomes stuck is appended to it, and the letters it holds are the starting letters.
    */
-  constructor(claude: Town["claude"], unlistedMs: number, journal?: Journal) {
+  constructor(claude: Town["claude"], unlistedMs: number, logError: LogError, journal?: Journal) {
     this.claude = claude;
     this.unlistedMs = unlistedMs;
     this.journal = journal;
@@ -119,7 +120,7 @@ export class TownState {
     try {
       entries = journal?.read() ?? [];
     } catch (err) {
-      console.error(`funtown: couldn't restore letters from the journal: ${(err as Error).message}`);
+      logError("journal", err);
     }
     for (const e of entries.sort((a, b) => b.at - a.at)) {
       if (e.kind !== "letter") continue;

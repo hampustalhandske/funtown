@@ -1,19 +1,11 @@
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { request } from "node:http";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { appendError, defaultErrorLog, isRefused } from "../server/errors.ts";
 
 const url = process.env.FUNTOWN_URL ?? "http://127.0.0.1:4777";
-const logPath = process.env.FUNTOWN_LOG ?? join(homedir(), ".funtown", "hook.log");
+const logPath = process.env.FUNTOWN_LOG ?? defaultErrorLog();
 
-function log(line: string): void {
-  try {
-    mkdirSync(dirname(logPath), { recursive: true });
-    appendFileSync(logPath, `${new Date().toISOString()} ${line}\n`);
-  } catch {
-    // Logging is best effort; the hook still exits 0.
-  }
-}
+const log = (step: string, err: unknown) => appendError(logPath, "hold", step, err);
 
 /** POSTs `body` to the server's /hold and resolves with the status and body once it replies, however long that takes. */
 function post(body: string): Promise<{ status: number; text: string }> {
@@ -35,14 +27,18 @@ function post(body: string): Promise<{ status: number; text: string }> {
 }
 
 // Claude shows its own dialog whenever this prints nothing, so every failure logs and exits 0.
+let step = "read event";
 try {
   const event = JSON.parse(readFileSync(0, "utf8"));
   event.funtown = { at: Date.now() };
+  step = "post /hold";
   const { status, text } = await post(JSON.stringify(event));
   // stdout to a pipe is async, so wait for the write or an exit cuts the output at 64 KB.
-  if (status === 200) await new Promise((done) => process.stdout.write(text, done));
-  else if (status !== 204) log(`POST ${url}/hold returned ${status}`);
+  if (status === 200) {
+    step = "print answer";
+    await new Promise((done) => process.stdout.write(text, done));
+  } else if (status !== 204) log("post /hold", `returned ${status}`);
 } catch (err) {
-  log(String(err));
+  if (!(step === "post /hold" && isRefused(err))) log(step, err);
 }
 process.exit(0);
