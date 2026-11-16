@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useState, useRef } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState, useRef } from "react";
 import type { Card, Character, House, Lead, Stage, Town } from "../../server/types.ts";
 import { AnswerCard } from "./AnswerCard.tsx";
-import { Letters, ReplyBox } from "./Letters.tsx";
 import { MorningButton } from "./Morning.tsx";
-import { SessionTerminal, funtownToken } from "./Terminal.tsx";
+import { funtownToken } from "./token.ts";
+
+// The Markdown renderer and the terminal load only when a panel shows them, keeping them out of the first page load.
+const Letters = lazy(() => import("./Letters.tsx").then((m) => ({ default: m.Letters })));
+const ReplyBox = lazy(() => import("./Letters.tsx").then((m) => ({ default: m.ReplyBox })));
+const SessionTerminal = lazy(() => import("./Terminal.tsx").then((m) => ({ default: m.SessionTerminal })));
 import { NeedsList, NotifyButton, Toasts, useAlerts, useMute, useNextKey, waitingList, type Waiting } from "./needs.tsx";
 
 const STAGE_LABEL: Record<Stage, string> = {
@@ -189,13 +193,15 @@ function Panel({ character, lead, cards, onClose }: { character: Character; lead
           ))}
         </ul>
       )}
-      <Letters lead={lead.id} stamp={stamp} names={Object.fromEntries([lead, ...lead.subagents].map((c) => [c.id, c.name]))} only={character.id === lead.id ? undefined : character.id} />
-      {character.id === lead.id && lead.kind === "background" && (
-        <>
-          <ReplyBox send={(text) => reply.current?.(text) ?? false} />
-          <SessionTerminal lead={lead.id} reply={reply} />
-        </>
-      )}
+      <Suspense fallback={null}>
+        <Letters lead={lead.id} stamp={stamp} names={Object.fromEntries([lead, ...lead.subagents].map((c) => [c.id, c.name]))} only={character.id === lead.id ? undefined : character.id} />
+        {character.id === lead.id && lead.kind === "background" && (
+          <>
+            <ReplyBox send={(text) => reply.current?.(text) ?? false} />
+            <SessionTerminal lead={lead.id} reply={reply} />
+          </>
+        )}
+      </Suspense>
       {character.id === lead.id && lead.kind === "terminal" && (
         <p className="hint">press ← or type /bg in its terminal to open it here</p>
       )}

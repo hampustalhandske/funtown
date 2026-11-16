@@ -2,6 +2,7 @@
 
 One line per change, newest first.
 
+- 2026-11-16 18:55 · The page loads faster: the letter renderer and the terminal load only when a panel shows them (first load 239 kB, was 905 kB).
 - 2026-11-16 18:30 · Sessions get one short letter shape (Done, Next, Needs you) at their start, from `hooks/letter.md` (your own `~/.funtown/letter.md` overrides it). A Morning view shows per project each lead's newest letter, who got stuck and who waits; letters are kept in a local journal for 7 days and survive a restart. Subagent letters show their handback report.
 - 2026-11-16 17:50 · Tests no longer time out at random and leave nothing in the temp folder: every fake `claude` is a link to one copy, and each run removes its own temp folder.
 - 2026-11-16 15:35 · Letters: a session's end-of-turn message and each subagent's result show in its panel as rendered Markdown (12 lines, then Show all), with a reply box for background sessions; a lead whose agents still run shows "waiting on N agents", not "turn ended". CI also runs on main.

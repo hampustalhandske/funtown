@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import type { Morning, Town } from "../../server/types.ts";
-import { LetterView } from "./Letters.tsx";
-import { funtownToken } from "./Terminal.tsx";
+import { funtownToken } from "./token.ts";
+
+// The Markdown renderer loads only when a letter is shown, keeping it out of the first page load.
+const LetterView = lazy(() => import("./Letters.tsx").then((m) => ({ default: m.LetterView })));
 import { waited, type Waiting } from "./needs.tsx";
 
 const CLOSED_KEY = "funtown-morning-closed";
@@ -78,7 +80,7 @@ export function MorningButton({ waiting, town, onOpen }: { waiting: Waiting[]; t
               {s.done.length > 0 && (
                 <div aria-label="Done">
                   <h4>Done</h4>
-                  {s.done.map((l) => <LetterView key={l.id} letter={l} name={names[l.from]} />)}
+                  <Suspense fallback={null}>{s.done.map((l) => <LetterView key={l.id} letter={l} name={names[l.from]} />)}</Suspense>
                 </div>
               )}
               {s.stuck.length > 0 && (

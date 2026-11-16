@@ -2,11 +2,7 @@ import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-
-/** The page's token, injected by the server as `<meta name="funtown-token">`. */
-export function funtownToken(): string {
-  return document.querySelector<HTMLMetaElement>('meta[name="funtown-token"]')?.content ?? "";
-}
+import { funtownToken } from "./token.ts";
 
 /**
  * Live terminal of one background session: an xterm.js view over the `/term` WebSocket; closing it

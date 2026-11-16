@@ -3,7 +3,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import type { Letter } from "../../server/types.ts";
-import { funtownToken } from "./Terminal.tsx";
+import { funtownToken } from "./token.ts";
 import "./hljs.css";
 
 /** Raw HTML is never rendered by react-markdown; an image becomes a link so nothing is fetched. */

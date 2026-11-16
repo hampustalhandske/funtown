@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Card } from "../../server/types.ts";
-import { funtownToken } from "./Terminal.tsx";
+import { funtownToken } from "./token.ts";
 
 type Question = { question: string; header?: string; multiSelect?: boolean; options?: { label: string; description?: string }[] };
 
