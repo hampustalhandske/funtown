@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import type { Card, Character, House, Lead, Stage, Town } from "../../server/types.ts";
 import { AnswerCard } from "./AnswerCard.tsx";
 import { SessionTerminal, funtownToken } from "./Terminal.tsx";
@@ -199,7 +199,10 @@ export function App() {
   useEffect(() => {
     if (town && selection && !selected) setSelection(null);
   }, [town, selection, selected]);
-  const [opening, setOpening] = useState<{ id: string; cwd: string; at: number }[]>([]);
+  // The selection when each New session was clicked; a session opens itself only if that is still it (or nothing is open).
+  const selectionNow = useRef(selection);
+  selectionNow.current = selection;
+  const [opening, setOpening] = useState<{ id: string; cwd: string; at: number; from: typeof selection }[]>([]);
   const [missing, setMissing] = useState<string[]>([]);
   const leads = town?.houses.flatMap((house) => house.leads) ?? [];
   const listed = opening.flatMap((p) => {
@@ -208,8 +211,9 @@ export function App() {
   });
   useEffect(() => {
     if (listed.length === 0) return;
-    const last = listed[listed.length - 1].found;
-    setSelection({ lead: last.id, id: last.id });
+    const { p, found } = listed[listed.length - 1];
+    const current = selectionNow.current;
+    if (current === null || current === p.from) setSelection({ lead: found.id, id: found.id });
     setOpening((all) => all.filter((p) => !listed.some((l) => l.p === p)));
   }, [listed.map((l) => l.p.id).join()]);
   useEffect(() => {
@@ -232,7 +236,7 @@ export function App() {
       if (reply.status !== 201) return (await reply.text()) || `Start failed (${reply.status}).`;
       const { id } = (await reply.json()) as { id: string };
       setMissing((all) => all.filter((c) => c !== cwd));
-      setOpening((all) => [...all, { id, cwd, at: Date.now() }]);
+      setOpening((all) => [...all, { id, cwd, at: Date.now(), from: selectionNow.current }]);
       return null;
     } catch {
       return "Couldn't reach Funtown.";
