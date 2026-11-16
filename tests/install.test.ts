@@ -7,7 +7,7 @@ import { expect, it } from "vitest";
 const INSTALL = resolve(import.meta.dirname, "../hooks/install.ts");
 const EVENTS = [
   "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse",
-  "PermissionRequest", "Notification", "Stop", "SubagentStart", "SubagentStop",
+  "PermissionRequest", "Notification", "Stop", "SubagentStart", "SubagentStop", "StopFailure",
 ];
 
 const mine = { matcher: "Bash", hooks: [{ type: "command", command: "echo mine-pre", timeout: 9 }] };
