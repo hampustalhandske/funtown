@@ -7,7 +7,7 @@ import { expect, it } from "vitest";
 const INSTALL = resolve(import.meta.dirname, "../hooks/install.ts");
 const EVENTS = [
   "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse",
-  "PermissionRequest", "Notification", "Stop", "SubagentStart", "SubagentStop",
+  "PermissionRequest", "Notification", "Stop", "SubagentStart", "SubagentStop", "StopFailure",
 ];
 
 const mine = { matcher: "Bash", hooks: [{ type: "command", command: "echo mine-pre", timeout: 9 }] };
@@ -142,4 +142,17 @@ it("install_adds_the_two_hold_entries_without_async_and_uninstall_leaves_none", 
 
   s.run("install");
   expect(JSON.stringify(s.run("uninstall"))).not.toContain("funtown-hold");
+});
+
+it("install_without_settings_flag_writes_into_CLAUDE_CONFIG_DIR_when_it_is_set", () => {
+  // Catches hooks landing in ~/.claude/settings.json, which a Claude Code using CLAUDE_CONFIG_DIR never reads.
+  const dir = mkdtempSync(join(tmpdir(), "funtown-config-"));
+  const r = spawnSync("node", [INSTALL, "install"], {
+    encoding: "utf8",
+    env: { ...process.env, CLAUDE_CONFIG_DIR: dir, FUNTOWN_STATE: join(dir, "installed.json") },
+  });
+  expect(r.status, r.stderr).toBe(0);
+  const after = JSON.parse(readFileSync(join(dir, "settings.json"), "utf8"));
+  for (const name of EVENTS) expect(funtownEntries(after.hooks[name]), name).toHaveLength(1);
+  rmSync(dir, { recursive: true });
 });

@@ -3,12 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Card } from "../server/types.ts";
-import { leadsOf, listed, listedBg, post, start, tokenOf, townWhere, until, type Json } from "./helpers.ts";
+import { leadsOf, listed, listedBg, post, sleep, start, tokenOf, townWhere, until, type Json } from "./helpers.ts";
 
 
 const CWD = "/work/demo-app";
 const BG = "bg111111-0000-4000-8000-000000000000";
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const aborts: AbortController[] = [];
 afterEach(() => {
@@ -74,7 +73,7 @@ const answer = (s: S, body: Json, headers: Record<string, string> = { origin: s.
   fetch(`${s.url}/answer`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
 
 /** Holds `payload`, waits for its card and returns the card and the pending reply. */
-async function held(s: S, payload: Json) {
+async function held(s: { url: string }, payload: Json) {
   const before = (await cardsWhere(s.url, () => true)).length;
   const h = hold(s.url, payload);
   const cards = await cardsWhere(s.url, (c) => c.length === before + 1);

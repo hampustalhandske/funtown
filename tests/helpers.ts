@@ -115,3 +115,9 @@ export async function townWhere(url: string, ok: (t: Town) => boolean, ms = 3000
 }
 
 export const leadsOf = (t: Town) => t.houses.flatMap((h) => h.leads);
+
+export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** The first lead of the first Town state in which `ok(firstLead)` holds. */
+export const leadWhere = async (url: string, ok: (l: ReturnType<typeof leadsOf>[number]) => boolean) =>
+  leadsOf(await townWhere(url, (t) => ok(leadsOf(t)[0])))[0];

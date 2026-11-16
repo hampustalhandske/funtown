@@ -3,7 +3,7 @@ import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { leadsOf, listed, post, start, townWhere, until } from "./helpers.ts";
+import { leadWhere, leadsOf, listed, post, start, townWhere, until } from "./helpers.ts";
 
 const tempDirs: string[] = [];
 const tempDir = (): string => {
@@ -69,8 +69,7 @@ describe("POST /events -> GET /stream", () => {
 
   it("hooks_move_a_listed_lead_between_stages_and_show_the_running_command", async () => {
     const { url } = await withListed("s1");
-    const lead = async (ok: (l: ReturnType<typeof leadsOf>[number]) => boolean) =>
-      leadsOf(await townWhere(url, (t) => ok(leadsOf(t)[0])))[0];
+    const lead = (ok: (l: ReturnType<typeof leadsOf>[number]) => boolean) => leadWhere(url, ok);
 
     await post(url, evAt(1, "UserPromptSubmit"));
     expect(await lead((l) => l.stage === "working")).toMatchObject({ stage: "working" });
@@ -216,8 +215,11 @@ describe("a hook event that arrives while the list is being asked for", () => {
 
     const stale = await townWhere(url, () => true);
     expect(leadsOf(stale)[0]).toMatchObject({ stage: "needs_you", needs: "turn ended" });
-    // a list asked after the event applies as before
-    const next = await townWhere(url, (t) => leadsOf(t)[0]?.stage === "working", 4000);
-    expect(leadsOf(next)[0].stage).toBe("working");
+    // a later busy list doesn't undo the hook's Stop either (background commands keep it busy);
+    // the lead's next tool call does
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(leadsOf(await townWhere(url, () => true))[0]).toMatchObject({ stage: "needs_you", needs: "turn ended" });
+    await post(url, evAt(20, "PreToolUse"));
+    await townWhere(url, (t) => leadsOf(t)[0]?.stage === "working", 4000);
   });
 });

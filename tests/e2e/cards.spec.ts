@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { stubStream } from "./stream.ts";
 
 const QUESTIONS = {
   questions: [
@@ -20,21 +21,16 @@ const town = (leads: unknown[], cards: unknown[]) => ({
 });
 const bg = lead({ id: "b1", name: "bg-1", kind: "background", shortId: "b1b1b1b1", needs: "question" });
 
-const sse = (t: unknown) => `retry: 50\nevent: state\ndata: ${JSON.stringify(t)}\n\n`;
-
 /** Opens the page on a stubbed stream; records each POST /answer body and replies with `reply`. */
 async function open(page: Page, initial: unknown, reply: { status: number } = { status: 204 }) {
   const answers: unknown[] = [];
-  let current = initial;
-  await page.route("**/stream", (r) =>
-    r.fulfill({ status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-cache" }, body: sse(current) }),
-  );
+  const stream = await stubStream(page, initial);
   await page.route("**/answer", (r) => {
     answers.push(r.request().postDataJSON());
     return r.fulfill({ status: reply.status, contentType: "text/plain", body: "" });
   });
   await page.goto("/");
-  return { answers, send: (t: unknown) => void (current = t) };
+  return { answers, send: stream.send };
 }
 const house = (page: Page) => page.locator('section[aria-label="demo-app"]');
 
