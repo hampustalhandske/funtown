@@ -9,11 +9,8 @@ export function SwitchButton({ open }: { open: OpenSession | null }) {
   const [reason, setReason] = useState("");
   const [noted, setNoted] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const field = useRef<HTMLInputElement>(null);
+  const box = useRef<HTMLFormElement>(null);
   const button = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (asking) field.current?.focus();
-  }, [asking]);
   useEffect(() => {
     if (!noted) return;
     const timer = setTimeout(() => setNoted(false), 3000);
@@ -23,17 +20,14 @@ export function SwitchButton({ open }: { open: OpenSession | null }) {
     setAsking(false);
     setReason("");
     setError(null);
-    button.current?.focus();
+    if (box.current?.contains(document.activeElement)) button.current?.focus();
   };
   const save = async () => {
     try {
-      const body: { reason?: string; open?: OpenSession } = {};
-      if (reason.trim()) body.reason = reason.trim();
-      if (open) body.open = open;
       const reply = await fetch("/switch", {
         method: "POST",
         headers: { "content-type": "application/json", "x-funtown-token": funtownToken() },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ reason: reason.trim() || undefined, open: open ?? undefined }),
       });
       if (reply.status !== 204) {
         setError(`Couldn't note it (${reply.status}).`);
@@ -50,6 +44,7 @@ export function SwitchButton({ open }: { open: OpenSession | null }) {
       <button ref={button} type="button" onClick={() => setAsking(true)}>I had to switch</button>
       {asking && (
         <form
+          ref={box}
           className="switch-box"
           aria-label="I had to switch"
           onSubmit={(e) => {
@@ -57,12 +52,15 @@ export function SwitchButton({ open }: { open: OpenSession | null }) {
             void save();
           }}
           onKeyDown={(e) => {
-            if (e.key === "Escape") close();
+            if (e.key === "Escape") {
+              e.stopPropagation();
+              close();
+            }
           }}
         >
           <label>
             Why?{" "}
-            <input ref={field} type="text" maxLength={1000} value={reason} onChange={(e) => setReason(e.target.value)} />
+            <input autoFocus type="text" maxLength={1000} value={reason} onChange={(e) => setReason(e.target.value)} />
           </label>
           <button type="submit">Note it</button>
           {error && <span role="alert">{error}</span>}
