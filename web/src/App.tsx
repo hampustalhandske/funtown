@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, useRef } from "react";
 import type { Card, Character, House, Lead, Stage, Town } from "../../server/types.ts";
 import { AnswerCard } from "./AnswerCard.tsx";
 import { Letters, ReplyBox } from "./Letters.tsx";
+import { MorningButton } from "./Morning.tsx";
 import { SessionTerminal, funtownToken } from "./Terminal.tsx";
 import { NeedsList, NotifyButton, Toasts, useAlerts, useMute, useNextKey, waitingList, type Waiting } from "./needs.tsx";
 
@@ -188,7 +189,7 @@ function Panel({ character, lead, cards, onClose }: { character: Character; lead
           ))}
         </ul>
       )}
-      <Letters lead={lead.id} stamp={stamp} only={character.id === lead.id ? undefined : character.id} />
+      <Letters lead={lead.id} stamp={stamp} names={Object.fromEntries([lead, ...lead.subagents].map((c) => [c.id, c.name]))} only={character.id === lead.id ? undefined : character.id} />
       {character.id === lead.id && lead.kind === "background" && (
         <>
           <ReplyBox send={(text) => reply.current?.(text) ?? false} />
@@ -276,6 +277,7 @@ export function App() {
           {muted ? "Unmute" : "Mute"}
         </button>
         <NotifyButton />
+        <MorningButton waiting={waiting} onOpen={openWaiting} />
       </header>
       {restarted && (
         <div className="alert" role="alert">
