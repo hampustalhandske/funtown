@@ -13,7 +13,7 @@ export function GroundTile() {
 }
 
 /** A project's house: a body in the project `colour`, a pyramid roof and a door facing +z. */
-export function House({ colour }: { colour: string }) {
+export function HouseModel({ colour }: { colour: string }) {
   return (
     <group>
       <Clay colour={colour} position={[0, 0.5, 0]}><boxGeometry args={[1.2, 1, 1.2]} /></Clay>
@@ -43,7 +43,7 @@ export function Castle() {
 }
 
 /** A character facing +z: a body in `colour`, a head with ink eyes and the given `hat`. */
-export function Character({ colour, hat }: { colour: string; hat: HatKind }) {
+export function Figure({ colour, hat }: { colour: string; hat: HatKind }) {
   return (
     <group>
       <Clay colour={colour} position={[0, 0.4, 0]}><capsuleGeometry args={[0.25, 0.3, 8, 16]} /></Clay>

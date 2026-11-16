@@ -5,7 +5,7 @@ import { Html, OrbitControls } from "@react-three/drei";
 import { TONES } from "./kit/clay.tsx";
 import { Hat } from "./kit/hats.tsx";
 import { PALETTE, type HatKind } from "./kit/palette.ts";
-import { Castle, Character, Desk, GroundTile, House, Parcel } from "./kit/parts.tsx";
+import { Castle, Desk, Figure, GroundTile, HouseModel, Parcel } from "./kit/parts.tsx";
 
 const HATS: [HatKind, string][] = [
   ["crown", "king (you)"], ["tiara", "queen (steward)"], ["hardhat", "implementer"], ["toque", "test-writer"],
@@ -37,11 +37,11 @@ function Preview() {
         <planeGeometry args={[80, 80]} />
         <meshLambertMaterial color="#efe6d6" />
       </mesh>
-      <Row z={-8} gap={2.6} items={PALETTE.map((c) => [`house ${c}`, <House colour={c} />, 1.8])} />
+      <Row z={-8} gap={2.6} items={PALETTE.map((c) => [`house ${c}`, <HouseModel colour={c} />, 1.8])} />
       <Row z={-3.5} gap={3.5} items={[
         ["ground tile", <GroundTile />, 0], ["castle", <Castle />, 2.4], ["desk", <Desk />, 0.6], ["parcel", <Parcel />, 0.5],
       ]} />
-      <Row z={1} gap={2.2} items={HATS.map(([hat, role], i) => [role, <Character colour={PALETTE[i]} hat={hat} />, 1.8])} />
+      <Row z={1} gap={2.2} items={HATS.map(([hat, role], i) => [role, <Figure colour={PALETTE[i]} hat={hat} />, 1.8])} />
       <Row z={4} gap={2.2} items={HATS.map(([hat]) => [hat, <group scale={1.5}><Hat kind={hat} colour={TONES.ribbon} /></group>, 0.8])} />
       <OrbitControls autoRotate autoRotateSpeed={0.6} target={[0, 0.5, -1.5]} />
     </Canvas>
