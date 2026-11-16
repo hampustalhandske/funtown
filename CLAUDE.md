@@ -1,6 +1,10 @@
 # Funtown
 
 Charter: docs/CHARTER.md. Current state: docs/HANDOFF.md. Parked ideas: docs/PARKING.md.
+These and the rest of the planning notes (MILESTONE, METRICS, spikes, history) are local only,
+listed in `.git/info/exclude`; never stage them. The public record is CHANGELOG.md: one line
+per change, newest first, with date and time. `docs/spikes/` holds the Claude Code 2.1.325
+behaviours v2 builds on; rerun a note's Reproduce before relying on it.
 
 ## Map
 
@@ -15,7 +19,6 @@ Parts
 - `web/`: React page (Vite): sessions by project, a panel with an xterm.js terminal,
   answer cards (`AnswerCard.tsx`). `tests/`: Vitest at the seams, Playwright in
   `tests/e2e/`, a fake `claude` (`fake-claude.cjs`, steered by `fake-claude.ts`).
-- `docs/spikes/`: Claude Code 2.1.325 behaviours (m6); rerun a note's Reproduce first.
 
 Contracts (source of truth: docs/MILESTONE.md of the milestone that set them)
 - Hook event: POST `/events`, hook JSON plus `funtown: { tty, term_program, at }`; an
@@ -41,4 +44,5 @@ Decisions that bind
 - `/events` and `/hold` refuse any `Origin` and have no body limit; page POSTs cap at
   64 KB, `/term` frames at 1 MB; ids, cwds and ttys reach children only as arguments.
 - All code our own. Tests never run the real `claude`, use real names or the home folder.
-- Personal files stay gitignored: docs/ideas.md, .claude/settings.json, .claude/never-push.
+- Out of git: docs/ideas.md, .claude/settings.json, .claude/never-push, the planning notes;
+  a security finding is fixed before the push and never written in a tracked file.
