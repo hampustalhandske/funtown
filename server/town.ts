@@ -25,15 +25,10 @@ function describeTool(event: HookEvent): string | null {
   return tool === "Bash" && typeof command === "string" ? `Bash: ${command}` : tool;
 }
 
-/** Why a Notification needs the user, or null when it does not. */
 /** Identical tool calls in a row that make a character stuck. */
 const LOOP_CALLS = 5;
 
-/** Why a StopFailure `error` code stuck a character: its words, or "error" when it has none. */
-function failureReason(error: string | undefined): string {
-  return (error ?? "").replace(/_/g, " ").trim() || "error";
-}
-
+/** Why a Notification needs the user, or null when it does not. */
 function notificationNeed(type: string | undefined): string | null {
   if (type === "permission_prompt") return "permission";
   if (type === "elicitation_dialog") return "question";
@@ -50,10 +45,12 @@ function withCards(lead: Lead, cards: Card[]): Lead {
   for (const card of own) {
     // A subagent the hooks haven't named yet shows its card's need on its lead.
     const who: Character = shown.subagents.find((a) => a.id === card.agent) ?? shown;
+    // Already waiting for this need: its `since` counts as well as the card's `at`.
+    const kept = who.stage === "needs_you" && who.needs === card.kind ? who.since : undefined;
     who.stage = "needs_you";
     who.needs = card.kind;
     delete who.reason;
-    oldest.set(who, Math.min(card.at, oldest.get(who) ?? Infinity));
+    oldest.set(who, Math.min(card.at, kept ?? Infinity, oldest.get(who) ?? Infinity));
   }
   for (const [who, at] of oldest) who.since = at;
   return shown;
@@ -95,8 +92,8 @@ export class TownState {
     const sid = event.session_id;
     if (!sid || !event.hook_event_name) return false;
     const at = event.funtown?.at;
+    const key = `${sid}\0${event.agent_id ?? ""}`;
     if (typeof at === "number") {
-      const key = `${sid}\0${event.agent_id ?? ""}`;
       if (at < (this.lastAt.get(key) ?? -Infinity)) return false;
       this.lastAt.set(key, at);
     }
@@ -112,7 +109,6 @@ export class TownState {
     if (!inSubagent) this.leadHeardAt.set(sid, Date.now());
     const name = event.hook_event_name;
     const when = typeof at === "number" ? at : Date.now();
-    const callKey = `${sid}\0${event.agent_id ?? ""}`;
     // These events end a stuck state; any other leaves a stuck character as it is.
     const unsticks = name === "SessionStart" || name === "UserPromptSubmit" || name === "PreToolUse";
     const set = (c: Character, stage: Stage, activity: string | null, needs?: string, reason?: string): void => {
@@ -120,7 +116,8 @@ export class TownState {
       this.mark(c, stage, activity, when, needs, reason);
     };
     if (name === "SessionStart" || name === "UserPromptSubmit") {
-      for (const key of this.calls.keys()) if (key.startsWith(`${sid}\0`)) this.calls.delete(key);
+      this.dropSession(sid, [this.calls]);
+      for (const a of lead.subagents) if (a.needs === "stuck") this.mark(a, "done", null, when);
     }
     switch (name) {
       case "SessionStart":
@@ -134,9 +131,9 @@ export class TownState {
         let loop = false;
         if (name === "PreToolUse") {
           const sig = JSON.stringify([event.tool_name, event.tool_input]);
-          const last = this.calls.get(callKey);
+          const last = this.calls.get(key);
           const count = last?.sig === sig ? last.count + 1 : 1;
-          this.calls.set(callKey, { sig, count });
+          this.calls.set(key, { sig, count });
           loop = count >= LOOP_CALLS;
         }
         if (loop) set(target, "needs_you", activity, "stuck", `loop: ${activity ?? event.tool_name}`);
@@ -156,14 +153,13 @@ export class TownState {
         set(lead, "needs_you", null, "turn ended");
         break;
       case "StopFailure":
-        this.mark(inSubagent ? this.agent(lead, event) : lead, "needs_you", null, when, "stuck", failureReason(event.error));
+        this.mark(inSubagent ? this.agent(lead, event) : lead, "needs_you", null, when, "stuck", (event.error ?? "").replace(/_/g, " ").trim() || "error");
         break;
       case "SubagentStart":
         this.agent(lead, event).stage = "working";
         break;
       case "SubagentStop": {
-        const agent = this.agent(lead, event);
-        this.mark(agent, "done", null, when);
+        set(this.agent(lead, event), "done", null);
         break;
       }
     }
@@ -186,7 +182,7 @@ export class TownState {
       lead.shortId = lead.kind === "background" ? (s.id ?? null) : null;
       const hookIsNewer = (this.leadHeardAt.get(s.sessionId) ?? -Infinity) > askedAt;
       if (lead.needs === "stuck") {
-        // stays stuck until a hook event says otherwise
+        // stays stuck until the lead's SessionStart, UserPromptSubmit or PreToolUse
       } else if (hookIsNewer) {
         // keep the stage the newer hook event set
       } else if (s.status === "busy") {
@@ -194,7 +190,8 @@ export class TownState {
         delete lead.needs;
         delete lead.since;
       } else if (s.status === "waiting") {
-        this.mark(lead, "needs_you", null, Date.now(), s.waitingFor);
+        // A hook may already have named this wait; the list's wording differs, so keep it.
+        if (lead.stage !== "needs_you") this.mark(lead, "needs_you", null, Date.now(), s.waitingFor ?? "input needed");
       } else if (s.status === "idle") {
         this.mark(lead, "needs_you", null, Date.now(), "turn ended");
       }
@@ -238,7 +235,12 @@ export class TownState {
     this.leads.delete(sessionId);
     this.heard.delete(sessionId);
     this.leadHeardAt.delete(sessionId);
-    for (const map of [this.agentCounts, this.lastAt, this.calls]) {
+    this.dropSession(sessionId, [this.agentCounts, this.lastAt, this.calls]);
+  }
+
+  /** Removes the entries of `maps` whose key starts with this session's id. */
+  private dropSession(sessionId: string, maps: Map<string, unknown>[]): void {
+    for (const map of maps) {
       for (const key of map.keys()) if (key.startsWith(`${sessionId}\0`)) map.delete(key);
     }
   }
