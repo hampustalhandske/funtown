@@ -284,8 +284,8 @@ test("a_reply_whose_removal_of_one_marker_forms_another_reaches_attach_with_exac
   await openPanel(page);
   const p = panel(page, "alpha");
   await expect(p.locator(".xterm-rows")).toContainText(`attached ${sid.slice(0, 8)}`);
-  // removing the start marker from this text leaves the end marker "\x1b[201~"
-  await p.getByRole("textbox", { name: "Reply" }).fill("\x1b[2\x1b[200~01~");
+  // removing the end marker from this text leaves the start marker "\x1b[200~"
+  await p.getByRole("textbox", { name: "Reply" }).fill("\x1b[20\x1b[201~0~");
   await p.getByRole("button", { name: "Send" }).click();
 
   const START = "\x1b[200~";
@@ -296,4 +296,29 @@ test("a_reply_whose_removal_of_one_marker_forms_another_reaches_attach_with_exac
   expect(paste.d.split(END)).toHaveLength(2);
   expect(paste.d.startsWith(START)).toBe(true);
   expect(paste.d.endsWith(END)).toBe(true);
+});
+
+test("a_reply_over_1_MB_is_not_sent_keeps_its_text_and_shows_an_alert", async ({ page }) => {
+  const frames = await recordTermFrames(page);
+  await openWith(page, true);
+  await openPanel(page);
+  const p = panel(page, "alpha");
+  await expect(p.locator(".xterm-rows")).toContainText(`attached ${sid.slice(0, 8)}`);
+  const reply = p.getByRole("textbox", { name: "Reply" });
+  const big = "a".repeat(1024 * 1024 + 1);
+  await reply.fill(big);
+  await p.getByRole("button", { name: "Send" }).click();
+  await expect(p.getByRole("alert")).toHaveText("Not sent: the reply is over 1 MB.");
+  expect(await reply.inputValue()).toBe(big);
+  await page.waitForTimeout(300); // give a wrongly sent frame time to arrive
+  expect(frames.filter((f) => (f as { t: string }).t === "in")).toEqual([]);
+});
+
+test("a_letters_chunk_that_fails_to_load_shows_a_reload_line_and_keeps_the_session_list", async ({ page }) => {
+  await page.route("**/assets/Letters-*.js", (r) => r.abort());
+  await openWith(page);
+  await letter("You will not see this.");
+  await openPanel(page);
+  await expect(panel(page, "alpha")).toContainText("This part of the page is out of date. Reload the page.");
+  await expect(row(page, "alpha")).toBeVisible();
 });

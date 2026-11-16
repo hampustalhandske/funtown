@@ -85,7 +85,9 @@ describe("the journal", () => {
     });
     const day = 86_400_000;
     writeFileSync(path, [entry(Date.now() - 8 * day, "ancient"), "{not json", JSON.stringify(entry(Date.now() - day, "recent"))].join("\n") + "\n");
-    await listedServer(path);
+    const s = await listedServer(path);
+    const res = await fetch(`${s.url}/morning?since=0`, { headers: { "x-funtown-token": s.token } });
+    expect(res.status).toBe(200);
     const text = readFileSync(path, "utf8");
     expect(text).toContain("recent");
     expect(text).not.toContain("ancient");
@@ -100,6 +102,22 @@ describe("the journal", () => {
     chmodSync(path, 0o200); // write-only: reading fails, writing would work
     try {
       await listedServer(path);
+    } finally {
+      chmodSync(path, 0o600);
+    }
+    expect(readFileSync(path, "utf8")).toBe(content);
+  });
+
+  it("a_journal_that_cannot_be_read_makes_morning_answer_500_leaves_the_file_as_it_was_and_the_page_still_serves", async () => {
+    const path = journalPath();
+    const content = `${JSON.stringify({ kind: "letter", at: Date.now(), cwd: CWD, lead: "s1", letter: { id: "b", from: "s1", name: "s1", text: "recent", at: 1 } })}\n`;
+    writeFileSync(path, content);
+    chmodSync(path, 0o200);
+    try {
+      const s = await start({ journal: path });
+      const res = await fetch(`${s.url}/morning?since=0`, { headers: { "x-funtown-token": await tokenOf(s.url) } });
+      expect(res.status).toBe(500);
+      expect((await fetch(`${s.url}/`)).status).toBe(200);
     } finally {
       chmodSync(path, 0o600);
     }
