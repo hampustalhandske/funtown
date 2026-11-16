@@ -2,6 +2,7 @@
 
 One line per change, newest first.
 
+- 2026-11-16 21:09 · A clay kit of parts for the coming 3D town (houses in project colours, the castle, characters with a hat per role, desk, parcel, ground), all drawn in code with an ink outline; see them at `/kit.html`. Browser tests take `FUNTOWN_E2E_PORT` (default 4799).
 - 2026-11-16 19:20 · An "I had to switch" button notes when and why you left Funtown (`~/.funtown/switches.jsonl`). Hooks and the server share one error log (`~/.funtown/errors.log`) that names the failing step; a crash, a failed start and, on the next start, a run that ended without shutting down are logged. Also: the Morning window starts at its last successful load, the letter shape reaches resumed sessions, and hook paths with shell characters work.
 - 2026-11-16 18:55 · The page loads faster: the letter renderer and the terminal load only when a panel shows them (first load 239 kB, was 905 kB).
 - 2026-11-16 18:30 · Sessions get one short letter shape (Done, Next, Needs you) at their start, from `hooks/letter.md` (your own `~/.funtown/letter.md` overrides it). A Morning view shows per project each lead's newest letter, who got stuck and who waits; letters are kept in a local journal for 7 days and survive a restart. Subagent letters show their handback report.
