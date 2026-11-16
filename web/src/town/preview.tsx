@@ -4,12 +4,16 @@ import { Canvas } from "@react-three/fiber";
 import { Html, OrbitControls } from "@react-three/drei";
 import { TONES } from "./kit/clay.tsx";
 import { Hat } from "./kit/hats.tsx";
-import { PALETTE, type HatKind } from "./kit/palette.ts";
+import { PALETTE, ROLE_HATS, type HatKind } from "./kit/palette.ts";
 import { Castle, Desk, Figure, GroundTile, HouseModel, Parcel } from "./kit/parts.tsx";
 
+const roles = new Map<HatKind, string[]>();
+for (const [role, hat] of Object.entries(ROLE_HATS)) roles.set(hat, [...(roles.get(hat) ?? []), role]);
+
+/** Every hat with who wears it. */
 const HATS: [HatKind, string][] = [
-  ["crown", "king (you)"], ["tiara", "queen (steward)"], ["hardhat", "implementer"], ["toque", "test-writer"],
-  ["pith", "explorer, Explore"], ["wizard", "Plan"], ["straw", "general-purpose"], ["beret", "ui-reviewer"],
+  ["crown", "king (you)"], ["tiara", "queen (steward)"],
+  ...[...roles].map(([hat, names]): [HatKind, string] => [hat, names.join(", ")]),
   ["tophat", "*review*"], ["cap", "any other role"],
 ];
 

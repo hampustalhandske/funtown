@@ -15,7 +15,8 @@ export const PALETTE = [
 /** Every hat the kit can make: one per known role, the two crowns and the default cap. */
 export type HatKind = "hardhat" | "toque" | "pith" | "wizard" | "straw" | "beret" | "tophat" | "crown" | "tiara" | "cap";
 
-const ROLE_HATS: Record<string, HatKind> = {
+/** The hat for each listed subagent type. */
+export const ROLE_HATS: Record<string, HatKind> = {
   implementer: "hardhat",
   "test-writer": "toque",
   explorer: "pith",
