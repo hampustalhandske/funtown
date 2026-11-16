@@ -247,6 +247,8 @@ export async function startServer(opts: {
   };
 
   let pollTimer: NodeJS.Timeout | undefined;
+  // the poll running now, which close() waits for so no `claude` child outlives the server
+  let polling: Promise<void> = Promise.resolve();
   let lastReason = "";
   let applyReason = "";
   const poll = async () => {
@@ -289,7 +291,7 @@ export async function startServer(opts: {
       applyReason = describe(err);
     } finally {
       // The next poll is always scheduled, so one bad list never stops the updates.
-      pollTimer = setTimeout(() => void poll(), pollMs);
+      pollTimer = setTimeout(() => (polling = poll()), pollMs);
     }
   };
 
@@ -558,7 +560,7 @@ export async function startServer(opts: {
     server.listen(opts.port, "127.0.0.1", resolve);
   });
   port = (server.address() as AddressInfo).port;
-  void poll();
+  polling = poll();
 
   return {
     url: `http://127.0.0.1:${port}`,
@@ -567,7 +569,7 @@ export async function startServer(opts: {
       closed = true;
       clearTimeout(pollTimer);
       prAbort.abort();
-      const children = Promise.all([...prRunning.values(), steward?.close()]);
+      const children = Promise.all([polling, ...prRunning.values(), steward?.close()]);
       terminals.close();
       holds.close();
       for (const res of clients) res.end();
