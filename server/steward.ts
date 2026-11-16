@@ -57,6 +57,8 @@ export function createSteward(opts: {
   let busy = false;
   // the request sent whose Stop or StopFailure hasn't come yet
   let inFlight: { pr: number; head: string; at: number } | undefined;
+  // whether the steward's last turn has ended (its Stop or StopFailure came after its last prompt or tool call)
+  let turnOver = false;
   // whether the steward named by stewardId has been seen listed
   let wasListed = false;
   let retryAt = -Infinity;
@@ -185,26 +187,31 @@ export function createSteward(opts: {
       if (!next) return;
       if (!steward) {
         if (stewardId === undefined || wasListed || Date.now() - startedAt >= LISTED_MS) starting = start().finally(() => (starting = undefined));
-      } else if (!inFlight && steward.stage !== "working" && !inLoop(steward) && steward.shortId && !cards().some((c) => c.lead === steward.id)) {
+      } else if (!inFlight && steward.stage !== "working" && (turnOver || !inLoop(steward)) && steward.shortId && !cards().some((c) => c.lead === steward.id)) {
         send(steward, next.cwd, next.pr);
       }
     },
 
     /**
-     * Notes an applied hook event: the steward's own Stop or StopFailure ends the request in
-     * flight, and a Stop's letter, when it is new since the request, is journaled as its review.
+     * Notes an applied hook event: the steward's own Stop or StopFailure ends its turn and the
+     * request in flight, and a Stop's letter, when it is new since the request, is journaled as
+     * its review.
      */
     event(event: HookEvent): void {
       const steward = lead();
-      if (!inFlight || !steward || event.agent_id !== undefined || event.session_id !== steward.id) return;
-      if (event.hook_event_name === "Stop") {
+      if (!steward || event.agent_id !== undefined || event.session_id !== steward.id) return;
+      const name = event.hook_event_name;
+      if (name === "Stop" || name === "StopFailure") turnOver = true;
+      else if (name === "UserPromptSubmit" || name === "PreToolUse") turnOver = false;
+      if (!inFlight) return;
+      if (name === "Stop") {
         const { pr, head, at } = inFlight;
         const letter = town.letters(steward.id)?.find((l) => l.from === steward.id);
         if (letter && letter.at >= at) {
           reviewed.set(key(pr, head), letter.id);
           journal?.append({ kind: "reviewed", at: Date.now(), pr, head, letter: letter.id });
         }
-      } else if (event.hook_event_name !== "StopFailure") {
+      } else if (name !== "StopFailure") {
         return;
       }
       inFlight = undefined;
