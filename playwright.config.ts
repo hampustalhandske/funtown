@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import { join } from "node:path";
 import { E2E_FAKE_DIR, FakeClaude } from "./tests/fake-claude.ts";
 
 // The web server runs this fake `claude`; the specs steer it through files in its folder.
@@ -14,7 +15,7 @@ export default defineConfig({
   webServer: {
     command: "vite build && node server/main.ts",
     url: "http://127.0.0.1:4799",
-    env: { FUNTOWN_PORT: "4799", FUNTOWN_CLAUDE: fake.path },
+    env: { FUNTOWN_PORT: "4799", FUNTOWN_CLAUDE: fake.path, FUNTOWN_JOURNAL: join(E2E_FAKE_DIR, "journal.jsonl") },
     reuseExistingServer: false,
   },
 });
