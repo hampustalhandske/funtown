@@ -15,6 +15,8 @@ const LINGER_MS = 1_000;
 const LISTED_MS = 5 * 60_000;
 
 const key = (pr: number, head: string) => `${pr}\0${head}`;
+/** Whether `lead` is stuck repeating a tool call: its turn still runs, unlike one stuck on an error. */
+const inLoop = (lead: Lead) => lead.needs === "stuck" && lead.reason?.startsWith("loop:") === true;
 
 /**
  * The steward: one background `claude` session in `dir` that pre-reviews each ready PR in
@@ -119,6 +121,7 @@ export function createSteward(opts: {
       return;
     }
     let written = false;
+    let gaveUp = false;
     let exited = false;
     const detach = () => {
       if (!exited) pty.kill();
@@ -140,12 +143,14 @@ export function createSteward(opts: {
     };
     // Output that never pauses for QUIET_MS still ends the attach here.
     const giveUp = setTimeout(() => {
+      gaveUp = true;
+      clearTimeout(timer);
       fail("attach", new Error(`claude attach ${steward.shortId} wasn't quiet for ${QUIET_MS} ms within ${readyMs} ms`));
       detach();
     }, readyMs);
     let timer: NodeJS.Timeout | undefined;
     pty.onData(() => {
-      if (written) return;
+      if (written || gaveUp) return;
       clearTimeout(timer);
       timer = setTimeout(write, QUIET_MS);
     });
@@ -155,7 +160,7 @@ export function createSteward(opts: {
       clearTimeout(timer);
       attach = undefined;
       busy = false;
-      if (!written && !closed) fail("attach", new Error(`claude attach ${steward.shortId} exited (${exitCode}) before the request was written`));
+      if (!written && !gaveUp && !closed) fail("attach", new Error(`claude attach ${steward.shortId} exited (${exitCode}) before the request was written`));
       onExited();
     });
   };
@@ -180,7 +185,7 @@ export function createSteward(opts: {
       if (!next) return;
       if (!steward) {
         if (stewardId === undefined || wasListed || Date.now() - startedAt >= LISTED_MS) starting = start().finally(() => (starting = undefined));
-      } else if (!inFlight && steward.stage !== "working" && steward.shortId && !cards().some((c) => c.lead === steward.id)) {
+      } else if (!inFlight && steward.stage !== "working" && !inLoop(steward) && steward.shortId && !cards().some((c) => c.lead === steward.id)) {
         send(steward, next.cwd, next.pr);
       }
     },
