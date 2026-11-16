@@ -9,6 +9,7 @@ import type { Town } from "./types.ts";
 import { checkVersion, execFileAsync, listAgents, startBackground } from "./agents.ts";
 import { createTerminals, isSize } from "./terminal.ts";
 import { createHolds } from "./holds.ts";
+import { morning, openJournal } from "./journal.ts";
 
 const DEFAULT_DIST = fileURLToPath(new URL("../web/dist/", import.meta.url));
 const TYPES: Record<string, string> = {
@@ -98,7 +99,8 @@ async function readJson(req: IncomingMessage, max = Infinity): Promise<{ value: 
  * request with an `Origin` header, so web pages cannot post to it. `POST /hold` (no Origin
  * either) holds a permission, question or plan as a card until `POST /answer` (page Origin
  * and token) answers it or it is released; `answerLog` (a JSONL path) gets one line per
- * closed card. `unlistedMs` (default 10 s) is how long hook data and holds wait for their
+ * closed card. `journal` (a JSONL path) gets a line per kept letter and per character that
+ * becomes stuck, and feeds `GET /morning?since=<ms>` (page token). `unlistedMs` (default 10 s) is how long hook data and holds wait for their
  * session to be listed, and holds for a page to be open.
  */
 export async function startServer(opts: {
@@ -108,6 +110,7 @@ export async function startServer(opts: {
   claude?: string;
   pollMs?: number;
   answerLog?: string;
+  journal?: string;
   unlistedMs?: number;
 }): Promise<{ url: string; claude: Town["claude"]; close(): Promise<void> }> {
   const run = opts.run ?? defaultRun;
@@ -116,7 +119,8 @@ export async function startServer(opts: {
   const dist = normalize(join(opts.distDir ?? DEFAULT_DIST, "/"));
   const version = await checkVersion(claude);
   const unlistedMs = opts.unlistedMs ?? 10_000;
-  const town = new TownState(version, unlistedMs);
+  const journal = opts.journal ? openJournal(opts.journal) : undefined;
+  const town = new TownState(version, unlistedMs, journal);
   const holds = createHolds(town, { unlistedMs, answerLog: opts.answerLog, changed: () => broadcast() });
   const terminals = createTerminals(claude);
   const clients = new Set<ServerResponse>();
@@ -300,6 +304,21 @@ export async function startServer(opts: {
         return;
       }
       res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(letters));
+      return;
+    }
+
+    if (req.method === "GET" && path === "/morning") {
+      if (!tokenOk(req.headers["x-funtown-token"])) {
+        res.writeHead(403).end();
+        return;
+      }
+      const raw = new URL(req.url ?? "/", "http://127.0.0.1").searchParams.get("since");
+      const since = raw === null || raw.trim() === "" ? NaN : Number(raw);
+      if (!Number.isFinite(since)) {
+        res.writeHead(400).end();
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(morning(journal?.read() ?? [], since)));
       return;
     }
 

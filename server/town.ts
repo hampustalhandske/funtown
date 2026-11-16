@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { basename } from "node:path";
 import type { Listed } from "./agents.ts";
+import type { Journal } from "./journal.ts";
 import type { Card, Character, House, Lead, Letter, Stage, Town } from "./types.ts";
 
 /** The hook payload fields the reducer reads. */
@@ -95,14 +97,30 @@ export class TownState {
   // session id -> its letters (its own and its subagents'), newest first
   private letterLists = new Map<string, Letter[]>();
   private letterCount = 0;
+  // unique per start, so letter ids never repeat across restarts
+  private readonly idPrefix = randomUUID();
+  // session id + agent id of the subagents whose handback report is already their letter
+  private handedBack = new Map<string, true>();
+  private readonly journal: Journal | undefined;
   private readonly claude: Town["claude"];
   private readonly unlistedMs: number;
   private readonly started = Date.now();
 
-  /** `claude` is the version check's result, carried on every snapshot; `unlistedMs` how long unlisted hook data is kept. */
-  constructor(claude: Town["claude"], unlistedMs: number) {
+  /**
+   * `claude` is the version check's result, carried on every snapshot; `unlistedMs` how long
+   * unlisted hook data is kept. With a `journal`, each kept letter and each time a character
+   * becomes stuck is appended to it, and the letters it holds are the starting letters.
+   */
+  constructor(claude: Town["claude"], unlistedMs: number, journal?: Journal) {
     this.claude = claude;
     this.unlistedMs = unlistedMs;
+    this.journal = journal;
+    const entries = journal?.read() ?? [];
+    for (const e of entries.sort((a, b) => b.at - a.at)) {
+      if (e.kind !== "letter") continue;
+      const list = this.letterLists.get(e.lead) ?? [];
+      if (list.length < MAX_LETTERS) this.letterLists.set(e.lead, [...list, e.letter]);
+    }
   }
 
   /**
@@ -135,6 +153,7 @@ export class TownState {
       else if (name !== "Notification" && name !== "SubagentStart" && name !== "SubagentStop") this.turnEnded.delete(sid);
     }
     const when = typeof at === "number" ? at : Date.now();
+    const stuckBefore = this.stuckIds(lead);
     // These events end a stuck state; any other leaves a stuck character as it is.
     const unsticks = name === "SessionStart" || name === "UserPromptSubmit" || name === "PreToolUse";
     const set = (c: Character, stage: Stage, activity: string | null, needs?: string, reason?: string): void => {
@@ -165,6 +184,11 @@ export class TownState {
         if (loop) set(target, "needs_you", activity, "stuck", `loop: ${activity ?? event.tool_name}`);
         else set(target, "working", activity);
         if (activity) target.step = activity;
+        const handback = event.tool_input?.message;
+        if (name === "PostToolUse" && event.tool_name === "SubagentHandback" && inSubagent && typeof handback === "string") {
+          this.handedBack.set(key, true);
+          this.addLetter(lead, target, handback, when, event.cwd);
+        }
         break;
       }
       case "PermissionRequest":
@@ -180,7 +204,7 @@ export class TownState {
         const busy = runningAgents(event.background_tasks);
         if (busy > 0) set(lead, "working", waitingOn(busy));
         else set(lead, "needs_you", null, "turn ended");
-        this.addLetter(lead, lead, event, when);
+        this.addLetter(lead, lead, event.last_assistant_message, when, event.cwd);
         break;
       }
       case "StopFailure":
@@ -196,10 +220,11 @@ export class TownState {
           const left = runningAgents(event.background_tasks, event.agent_id);
           set(lead, "working", left > 0 ? waitingOn(left) : null);
         }
-        this.addLetter(lead, sub, event, when);
+        if (!this.handedBack.has(key)) this.addLetter(lead, sub, event.last_assistant_message, when, event.cwd);
         break;
       }
     }
+    this.noteStuck(lead, stuckBefore, when, event.cwd);
     return true;
   }
 
@@ -217,6 +242,7 @@ export class TownState {
       lead.name = s.name || lead.name || `lead-${this.nextNumber(`${s.cwd}\0lead`)}`;
       lead.kind = s.kind === "interactive" ? "terminal" : "background";
       lead.shortId = lead.kind === "background" ? (s.id ?? null) : null;
+      const stuckBefore = this.stuckIds(lead);
       const hookIsNewer = (this.leadHeardAt.get(s.sessionId) ?? -Infinity) > askedAt;
       if (lead.needs === "stuck") {
         // stays stuck until the lead's SessionStart, UserPromptSubmit or PreToolUse
@@ -237,6 +263,7 @@ export class TownState {
       } else if (s.status === "idle") {
         this.mark(lead, "needs_you", null, Date.now(), "turn ended");
       }
+      this.noteStuck(lead, stuckBefore, Date.now(), s.cwd);
       next.set(s.sessionId, s.cwd);
     }
     for (const sid of this.listed.keys()) if (!next.has(sid)) this.forget(sid);
@@ -284,7 +311,7 @@ export class TownState {
     this.leadHeardAt.delete(sessionId);
     this.turnEnded.delete(sessionId);
     this.letterLists.delete(sessionId);
-    this.dropSession(sessionId, [this.agentCounts, this.lastAt, this.calls]);
+    this.dropSession(sessionId, [this.agentCounts, this.lastAt, this.calls, this.handedBack]);
   }
 
   /** Removes the entries of `maps` whose key starts with this session's id. */
@@ -311,9 +338,23 @@ export class TownState {
     else delete c.reason;
   }
 
-  /** Keeps the event's non-empty `last_assistant_message` as a letter from `writer` on `lead`. */
-  private addLetter(lead: Lead, writer: Character, event: HookEvent, at: number): void {
-    const message = event.last_assistant_message;
+  /** The ids of the characters of `lead` (itself and its subagents) that are stuck. */
+  private stuckIds(lead: Lead): Set<string> {
+    return new Set([lead, ...lead.subagents].filter((c) => c.needs === "stuck").map((c) => c.id));
+  }
+
+  /** Journals each character of `lead` that is stuck now and was not in `before`. */
+  private noteStuck(lead: Lead, before: Set<string>, at: number, eventCwd?: string): void {
+    const cwd = this.listed.get(lead.id) ?? eventCwd;
+    if (!this.journal || !cwd) return;
+    for (const c of [lead, ...lead.subagents]) {
+      if (c.needs !== "stuck" || before.has(c.id)) continue;
+      this.journal.append({ kind: "stuck", at, cwd, lead: lead.id, who: c.id, name: c.name, reason: c.reason ?? "error" });
+    }
+  }
+
+  /** Keeps a non-empty `message` as a letter from `writer` on `lead`, and journals it. */
+  private addLetter(lead: Lead, writer: Character, message: string | undefined, at: number, eventCwd?: string): void {
     if (typeof message !== "string" || message.trim() === "") return;
     let text = message;
     if (message.length > MAX_LETTER_TEXT) {
@@ -321,9 +362,11 @@ export class TownState {
       if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1);
       text = `${cut}…`;
     }
-    const letter: Letter = { id: `letter-${++this.letterCount}`, from: writer.id, name: writer.name, text, at };
+    const letter: Letter = { id: `letter-${this.idPrefix}-${++this.letterCount}`, from: writer.id, name: writer.name, text, at };
     this.letterLists.set(lead.id, [letter, ...(this.letterLists.get(lead.id) ?? [])].slice(0, MAX_LETTERS));
     writer.letter = at;
+    const cwd = this.listed.get(lead.id) ?? eventCwd;
+    if (cwd) this.journal?.append({ kind: "letter", at, cwd, lead: lead.id, letter });
   }
 
   private newLead(sid: string): Lead {
@@ -339,6 +382,8 @@ export class TownState {
       kind: "terminal",
       shortId: null,
     };
+    const own = this.letterLists.get(sid)?.find((l) => l.from === sid);
+    if (own) lead.letter = own.at;
     this.leads.set(sid, lead);
     return lead;
   }
