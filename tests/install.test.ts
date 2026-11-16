@@ -118,3 +118,28 @@ it("a_misspelled_settings_flag_exits_non_zero_and_writes_no_file", () => {
   expect(readdirSync(home)).toEqual([]);
   rmSync(root, { recursive: true, force: true });
 });
+
+it("install_adds_the_two_hold_entries_without_async_and_uninstall_leaves_none", () => {
+  const s = setup();
+  const after = s.run("install");
+  const holds = (name: string) =>
+    (after.hooks[name] as { matcher?: string; hooks: { type: string; command: string; timeout: number; async?: boolean }[] }[]).filter(
+      (e) => JSON.stringify(e).includes("funtown-hold.ts"),
+    );
+  const [perm, ...permMore] = holds("PermissionRequest");
+  expect(permMore).toEqual([]);
+  expect(perm.matcher).toBeUndefined();
+  expect(perm.hooks).toHaveLength(1);
+  expect(perm.hooks[0]).toMatchObject({ type: "command", timeout: 7200 });
+  expect(perm.hooks[0].command).toMatch(/^node ".*\/hooks\/funtown-hold\.ts"$/);
+  expect(perm.hooks[0].async).toBeUndefined();
+
+  const [ask, ...askMore] = holds("PreToolUse");
+  expect(askMore).toEqual([]);
+  expect(ask.matcher).toBe("AskUserQuestion|ExitPlanMode");
+  expect(ask.hooks[0]).toMatchObject({ type: "command", timeout: 7200 });
+  expect(ask.hooks[0].async).toBeUndefined();
+
+  s.run("install");
+  expect(JSON.stringify(s.run("uninstall"))).not.toContain("funtown-hold");
+});

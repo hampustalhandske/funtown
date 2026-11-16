@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Character, House, Lead, Stage, Town } from "../../server/types.ts";
+import type { Card, Character, House, Lead, Stage, Town } from "../../server/types.ts";
+import { AnswerCard } from "./AnswerCard.tsx";
 import { SessionTerminal, funtownToken } from "./Terminal.tsx";
 
 const STAGE_LABEL: Record<Stage, string> = {
@@ -54,7 +55,20 @@ function CharacterRow({
 
 type Select = (lead: string, id: string) => void;
 
-function LeadItem({ lead, onSelect }: { lead: Lead; onSelect: Select }) {
+/**
+ * Cards of `lead`, each naming its subagent when a subagent asks; with `only`, just the cards
+ * of that character. A card from a subagent the lead doesn't list yet counts as the lead's.
+ */
+function Cards({ lead, cards, only }: { lead: Lead; cards: Card[]; only?: string }) {
+  const owner = (card: Card) => (card.agent && lead.subagents.some((s) => s.id === card.agent) ? card.agent : lead.id);
+  return cards
+    .filter((card) => card.lead === lead.id && (only === undefined || owner(card) === only))
+    .map((card) => (
+      <AnswerCard key={card.id} card={card} who={card.agent ? (lead.subagents.find((s) => s.id === card.agent)?.name ?? "A subagent") : undefined} />
+    ));
+}
+
+function LeadItem({ lead, cards, onSelect }: { lead: Lead; cards: Card[]; onSelect: Select }) {
   return (
     <li className="lead">
       <CharacterRow character={lead} avatar="🧑‍💻" onSelect={(id) => onSelect(lead.id, id)} />
@@ -67,17 +81,20 @@ function LeadItem({ lead, onSelect }: { lead: Lead; onSelect: Select }) {
           ))}
         </ul>
       )}
+      <Cards lead={lead} cards={cards} />
     </li>
   );
 }
 
 function HouseCard({
   house,
+  cards,
   onSelect,
   onNew,
   notice,
 }: {
   house: House;
+  cards: Card[];
   onSelect: Select;
   onNew: (cwd: string) => Promise<string | null>;
   notice?: string;
@@ -96,7 +113,7 @@ function HouseCard({
       <h2>🏠 {house.project}</h2>
       <ul>
         {house.leads.map((lead) => (
-          <LeadItem key={lead.id} lead={lead} onSelect={onSelect} />
+          <LeadItem key={lead.id} lead={lead} cards={cards} onSelect={onSelect} />
         ))}
       </ul>
       <button type="button" onClick={start} disabled={pending}>
@@ -108,7 +125,7 @@ function HouseCard({
 }
 
 /** Details of one character: stage, step, need, its subagents (for a lead) and a button that focuses its terminal. */
-function Panel({ character, lead, onClose }: { character: Character; lead: Lead; onClose: () => void }) {
+function Panel({ character, lead, cards, onClose }: { character: Character; lead: Lead; cards: Card[]; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   useEffect(() => {
@@ -146,6 +163,7 @@ function Panel({ character, lead, onClose }: { character: Character; lead: Lead;
       <p>{STAGE_LABEL[character.stage]}</p>
       <p className="activity">Step: {character.step ?? "nothing yet"}</p>
       {character.stage === "needs_you" && character.needs && <p>waiting for you: {character.needs}</p>}
+      <Cards lead={lead} cards={cards} only={character.id} />
       {character.id === lead.id && lead.subagents.length > 0 && (
         <ul aria-label="Subagents">
           {lead.subagents.map((sub) => (
@@ -250,13 +268,14 @@ export function App() {
           <HouseCard
             key={house.cwd}
             house={house}
+            cards={town.cards}
             onSelect={(leadId, id) => setSelection({ lead: leadId, id })}
             onNew={startSession}
             notice={missing.includes(house.cwd) ? "The new session didn't appear." : undefined}
           />
         ))}
       </main>
-      {lead && selected && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} onClose={onClose} />}
+      {lead && selected && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} cards={town?.cards ?? []} onClose={onClose} />}
     </>
   );
 }

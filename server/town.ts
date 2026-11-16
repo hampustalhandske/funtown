@@ -1,16 +1,15 @@
 import { basename } from "node:path";
 import type { Listed } from "./agents.ts";
-import type { Character, House, Lead, Stage, Town } from "./types.ts";
-
-/** How long hook data waits for its session to appear in `claude agents --json`. */
-const UNLISTED_MS = 10_000;
+import type { Card, Character, House, Lead, Stage, Town } from "./types.ts";
 
 /** The hook payload fields the reducer reads. */
 export type HookEvent = {
   hook_event_name?: string;
   session_id?: string;
   tool_name?: string;
-  tool_input?: { command?: unknown };
+  tool_input?: Record<string, unknown>;
+  tool_use_id?: string;
+  cwd?: string;
   agent_id?: string;
   agent_type?: string;
   notification_type?: string;
@@ -33,10 +32,24 @@ function notificationNeed(type: string | undefined): string | null {
   return null;
 }
 
+/** A copy of `lead` with the needs of its open `cards`, or `lead` itself when it has none. */
+function withCards(lead: Lead, cards: Card[]): Lead {
+  const own = cards.filter((c) => c.lead === lead.id);
+  if (own.length === 0) return lead;
+  const shown: Lead = { ...lead, subagents: lead.subagents.map((a) => ({ ...a })) };
+  for (const card of own) {
+    // A subagent the hooks haven't named yet shows its card's need on its lead.
+    const who: Character = shown.subagents.find((a) => a.id === card.agent) ?? shown;
+    who.stage = "needs_you";
+    who.needs = card.kind;
+  }
+  return shown;
+}
+
 /**
  * Holds the sessions `claude agents --json` lists and the hook data for them. Only listed
  * sessions are on the Town; hook data for a session the list doesn't show is kept for
- * `UNLISTED_MS`, so a session that just started keeps its first events.
+ * `unlistedMs`, so a session that just started keeps its first events.
  */
 export class TownState {
   private leads = new Map<string, Lead>();
@@ -48,20 +61,26 @@ export class TownState {
   // session id + agent id ("" for the lead) -> `funtown.at` of the last event applied to it
   private lastAt = new Map<string, number>();
   private readonly claude: Town["claude"];
+  private readonly unlistedMs: number;
 
-  /** `claude` is the version check's result, carried on every snapshot. */
-  constructor(claude: Town["claude"]) {
+  /** `claude` is the version check's result, carried on every snapshot; `unlistedMs` how long unlisted hook data is kept. */
+  constructor(claude: Town["claude"], unlistedMs: number) {
     this.claude = claude;
+    this.unlistedMs = unlistedMs;
   }
 
-  /** Applies one hook event; an event for an unknown session starts its hook data. */
-  apply(event: HookEvent): void {
+  /**
+   * Applies one hook event and gives true, or false when it is ignored (no session or name,
+   * or older than the last one applied to its character). An event for an unknown session
+   * starts its hook data.
+   */
+  apply(event: HookEvent): boolean {
     const sid = event.session_id;
-    if (!sid || !event.hook_event_name) return;
+    if (!sid || !event.hook_event_name) return false;
     const at = event.funtown?.at;
     if (typeof at === "number") {
       const key = `${sid}\0${event.agent_id ?? ""}`;
-      if (at < (this.lastAt.get(key) ?? -Infinity)) return;
+      if (at < (this.lastAt.get(key) ?? -Infinity)) return false;
       this.lastAt.set(key, at);
     }
     let lead = this.leads.get(sid);
@@ -113,12 +132,13 @@ export class TownState {
         break;
       }
     }
+    return true;
   }
 
   /**
    * Makes `list` (one good `claude agents --json` result) the sessions on the Town: sets each
    * one's name, kind, short id and stage, and forgets sessions that left the list and hook data
-   * unlisted for longer than `UNLISTED_MS`.
+   * unlisted for longer than `unlistedMs`.
    */
   sync(list: Listed[]): void {
     const next = new Map<string, string>();
@@ -143,10 +163,10 @@ export class TownState {
     this.expire();
   }
 
-  /** Forgets hook data that has waited longer than `UNLISTED_MS` for its session to be listed. */
+  /** Forgets hook data that has waited longer than `unlistedMs` for its session to be listed. */
   expire(): void {
     const now = Date.now();
-    for (const [sid, at] of this.heard) if (now - at > UNLISTED_MS) this.forget(sid);
+    for (const [sid, at] of this.heard) if (now - at > this.unlistedMs) this.forget(sid);
   }
 
   /** The listed lead with this session id, or undefined. */
@@ -154,8 +174,12 @@ export class TownState {
     return this.listed.has(sessionId) ? this.leads.get(sessionId) : undefined;
   }
 
-  /** The listed sessions, one house per cwd in list order. */
-  snapshot(): Town {
+  /**
+   * The listed sessions, one house per cwd in list order, with `cards` (open cards of listed
+   * leads): while a card is open, the subagent it names, or else its lead, needs the user
+   * for the card's kind whatever the list or hooks say.
+   */
+  snapshot(cards: Card[] = []): Town {
     const houses = new Map<string, House>();
     for (const [sid, cwd] of this.listed) {
       let house = houses.get(cwd);
@@ -163,9 +187,9 @@ export class TownState {
         house = { project: basename(cwd) || cwd, cwd, leads: [] };
         houses.set(cwd, house);
       }
-      house.leads.push(this.leads.get(sid)!);
+      house.leads.push(withCards(this.leads.get(sid)!, cards));
     }
-    return { houses: [...houses.values()], claude: this.claude };
+    return { houses: [...houses.values()], cards, claude: this.claude };
   }
 
   private forget(sessionId: string): void {

@@ -188,3 +188,14 @@ describe("GET / with an unreadable index.html", () => {
     expect(res.status).toBe(500);
   });
 });
+
+describe("hook data for a session that is never listed", () => {
+  it("is_forgotten_after_unlistedMs_so_a_later_listing_does_not_inherit_its_tty", async () => {
+    const { url, fake } = await start({ unlistedMs: 200 });
+    await post(url, ev("SessionStart", {}, "s9"));
+    await new Promise((r) => setTimeout(r, 700)); // several polls past the expiry
+    fake.list([listed("s9", "/work/demo-app")]);
+    const town = await townWhere(url, (t) => leadsOf(t).length === 1);
+    expect(leadsOf(town)[0].tty).toBeNull();
+  });
+});

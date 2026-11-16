@@ -86,8 +86,8 @@ export class FakeClaude {
     this.flag("bg-fail", on);
     return this;
   }
-  /** The `--bg` calls so far: cwd and argv of each. */
-  started(): { cwd: string; argv: string[] }[] {
+  /** The `--bg` calls so far: cwd, argv and the names of the Claude and AI_AGENT variables each saw. */
+  started(): { cwd: string; argv: string[]; env: string[] }[] {
     const f = join(this.dir, "started.json");
     return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : [];
   }
