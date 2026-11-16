@@ -262,6 +262,21 @@ describe("the steward", () => {
     expect(pastes(s.fake.attachInput(st.short))).toEqual([filled(pr(7))]);
   }, 20_000);
 
+  it("a_steward_whose_looping_turn_ended_gets_the_next_request", async () => {
+    const p = paths();
+    const s = await startSteward(p, fakeWith(p, [pr(7)]));
+    const st = await stewardStarted(s.fake, p);
+    await until(() => pastes(s.fake.attachInput(st.short)).length === 1, 8000);
+    for (let i = 0; i < 5; i++) {
+      expect(await post(s.url, ev("PreToolUse", { cwd: p.stewardDir, tool_name: "Bash", tool_input: { command: "gh pr view 7" } }, st.sid))).toBe(204);
+    }
+    // The turn ends: the steward stays marked stuck, but it is no longer running.
+    await stewardStop(s.url, p, st.sid, "Squash: Fix it");
+    s.fake.prs(p.project, [pr(9), pr(7)]);
+    await until(() => pastes(s.fake.attachInput(st.short)).length === 2, 8000);
+    expect(pastes(s.fake.attachInput(st.short))).toEqual([filled(pr(7)), filled(pr(9))]);
+  }, 20_000);
+
   it("ready_keeps_naming_the_review_letter_after_twenty_more_steward_letters_and_after_a_restart", async () => {
     const p = paths();
     const fake = fakeWith(p, [pr(7)]);
