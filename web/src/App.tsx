@@ -277,7 +277,7 @@ export function App() {
           {muted ? "Unmute" : "Mute"}
         </button>
         <NotifyButton />
-        <MorningButton waiting={waiting} onOpen={openWaiting} />
+        <MorningButton waiting={waiting} town={town} onOpen={openWaiting} />
       </header>
       {restarted && (
         <div className="alert" role="alert">

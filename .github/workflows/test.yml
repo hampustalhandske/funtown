@@ -9,10 +9,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# A new push to the same pull request or branch cancels the run still going for the old one.
+# A new push to the same pull request cancels the run still going for the old one; runs on main always finish.
 concurrency:
   group: test-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

@@ -36,7 +36,13 @@ export function SessionTerminal({ lead, reply }: { lead: string; reply: MutableR
 
     reply.current = (text) => {
       if (socket.readyState !== WebSocket.OPEN) return false;
-      const clean = text.replaceAll("\x1b[200~", "").replaceAll("\x1b[201~", "");
+      let clean = text;
+      for (let before = ""; before !== clean; ) {
+        before = clean;
+        clean = clean.replaceAll("\x1b[200~", "").replaceAll("\x1b[201~", "");
+      }
+      const paste = JSON.stringify({ t: "in", d: "\x1b[200~" + clean + "\x1b[201~" });
+      if (new TextEncoder().encode(paste).length > 1_048_576) return false;
       send({ t: "in", d: "\x1b[200~" + clean + "\x1b[201~" });
       send({ t: "in", d: "\r" });
       return true;

@@ -27,7 +27,7 @@ export const LetterView = memo(function LetterView({ letter, name = letter.name 
   return (
     <article className="letter">
       <h3>
-        ✉ {name} <time dateTime={new Date(letter.at).toISOString()}>{new Date(letter.at).toLocaleString()}</time>
+        ✉ {name || letter.from.slice(0, 8)} <time dateTime={new Date(letter.at).toISOString()}>{new Date(letter.at).toLocaleString()}</time>
       </h3>
       <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={components}>
         {text}

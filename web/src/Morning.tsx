@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Morning } from "../../server/types.ts";
+import type { Morning, Town } from "../../server/types.ts";
 import { LetterView } from "./Letters.tsx";
 import { funtownToken } from "./Terminal.tsx";
 import { waited, type Waiting } from "./needs.tsx";
@@ -30,9 +30,9 @@ type Section = { project: string; cwd: string; done: Morning["projects"][number]
 
 /** One section per project with entries in the window or someone waiting now, in the order the server gave them, then waiting-only projects. */
 function sections(morning: Morning, waiting: Waiting[]): Section[] {
-  const list: Section[] = morning.projects.map((p) => ({ ...p, next: waiting.filter((w) => w.project === p.project) }));
+  const list: Section[] = morning.projects.map((p) => ({ ...p, next: waiting.filter((w) => w.cwd === p.cwd) }));
   for (const w of waiting) {
-    if (!list.some((s) => s.project === w.project)) list.push({ project: w.project, cwd: w.project, done: [], stuck: [], next: waiting.filter((x) => x.project === w.project) });
+    if (!list.some((s) => s.cwd === w.cwd)) list.push({ project: w.project, cwd: w.cwd, done: [], stuck: [], next: waiting.filter((x) => x.cwd === w.cwd) });
   }
   return list;
 }
@@ -42,7 +42,7 @@ function sections(morning: Morning, waiting: Waiting[]): Section[] {
  * per project the newest letter of each lead (Done), who got stuck (Stuck) and who waits now (Next; a click opens its panel).
  * Closing moves the window's start to now. Nothing opens or takes focus on its own.
  */
-export function MorningButton({ waiting, onOpen }: { waiting: Waiting[]; onOpen: (w: Waiting) => void }) {
+export function MorningButton({ waiting, town, onOpen }: { waiting: Waiting[]; town: Town | null; onOpen: (w: Waiting) => void }) {
   const [view, setView] = useState<{ since: number; morning: Morning | null; error: string } | null>(null);
   async function open() {
     const since = windowStart();
@@ -60,6 +60,8 @@ export function MorningButton({ waiting, onOpen }: { waiting: Waiting[]; onOpen:
     remember(Date.now());
     setView(null);
   }
+  const names: Record<string, string> = {};
+  for (const house of town?.houses ?? []) for (const lead of house.leads) for (const c of [lead, ...lead.subagents]) names[c.id] = c.name;
   const shown = view?.morning ? sections(view.morning, waiting) : [];
   return (
     <>
@@ -76,7 +78,7 @@ export function MorningButton({ waiting, onOpen }: { waiting: Waiting[]; onOpen:
               {s.done.length > 0 && (
                 <div aria-label="Done">
                   <h4>Done</h4>
-                  {s.done.map((l) => <LetterView key={l.id} letter={l} />)}
+                  {s.done.map((l) => <LetterView key={l.id} letter={l} name={names[l.from]} />)}
                 </div>
               )}
               {s.stuck.length > 0 && (

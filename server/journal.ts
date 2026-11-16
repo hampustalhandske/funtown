@@ -26,20 +26,27 @@ function parse(line: string): JournalEntry | null {
  * lines that don't parse.
  */
 export function openJournal(path: string): Journal {
+  let readFailed = false;
   const read = (): JournalEntry[] => {
     try {
+      readFailed = false;
       return readFileSync(path, "utf8").split("\n").filter(Boolean).map(parse).filter((e) => e !== null);
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") console.error(`funtown: couldn't read the journal ${path}`, err);
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+        readFailed = true;
+        console.error(`funtown: couldn't read the journal ${path}: ${(err as Error).message}`);
+      }
       return [];
     }
   };
   if (existsSync(path)) {
     const kept = read().filter((e) => e.at >= Date.now() - KEEP_MS);
-    try {
-      writeFileSync(path, kept.map((e) => `${JSON.stringify(e)}\n`).join(""));
-    } catch (err) {
-      console.error(`funtown: couldn't prune the journal ${path}`, err);
+    if (!readFailed) {
+      try {
+        writeFileSync(path, kept.map((e) => `${JSON.stringify(e)}\n`).join(""));
+      } catch (err) {
+        console.error(`funtown: couldn't prune the journal ${path}: ${(err as Error).message}`);
+      }
     }
   }
   return {
@@ -49,7 +56,7 @@ export function openJournal(path: string): Journal {
         mkdirSync(dirname(path), { recursive: true });
         appendFileSync(path, `${JSON.stringify(entry)}\n`);
       } catch (err) {
-        console.error(`funtown: couldn't write the journal ${path}`, err);
+        console.error(`funtown: couldn't write the journal ${path}: ${(err as Error).message}`);
       }
     },
   };
