@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useRef } from "react";
 import type { Card, Character, House, Lead, Stage, Town } from "../../server/types.ts";
 import { AnswerCard } from "./AnswerCard.tsx";
+import { Letters, ReplyBox } from "./Letters.tsx";
 import { SessionTerminal, funtownToken } from "./Terminal.tsx";
 import { NeedsList, NotifyButton, Toasts, useAlerts, useMute, useNextKey, waitingList, type Waiting } from "./needs.tsx";
 
@@ -42,7 +43,7 @@ function CharacterRow({
   avatar: string;
   onSelect: (id: string) => void;
 }) {
-  const { name, stage, activity, needs } = character;
+  const { name, stage, activity, needs, letter } = character;
   return (
     <button
       type="button"
@@ -56,6 +57,7 @@ function CharacterRow({
           <span className="name">{name}</span>
           {"kind" in character && <span className="kind">{character.kind === "background" ? "background" : "terminal"}</span>}
           <span className="stage">{STAGE_LABEL[stage]}</span>
+          {letter !== undefined && <span className="mail" role="img" aria-label="has a letter">✉</span>}
         </span>
         {stage === "needs_you" && needs && <span className="activity">waiting for you: {needs}</span>}
         {stage === "working" && <span className="activity">{activity ?? "thinking"}</span>}
@@ -139,6 +141,8 @@ function HouseCard({
 function Panel({ character, lead, cards, onClose }: { character: Character; lead: Lead; cards: Card[]; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const reply = useRef<((text: string) => boolean) | null>(null);
+  const stamp = [lead, ...lead.subagents].map((c) => c.letter ?? 0).join(",");
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const inTerminal = event.target instanceof Element && event.target.closest(".terminal");
@@ -184,7 +188,13 @@ function Panel({ character, lead, cards, onClose }: { character: Character; lead
           ))}
         </ul>
       )}
-      {character.id === lead.id && lead.kind === "background" && <SessionTerminal lead={lead.id} />}
+      <Letters lead={lead.id} stamp={stamp} only={character.id === lead.id ? undefined : character.id} />
+      {character.id === lead.id && lead.kind === "background" && (
+        <>
+          <ReplyBox send={(text) => reply.current?.(text) ?? false} />
+          <SessionTerminal lead={lead.id} reply={reply} />
+        </>
+      )}
       {character.id === lead.id && lead.kind === "terminal" && (
         <p className="hint">press ← or type /bg in its terminal to open it here</p>
       )}

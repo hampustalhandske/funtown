@@ -1,13 +1,17 @@
-# Runs the lint, unit and browser tests on every pull request. The tests use a fake
-# `claude`, so this needs no Claude Code install, token or secret.
+# Runs the lint, unit and browser tests on every pull request, on main after a merge, and
+# by hand. The tests use a fake `claude`, so this needs no Claude Code install, token or
+# secret.
 name: test
 
 on:
   pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
 
-# A new push to the same pull request cancels the run still going for the old one.
+# A new push to the same pull request or branch cancels the run still going for the old one.
 concurrency:
-  group: test-${{ github.event.pull_request.number }}
+  group: test-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -15,7 +19,7 @@ permissions:
 
 jobs:
   test:
-    # Funtown is macOS-only: the jump uses osascript, the hook reads ttys with ps.
+    # Funtown runs only on macOS, so its tests run there too.
     runs-on: macos-latest
     timeout-minutes: 10
     steps:
@@ -26,9 +30,20 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Cache Playwright's Chromium
+        id: chromium
         uses: actions/cache@v4
         with:
           path: ~/Library/Caches/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npx playwright install chromium
+        if: steps.chromium.outputs.cache-hit != 'true'
       - run: npm test
+      - name: Keep Playwright's report of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

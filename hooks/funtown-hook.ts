@@ -55,10 +55,11 @@ function findTty(): string | null {
 // The hook must never fail or stall Claude: any error is logged and the exit code stays 0.
 try {
   const event = JSON.parse(readFileSync(0, "utf8"));
+  const at = Date.now();
   event.funtown = {
     tty: findTty(),
     term_program: process.env.TERM_PROGRAM ?? null,
-    at: Date.now(),
+    at,
   };
   const res = await fetch(`${url}/events`, {
     method: "POST",

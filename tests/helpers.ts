@@ -121,3 +121,14 @@ export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 /** The first lead of the first Town state in which `ok(firstLead)` holds. */
 export const leadWhere = async (url: string, ok: (l: ReturnType<typeof leadsOf>[number]) => boolean) =>
   leadsOf(await townWhere(url, (t) => ok(leadsOf(t)[0])))[0];
+
+export const CWD = "/work/demo-app";
+let clock = Date.now();
+/** A hook event for `session` in CWD whose `funtown.at` is strictly later than any made before. */
+export const ev = (name: string, extra: Json = {}, session = "s1") => ({
+  hook_event_name: name,
+  session_id: session,
+  cwd: CWD,
+  funtown: { tty: "ttys009", term_program: "TestTerm", at: (clock = Math.max(clock + 1, Date.now())) },
+  ...extra,
+});

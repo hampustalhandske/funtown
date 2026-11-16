@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -30,19 +30,24 @@ function runHook(env: Record<string, string>) {
 let server: Server | undefined;
 afterEach(() => server?.close());
 
-it("hook_posts_the_event_unchanged_plus_a_funtown_block_to_events", async () => {
-  const got: { method?: string; path?: string; body: string }[] = [];
+/** A loopback server answering 204 that records each request's method, path, body and arrival time. */
+async function captureServer() {
+  const bodies: { method?: string; path?: string; body: string; receivedAt: number }[] = [];
   server = createServer((req, res) => {
     let body = "";
     req.on("data", (c) => (body += c));
     req.on("end", () => {
-      got.push({ method: req.method, path: req.url, body });
+      bodies.push({ method: req.method, path: req.url, body, receivedAt: Date.now() });
       res.statusCode = 204;
       res.end();
     });
   });
   await new Promise<void>((r) => server!.listen(0, "127.0.0.1", r));
-  const port = (server.address() as { port: number }).port;
+  return { port: (server.address() as { port: number }).port, bodies };
+}
+
+it("hook_posts_the_event_unchanged_plus_a_funtown_block_to_events", async () => {
+  const { port, bodies: got } = await captureServer();
 
   // spawnSync would block the server's event loop, so run the hook asynchronously.
   const child = spawn("node", [HOOK], {
@@ -122,4 +127,27 @@ it("hook_exits_0_and_logs_the_status_when_the_server_answers_500", async () => {
   const lines = readFileSync(log, "utf8").trimEnd().split("\n");
   expect(lines).toHaveLength(1);
   expect(lines[0]).toContain("500");
+});
+
+it("hook_stamps_at_before_its_ps_calls_so_a_slow_ps_does_not_make_the_event_late", async () => {
+  // A `ps` that hangs until the hook's 300 ms ps timeout kills it.
+  const bin = mkdtempSync(join(tmpdir(), "funtown-slow-ps-"));
+  writeFileSync(join(bin, "ps"), "#!/bin/sh\nexec sleep 2\n");
+  chmodSync(join(bin, "ps"), 0o755);
+  const { port, bodies: got } = await captureServer();
+
+  const child = spawn(process.execPath, [HOOK], {
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      FUNTOWN_URL: `http://127.0.0.1:${port}`,
+      FUNTOWN_LOG: join(mkdtempSync(join(tmpdir(), "funtown-hook-")), "hook.log"),
+    },
+  });
+  child.stdin.end(JSON.stringify(event));
+  expect(await new Promise((r) => child.on("close", r))).toBe(0);
+
+  expect(got).toHaveLength(1);
+  // Stamped before ps, `at` is at least the ps timeout older than the POST; stamped after, only milliseconds.
+  expect(got[0].receivedAt - JSON.parse(got[0].body).funtown.at).toBeGreaterThanOrEqual(250);
 });

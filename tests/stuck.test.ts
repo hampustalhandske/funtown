@@ -1,16 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { leadWhere as lead, leadsOf, listed, post, sleep, start, townWhere, type Json } from "./helpers.ts";
+import { CWD, ev, leadWhere as lead, leadsOf, listed, post, sleep, start, townWhere } from "./helpers.ts";
 
-const CWD = "/work/demo-app";
-let clock = Date.now();
-/** A hook event for session s1 whose `at` is strictly later than the one before. */
-const ev = (name: string, extra: Json = {}, session = "s1") => ({
-  hook_event_name: name,
-  session_id: session,
-  cwd: CWD,
-  funtown: { tty: "ttys009", term_program: "TestTerm", at: (clock = Math.max(clock + 1, Date.now())) },
-  ...extra,
-});
 const bash = (command: string) => ({ tool_name: "Bash", tool_input: { command } });
 
 /** A server whose list shows the busy interactive session s1 and polls every 100 ms. */
