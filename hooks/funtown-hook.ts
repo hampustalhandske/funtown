@@ -48,8 +48,8 @@ function findTty(): string | null {
 // The hook must never fail or stall Claude: any error is logged and the exit code stays 0.
 let step = "read event";
 try {
+  // Input that parses but isn't an object (e.g. `null`) fails below, still under "read event".
   const event = JSON.parse(readFileSync(0, "utf8"));
-  step = "add funtown fields";
   const at = Date.now();
   event.funtown = {
     tty: findTty(),
