@@ -22,7 +22,7 @@ Parts
   `holds.ts` turns held requests into answer cards and logs each close; `app.ts` serves.
 - `web/`: React page (Vite): sessions by project, a panel with an xterm.js terminal,
   answer cards (`AnswerCard.tsx`), the Needs you list with sound, mute, toast, system
-  notifications and the `n` key (`needs.tsx`). `tests/`: Vitest at the seams, Playwright in
+  notifications and the ⌥N key (`needs.tsx`). `tests/`: Vitest at the seams, Playwright in
   `tests/e2e/`, a fake `claude` (`fake-claude.cjs`, steered by `fake-claude.ts`).
 
 Contracts (source of truth: this list; full text, where kept, in the local
