@@ -5,7 +5,7 @@ import { join } from "node:path";
 /** One entry of `claude agents --json`. */
 export type Listed = {
   sessionId: string; id?: string; name?: string; kind: "interactive" | "background";
-  pid?: number; cwd: string; startedAt?: number; status: "busy" | "idle" | "waiting"; waitingFor?: string;
+  pid?: number; cwd: string; startedAt?: number; status: "busy" | "idle" | "waiting"; waitingFor?: string; state?: string;
 };
 
 /** A listed session; `sessionId` and `cwd` are required, the rest has fixed defaults. */

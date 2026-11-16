@@ -73,7 +73,7 @@ const answer = (s: S, body: Json, headers: Record<string, string> = { origin: s.
   fetch(`${s.url}/answer`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
 
 /** Holds `payload`, waits for its card and returns the card and the pending reply. */
-async function held(s: S, payload: Json) {
+async function held(s: { url: string }, payload: Json) {
   const before = (await cardsWhere(s.url, () => true)).length;
   const h = hold(s.url, payload);
   const cards = await cardsWhere(s.url, (c) => c.length === before + 1);

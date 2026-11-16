@@ -12,15 +12,25 @@ const STAGE_LABEL: Record<Stage, string> = {
 
 const OPENING_TIMEOUT_MS = 30_000;
 
-/** Subscribes to the server's Town stream; gives the latest Town, or null before the first. */
-function useTown(): Town | null {
+/**
+ * Subscribes to the server's Town stream; gives the latest Town (null before the first) and
+ * whether the server has restarted since the page loaded, which leaves the page's token stale.
+ */
+function useTown(): [Town | null, boolean] {
   const [town, setTown] = useState<Town | null>(null);
+  const [restarted, setRestarted] = useState(false);
   useEffect(() => {
+    let first: number | undefined;
     const source = new EventSource("/stream");
-    source.addEventListener("state", (event) => setTown(JSON.parse(event.data) as Town));
+    source.addEventListener("state", (event) => {
+      const next = JSON.parse(event.data) as Town;
+      first ??= next.started;
+      if (next.started !== first) setRestarted(true);
+      setTown(next);
+    });
     return () => source.close();
   }, []);
-  return town;
+  return [town, restarted];
 }
 
 function CharacterRow({
@@ -190,7 +200,7 @@ function Panel({ character, lead, cards, onClose }: { character: Character; lead
 
 /** The town page: one house per project, its leads and their subagents, with a list of everyone waiting for you. */
 export function App() {
-  const town = useTown();
+  const [town, restarted] = useTown();
   const [selection, setSelection] = useState<{ lead: string; id: string } | null>(null);
   const onClose = useCallback(() => setSelection(null), []);
   const lead = selection
@@ -257,6 +267,12 @@ export function App() {
         </button>
         <NotifyButton />
       </header>
+      {restarted && (
+        <div className="alert" role="alert">
+          Funtown restarted; terminals and answers work again after a reload.{" "}
+          <button type="button" onClick={() => location.reload()}>Reload</button>
+        </div>
+      )}
       {town && town.claude.problems.length > 0 && (
         <div className="alert" role="alert" aria-label="Claude version problems">
           <ul>

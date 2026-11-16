@@ -12,6 +12,8 @@ export type Listed = {
   kind: string;
   cwd: string;
   status?: string;
+  /** "failed" when the session's last turn failed. */
+  state?: string;
   waitingFor?: string;
 };
 

@@ -79,6 +79,7 @@ export class TownState {
   private turnEnded = new Set<string>();
   private readonly claude: Town["claude"];
   private readonly unlistedMs: number;
+  private readonly started = Date.now();
 
   /** `claude` is the version check's result, carried on every snapshot; `unlistedMs` how long unlisted hook data is kept. */
   constructor(claude: Town["claude"], unlistedMs: number) {
@@ -190,6 +191,9 @@ export class TownState {
       const hookIsNewer = (this.leadHeardAt.get(s.sessionId) ?? -Infinity) > askedAt;
       if (lead.needs === "stuck") {
         // stays stuck until the lead's SessionStart, UserPromptSubmit or PreToolUse
+      } else if (s.state === "failed") {
+        // the list's own record of a failed turn, which also outlives a Funtown restart
+        this.mark(lead, "needs_you", null, Date.now(), "stuck", "error");
       } else if (hookIsNewer) {
         // keep the stage the newer hook event set
       } else if (s.status === "busy" && this.turnEnded.has(s.sessionId)) {
@@ -237,7 +241,7 @@ export class TownState {
       }
       house.leads.push(withCards(this.leads.get(sid)!, cards));
     }
-    return { houses: [...houses.values()], cards, claude: this.claude };
+    return { houses: [...houses.values()], cards, started: this.started, claude: this.claude };
   }
 
   private forget(sessionId: string): void {

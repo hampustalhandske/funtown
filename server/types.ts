@@ -41,6 +41,8 @@ export type Town = {
   houses: House[];
   /** The open cards of listed leads, oldest first. */
   cards: Card[];
+  /** When this server started (Date.now()); a page that sees it change holds a stale token. */
+  started: number;
   /** The installed Claude Code's version, and one line per feature that won't work with it. */
   claude: { version: string | null; problems: string[] };
 };

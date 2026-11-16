@@ -190,3 +190,15 @@ test("the_pop_up_button_asks_for_permission_only_when_clicked_and_nothing_is_sho
   await page.getByRole("button", { name: /pop-?ups?|notifications?/i }).click();
   await expect.poll(() => page.evaluate(() => (window as unknown as { __asked?: number }).__asked ?? 0)).toBe(1);
 });
+
+test("a_state_from_a_restarted_server_shows_a_reload_banner_and_the_same_server_does_not", async ({ page }) => {
+  // Catches a page left with a stale token after a restart, whose terminals and answers fail without a word.
+  const stream = await open(page, { ...town([house("alpha", [lead({})])]), started: 1 });
+  stream.send({ ...town([house("alpha", [lead({ activity: "Bash: ls" })])]), started: 1 });
+  await expect(page.getByText("Bash: ls")).toBeVisible();
+  await expect(page.getByText(/Funtown restarted/)).toHaveCount(0);
+
+  stream.send({ ...town([house("alpha", [lead({})])]), started: 2 });
+  await expect(page.getByRole("alert").filter({ hasText: "Funtown restarted" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Reload" })).toBeVisible();
+});

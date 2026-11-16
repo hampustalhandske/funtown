@@ -14,7 +14,7 @@ const ev = (name: string, extra: Json = {}, session = "s1") => ({
 const bash = (command: string) => ({ tool_name: "Bash", tool_input: { command } });
 
 /** A server whose list shows the busy interactive session s1 and polls every 100 ms. */
-async function withBusy(status = "busy") {
+async function withBusy(status: "busy" | "idle" | "waiting" = "busy") {
   const s = await start();
   s.fake.list([listed("s1", CWD, { status })]);
   await townWhere(s.url, (t) => leadsOf(t).length === 1);
@@ -232,5 +232,29 @@ describe("turn ended while the list says busy", () => {
     await post(url, ev("PostToolUse", bash("ls")));
     await sleep(450);
     expect((await lead(url, () => true)).stage).toBe("working");
+  });
+});
+
+describe("stuck from the list", () => {
+  it("a_lead_the_list_marks_failed_shows_stuck_error_and_its_next_prompt_clears_it", async () => {
+    // Catches a failed session showing a plain "turn ended" (for example after a Funtown restart lost its StopFailure).
+    const s = await start();
+    s.fake.list([listed("s1", CWD, { status: "idle", state: "failed" })]);
+    const stuck = await lead(s.url, (l) => l?.needs === "stuck");
+    expect(stuck).toMatchObject({ stage: "needs_you", reason: "error" });
+
+    await post(s.url, ev("UserPromptSubmit"));
+    s.fake.list([listed("s1", CWD, { status: "busy", state: "working" })]);
+    await lead(s.url, (l) => l?.stage === "working");
+  });
+
+  it("every_snapshot_of_one_server_carries_the_same_started_time", async () => {
+    // Catches `started` changing between snapshots, which would show the page a restart banner for nothing.
+    const { url } = await withBusy();
+    const a = await townWhere(url, () => true);
+    await post(url, ev("PreToolUse", bash("ls")));
+    const b = await townWhere(url, (t) => leadsOf(t)[0]?.activity === "Bash: ls");
+    expect(typeof a.started).toBe("number");
+    expect(b.started).toBe(a.started);
   });
 });
