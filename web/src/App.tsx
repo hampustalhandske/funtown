@@ -200,7 +200,7 @@ function Panel({ character, lead, cards, onClose }: { character: Character; lead
         </Suspense>
         {character.id === lead.id && lead.kind === "background" && (
           <Suspense fallback={null}>
-            <ReplyBox send={(text) => reply.current?.(text) ?? "Not sent: the terminal isn't connected."} />
+            <ReplyBox send={(text) => (reply.current ? reply.current(text) : "Not sent: the terminal isn't connected.")} />
             <SessionTerminal lead={lead.id} reply={reply} />
           </Suspense>
         )}
