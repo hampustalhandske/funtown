@@ -115,7 +115,12 @@ export class TownState {
     this.claude = claude;
     this.unlistedMs = unlistedMs;
     this.journal = journal;
-    const entries = journal?.read() ?? [];
+    let entries: ReturnType<Journal["read"]> = [];
+    try {
+      entries = journal?.read() ?? [];
+    } catch (err) {
+      console.error(`funtown: couldn't restore letters from the journal: ${(err as Error).message}`);
+    }
     for (const e of entries.sort((a, b) => b.at - a.at)) {
       if (e.kind !== "letter") continue;
       const list = this.letterLists.get(e.lead) ?? [];

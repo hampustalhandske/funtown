@@ -1,10 +1,11 @@
 import { lazy, Suspense, useState } from "react";
 import type { Morning, Town } from "../../server/types.ts";
+import { LazyBoundary } from "./LazyBoundary.tsx";
+import { waited, type Waiting } from "./needs.tsx";
 import { funtownToken } from "./token.ts";
 
 // The Markdown renderer loads only when a letter is shown, keeping it out of the first page load.
 const LetterView = lazy(() => import("./Letters.tsx").then((m) => ({ default: m.LetterView })));
-import { waited, type Waiting } from "./needs.tsx";
 
 const CLOSED_KEY = "funtown-morning-closed";
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -63,7 +64,9 @@ export function MorningButton({ waiting, town, onOpen }: { waiting: Waiting[]; t
     setView(null);
   }
   const names: Record<string, string> = {};
-  for (const house of town?.houses ?? []) for (const lead of house.leads) for (const c of [lead, ...lead.subagents]) names[c.id] = c.name;
+  if (view?.morning) {
+    for (const house of town?.houses ?? []) for (const lead of house.leads) for (const c of [lead, ...lead.subagents]) if (c.name) names[c.id] = c.name;
+  }
   const shown = view?.morning ? sections(view.morning, waiting) : [];
   return (
     <>
@@ -80,7 +83,9 @@ export function MorningButton({ waiting, town, onOpen }: { waiting: Waiting[]; t
               {s.done.length > 0 && (
                 <div aria-label="Done">
                   <h4>Done</h4>
-                  <Suspense fallback={null}>{s.done.map((l) => <LetterView key={l.id} letter={l} name={names[l.from]} />)}</Suspense>
+                  <LazyBoundary>
+                    <Suspense fallback={null}>{s.done.map((l) => <LetterView key={l.id} letter={l} name={names[l.from]} />)}</Suspense>
+                  </LazyBoundary>
                 </div>
               )}
               {s.stuck.length > 0 && (
@@ -89,7 +94,7 @@ export function MorningButton({ waiting, town, onOpen }: { waiting: Waiting[]; t
                   <ul>
                     {s.stuck.map((x) => (
                       <li key={`${x.at}/${x.who}`}>
-                        {x.name}: {x.reason} <time dateTime={new Date(x.at).toISOString()}>{new Date(x.at).toLocaleString()}</time>
+                        {names[x.who] || x.name}: {x.reason} <time dateTime={new Date(x.at).toISOString()}>{new Date(x.at).toLocaleString()}</time>
                       </li>
                     ))}
                   </ul>

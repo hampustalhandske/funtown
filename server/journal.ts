@@ -7,7 +7,7 @@ const KEEP_MS = 7 * 24 * 60 * 60 * 1000;
 export type Journal = {
   /** Adds one line; a failed write logs one line to stderr and changes nothing else. */
   append(entry: JournalEntry): void;
-  /** Every entry in the file, in file order; lines that don't parse are skipped. */
+  /** Every entry in the file, in file order; lines that don't parse are skipped. An absent file gives none; any other read error throws. */
   read(): JournalEntry[];
 };
 
@@ -26,28 +26,19 @@ function parse(line: string): JournalEntry | null {
  * lines that don't parse.
  */
 export function openJournal(path: string): Journal {
-  let readFailed = false;
   const read = (): JournalEntry[] => {
     try {
-      readFailed = false;
       return readFileSync(path, "utf8").split("\n").filter(Boolean).map(parse).filter((e) => e !== null);
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-        readFailed = true;
-        console.error(`funtown: couldn't read the journal ${path}: ${(err as Error).message}`);
-      }
-      return [];
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw err;
     }
   };
-  if (existsSync(path)) {
+  try {
     const kept = read().filter((e) => e.at >= Date.now() - KEEP_MS);
-    if (!readFailed) {
-      try {
-        writeFileSync(path, kept.map((e) => `${JSON.stringify(e)}\n`).join(""));
-      } catch (err) {
-        console.error(`funtown: couldn't prune the journal ${path}: ${(err as Error).message}`);
-      }
-    }
+    if (existsSync(path)) writeFileSync(path, kept.map((e) => `${JSON.stringify(e)}\n`).join(""));
+  } catch (err) {
+    console.error(`funtown: couldn't open the journal ${path}: ${(err as Error).message}`);
   }
   return {
     read,

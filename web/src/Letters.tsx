@@ -27,7 +27,7 @@ export const LetterView = memo(function LetterView({ letter, name = letter.name 
   return (
     <article className="letter">
       <h3>
-        ✉ {name || letter.from.slice(0, 8)} <time dateTime={new Date(letter.at).toISOString()}>{new Date(letter.at).toLocaleString()}</time>
+        ✉ {name || letter.name || letter.from.slice(0, 8)} <time dateTime={new Date(letter.at).toISOString()}>{new Date(letter.at).toLocaleString()}</time>
       </h3>
       <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={components}>
         {text}
@@ -82,16 +82,16 @@ export function Letters({ lead, stamp, only, names }: { lead: string; stamp: str
   );
 }
 
-/** Reply box of a background lead: Send (or ⌘Enter) hands the text to `send`, which types it as one prompt and returns whether it went out.
- * The box clears only when it did; otherwise the text stays and an error shows. */
-export function ReplyBox({ send }: { send: (text: string) => boolean }) {
+/** Reply box of a background lead: Send (or ⌘Enter) hands the text to `send`, which types it as one prompt and gives null when it went out, else the reason.
+ * The box clears only when it went out; otherwise the text stays and the reason shows. */
+export function ReplyBox({ send }: { send: (text: string) => string | null }) {
   const [text, setText] = useState("");
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
   const submit = () => {
     if (!text.trim()) return;
-    const sent = send(text);
-    setFailed(!sent);
-    if (sent) setText("");
+    const failure = send(text);
+    setFailed(failure);
+    if (!failure) setText("");
   };
   return (
     <form className="reply" onSubmit={(e) => { e.preventDefault(); submit(); }}>
@@ -103,7 +103,7 @@ export function ReplyBox({ send }: { send: (text: string) => boolean }) {
         onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) { e.preventDefault(); submit(); } }}
       />
       <button type="submit">Send</button>
-      {failed && <p role="alert" className="error">Not sent: the terminal isn't connected.</p>}
+      {failed && <p role="alert" className="error">{failed}</p>}
     </form>
   );
 }
