@@ -1,9 +1,10 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, expect, it } from "vitest";
+import { errorLines } from "./helpers.ts";
 
 const HOOK = resolve(import.meta.dirname, "../hooks/funtown-hook.ts");
 const event = {
@@ -16,15 +17,24 @@ const event = {
   extra_unknown_key: { keep: ["me", 1] },
 };
 
-function runHook(env: Record<string, string>) {
+/** Runs the hook against `url` with `input` on stdin; resolves with its exit code, stdout, run time and error-log lines. */
+async function runHook(url: string, input = JSON.stringify(event)) {
+  const log = join(mkdtempSync(join(tmpdir(), "funtown-hook-")), "errors.log");
   const t0 = Date.now();
-  const r = spawnSync("node", [HOOK], {
-    input: JSON.stringify(event),
-    env: { ...process.env, ...env },
-    timeout: 5000,
-    encoding: "utf8",
-  });
-  return { status: r.status, ms: Date.now() - t0 };
+  // Asynchronous, as spawnSync would block a test server's event loop.
+  const child = spawn("node", [HOOK], { env: { ...process.env, FUNTOWN_URL: url, FUNTOWN_LOG: log } });
+  let out = "";
+  child.stdout.on("data", (c) => (out += c));
+  child.stdin.end(input);
+  const code = await new Promise((r) => child.on("close", r));
+  return { code, out, ms: Date.now() - t0, lines: errorLines(log) };
+}
+
+/** Starts `server` on a free loopback port and returns its URL. */
+async function listen(s: Server): Promise<string> {
+  server = s;
+  await new Promise<void>((r) => s.listen(0, "127.0.0.1", r));
+  return `http://127.0.0.1:${(s.address() as { port: number }).port}`;
 }
 
 let server: Server | undefined;
@@ -72,61 +82,58 @@ it("hook_posts_the_event_unchanged_plus_a_funtown_block_to_events", async () => 
   expect(typeof funtown.at).toBe("number");
 });
 
-it("hook_exits_0_within_1s_and_logs_one_line_when_funtown_is_not_running", () => {
-  const log = join(mkdtempSync(join(tmpdir(), "funtown-hook-")), "hook.log");
-  // Port 1 on loopback has no listener.
-  const { status, ms } = runHook({ FUNTOWN_URL: "http://127.0.0.1:1", FUNTOWN_LOG: log });
-  expect(status).toBe(0);
-  expect(ms).toBeLessThan(1000);
-  expect(readFileSync(log, "utf8").trimEnd().split("\n")).toHaveLength(1);
+it("hook_exits_0_within_1s_prints_nothing_and_logs_nothing_when_funtown_is_not_running", async () => {
+  // Port 1 on loopback has no listener: the connection is refused.
+  const r = await runHook("http://127.0.0.1:1");
+  expect(r).toMatchObject({ code: 0, out: "", lines: [] });
+  expect(r.ms).toBeLessThan(1000);
 });
 
-it("hook_exits_0_within_1s_and_logs_one_line_when_the_server_never_replies", async () => {
-  const log = join(mkdtempSync(join(tmpdir(), "funtown-hook-")), "hook.log");
+it("hook_exits_0_within_1s_and_logs_post_events_when_the_server_never_replies", async () => {
   const sockets: import("node:net").Socket[] = [];
-  server = createServer(() => {
+  const s = createServer(() => {
     // Accept the request and never answer.
   });
-  server.on("connection", (s) => sockets.push(s));
-  await new Promise<void>((r) => server!.listen(0, "127.0.0.1", r));
-  const port = (server.address() as { port: number }).port;
+  s.on("connection", (c) => sockets.push(c));
+  const url = await listen(s);
 
-  const t0 = Date.now();
-  const child = spawn("node", [HOOK], {
-    env: { ...process.env, FUNTOWN_URL: `http://127.0.0.1:${port}`, FUNTOWN_LOG: log },
-  });
-  child.stdin.end(JSON.stringify(event));
-  const code = await new Promise((r) => child.on("close", r));
-  const ms = Date.now() - t0;
-  sockets.forEach((s) => s.destroy());
+  const r = await runHook(url);
+  sockets.forEach((c) => c.destroy());
 
-  expect(code).toBe(0);
-  expect(ms).toBeLessThan(1000);
-  expect(readFileSync(log, "utf8").trimEnd().split("\n")).toHaveLength(1);
+  expect(r).toMatchObject({ code: 0, out: "" });
+  expect(r.ms).toBeLessThan(1000);
+  expect(r.lines).toEqual([expect.objectContaining({ source: "hook", step: "post /events" })]);
 });
 
-it("hook_exits_0_and_logs_the_status_when_the_server_answers_500", async () => {
-  const log = join(mkdtempSync(join(tmpdir(), "funtown-hook-")), "hook.log");
-  server = createServer((req, res) => {
-    req.resume();
-    req.on("end", () => {
-      res.statusCode = 500;
-      res.end();
-    });
-  });
-  await new Promise<void>((r) => server!.listen(0, "127.0.0.1", r));
-  const port = (server.address() as { port: number }).port;
+it("hook_exits_0_and_logs_post_events_with_the_status_when_the_server_answers_500", async () => {
+  const url = await listen(
+    createServer((req, res) => {
+      req.resume();
+      req.on("end", () => {
+        res.statusCode = 500;
+        res.end();
+      });
+    }),
+  );
+  const r = await runHook(url);
+  expect(r).toMatchObject({ code: 0, out: "" });
+  expect(r.lines).toEqual([expect.objectContaining({ source: "hook", step: "post /events" })]);
+  expect(r.lines[0].message).toContain("500");
+});
 
-  const child = spawn("node", [HOOK], {
-    env: { ...process.env, FUNTOWN_URL: `http://127.0.0.1:${port}`, FUNTOWN_LOG: log },
-  });
-  child.stdin.end(JSON.stringify(event));
-  const code = await new Promise((r) => child.on("close", r));
+it("hook_exits_0_and_logs_post_events_when_the_server_drops_the_connection", async () => {
+  const url = await listen(createServer((req) => req.socket.destroy()));
+  const r = await runHook(url);
+  expect(r).toMatchObject({ code: 0, out: "" });
+  expect(r.lines).toEqual([expect.objectContaining({ source: "hook", step: "post /events" })]);
+});
 
-  expect(code).toBe(0);
-  const lines = readFileSync(log, "utf8").trimEnd().split("\n");
-  expect(lines).toHaveLength(1);
-  expect(lines[0]).toContain("500");
+it("hook_exits_0_logs_read_event_and_posts_nothing_when_stdin_is_not_json", async () => {
+  const { port, bodies } = await captureServer();
+  const r = await runHook(`http://127.0.0.1:${port}`, "not json {");
+  expect(r).toMatchObject({ code: 0, out: "" });
+  expect(r.lines).toEqual([expect.objectContaining({ source: "hook", step: "read event" })]);
+  expect(bodies).toEqual([]);
 });
 
 it("hook_stamps_at_before_its_ps_calls_so_a_slow_ps_does_not_make_the_event_late", async () => {

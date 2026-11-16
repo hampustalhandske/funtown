@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { expect, it, vi } from "vitest";
-import { fakeClaude, leadsOf, listed, listedBg, sleep, start, townWhere, until } from "./helpers.ts";
+import { fakeClaude, leadsOf, listed, listedBg, mainEnv, sleep, start, townWhere, until } from "./helpers.ts";
 
 
 it("the_page_shows_exactly_the_listed_sessions_grouped_by_cwd_with_name_kind_and_stage", async () => {
@@ -74,7 +74,7 @@ it("start_prints_every_problem_line_the_page_shows_and_main_reads_FUNTOWN_CLAUDE
       s.close(() => res(p));
     });
   });
-  const env = { ...process.env, FUNTOWN_PORT: String(port), FUNTOWN_CLAUDE: fake.path };
+  const env = { ...mainEnv().env, FUNTOWN_PORT: String(port), FUNTOWN_CLAUDE: fake.path };
   const child = spawn("node", [resolve(import.meta.dirname, "../server/main.ts")], { env });
   let output = "";
   child.stdout.on("data", (d) => (output += d));

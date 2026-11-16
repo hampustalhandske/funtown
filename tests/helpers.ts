@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach } from "vitest";
@@ -132,3 +132,40 @@ export const ev = (name: string, extra: Json = {}, session = "s1") => ({
   funtown: { tty: "ttys009", term_program: "TestTerm", at: (clock = Math.max(clock + 1, Date.now())) },
   ...extra,
 });
+
+export type ErrorLine = { source: string; step: string; message: string };
+const ERROR_LINE = /^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z) (hook|hold|server) (.+?): (.*)$/;
+
+/**
+ * The lines of the error log at `path` (none when the file doesn't exist), each split into
+ * source, step and message. Throws on a line that is not `<ISO time> <source> <step>: <message>`.
+ */
+export function errorLines(path: string): ErrorLine[] {
+  if (!existsSync(path)) return [];
+  return readFileSync(path, "utf8").split("\n").filter(Boolean).map((line) => {
+    const m = ERROR_LINE.exec(line);
+    if (!m || new Date(m[1]).toISOString() !== m[1]) throw new Error(`not an error-log line: ${JSON.stringify(line)}`);
+    return { source: m[2], step: m[3], message: m[4] };
+  });
+}
+
+/**
+ * Paths and env for one `node server/main.ts` child: every Funtown file, and HOME, in a fresh
+ * temp folder, a fake `claude`, and port 0.
+ */
+export function mainEnv() {
+  const dir = realDir();
+  const paths = { log: join(dir, "errors.log"), run: join(dir, "running.json"), switches: join(dir, "switches.jsonl") };
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    HOME: join(dir, "home"),
+    FUNTOWN_PORT: "0",
+    FUNTOWN_CLAUDE: fakeClaude().path,
+    FUNTOWN_LOG: paths.log,
+    FUNTOWN_RUN: paths.run,
+    FUNTOWN_SWITCHES: paths.switches,
+    FUNTOWN_ANSWERS: join(dir, "answers.jsonl"),
+    FUNTOWN_JOURNAL: join(dir, "journal.jsonl"),
+  };
+  return { dir, ...paths, env };
+}
