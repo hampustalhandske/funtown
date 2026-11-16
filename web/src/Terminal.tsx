@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -8,8 +8,12 @@ export function funtownToken(): string {
   return document.querySelector<HTMLMetaElement>('meta[name="funtown-token"]')?.content ?? "";
 }
 
-/** Live terminal of one background session: an xterm.js view over the `/term` WebSocket; closing it closes the socket. */
-export function SessionTerminal({ lead }: { lead: string }) {
+/**
+ * Live terminal of one background session: an xterm.js view over the `/term` WebSocket; closing it
+ * closes the socket. `reply`, when given, is set to a function that types a text into the session
+ * as one prompt (bracketed paste, then Enter).
+ */
+export function SessionTerminal({ lead, reply }: { lead: string; reply?: MutableRefObject<((text: string) => void) | null> }) {
   const host = useRef<HTMLDivElement>(null);
   const [shared, setShared] = useState(1);
   const [closed, setClosed] = useState(false);
@@ -29,6 +33,13 @@ export function SessionTerminal({ lead }: { lead: string }) {
     });
     const socket = new WebSocket(`ws://${location.host}/term?${query}`);
     const send = (frame: object) => socket.readyState === WebSocket.OPEN && socket.send(JSON.stringify(frame));
+
+    if (reply) {
+      reply.current = (text) => {
+        send({ t: "in", d: "\x1b[200~" + text + "\x1b[201~" });
+        send({ t: "in", d: "\r" });
+      };
+    }
 
     socket.onmessage = (event) => {
       const frame = JSON.parse(String(event.data)) as { t: string; d?: string; n?: number };
@@ -51,11 +62,12 @@ export function SessionTerminal({ lead }: { lead: string }) {
     term.focus();
 
     return () => {
+      if (reply) reply.current = null;
       observer.disconnect();
       socket.close();
       term.dispose();
     };
-  }, [lead]);
+  }, [lead, reply]);
 
   return (
     <>
