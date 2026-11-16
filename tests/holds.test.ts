@@ -3,12 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Card } from "../server/types.ts";
-import { leadsOf, listed, listedBg, post, start, tokenOf, townWhere, until, type Json } from "./helpers.ts";
+import { leadsOf, listed, listedBg, post, sleep, start, tokenOf, townWhere, until, type Json } from "./helpers.ts";
 
 
 const CWD = "/work/demo-app";
 const BG = "bg111111-0000-4000-8000-000000000000";
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const aborts: AbortController[] = [];
 afterEach(() => {

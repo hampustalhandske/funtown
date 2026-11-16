@@ -2,9 +2,8 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { expect, it, vi } from "vitest";
-import { fakeClaude, leadsOf, listed, listedBg, start, townWhere, until } from "./helpers.ts";
+import { fakeClaude, leadsOf, listed, listedBg, sleep, start, townWhere, until } from "./helpers.ts";
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 it("the_page_shows_exactly_the_listed_sessions_grouped_by_cwd_with_name_kind_and_stage", async () => {
   const { url, fake } = await start();

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { stubStream } from "./stream.ts";
 
 const town = {
   claude: { version: "2.1.325", problems: [] },
@@ -25,18 +26,13 @@ const town = {
   ],
 };
 
-const sse = (t: unknown) => `retry: 50\nevent: state\ndata: ${JSON.stringify(t)}\n\n`;
-
 async function open(
   page: Page,
   jumpReply: { status: number; body?: string; delayMs?: number } = { status: 204 },
   initial: unknown = town,
 ) {
   const jumps: unknown[] = [];
-  let current: unknown = initial;
-  await page.route("**/stream", (r) =>
-    r.fulfill({ status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-cache" }, body: sse(current) }),
-  );
+  const stream = await stubStream(page, initial);
   await page.route("**/jump", async (r) => {
     jumps.push(r.request().postDataJSON());
     if (jumpReply.delayMs) await new Promise((done) => setTimeout(done, jumpReply.delayMs));
@@ -44,7 +40,7 @@ async function open(
   });
   await page.goto("/");
   /** Sets the state the stream sends on its next (quick) reconnect. */
-  return { jumps, send: (t: unknown) => void (current = t) };
+  return { jumps, send: stream.send };
 }
 
 test("clicking_a_lead_opens_a_panel_with_stage_step_need_and_its_subagents_and_escape_closes_it", async ({ page }) => {

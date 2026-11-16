@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { stubStream } from "./stream.ts";
 
 const NOW = Date.now();
 const lead = (over: Record<string, unknown>) => ({
@@ -9,7 +10,6 @@ const waiting = (id: string, name: string, since: number, over: Record<string, u
   lead({ id, name, stage: "needs_you", needs: "turn ended", since, ...over });
 const house = (project: string, leads: unknown[]) => ({ project, cwd: `/work/${project}`, leads });
 const town = (houses: unknown[], cards: unknown[] = []) => ({ claude: { version: "2.1.325", problems: [] }, houses, cards });
-const sse = (t: unknown) => `retry: 50\nevent: state\ndata: ${JSON.stringify(t)}\n\n`;
 
 /** Counts what the page asks of Web Audio and of the Notification API; `notificationPermission` is what the page is told. */
 const stubs = (permission: string) => `
@@ -35,23 +35,18 @@ const stubs = (permission: string) => `
 
 /** Opens the page on a stubbed stream whose state `send` replaces. */
 async function open(page: Page, initial: unknown, permission = "granted") {
-  let current = initial;
   await page.addInitScript(stubs(permission));
-  await page.route("**/stream", (r) =>
-    r.fulfill({ status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-cache" }, body: sse(current) }),
-  );
+  const stream = await stubStream(page, initial);
   await page.goto("/");
   await expect(page.locator("section[aria-label]").first()).toBeVisible(); // the first state is in before a test sends the next
-  return { send: (t: unknown) => void (current = t) };
+  return stream;
 }
 const queue = (page: Page) => page.getByRole("region", { name: "Needs you" });
 const rows = (page: Page) => queue(page).getByRole("button");
 const sounds = (page: Page) => page.evaluate(() => (window as unknown as { __starts: number }).__starts);
 const popups = (page: Page) =>
   page.evaluate(() => (window as unknown as { __notes: { title: string; body: string }[] }).__notes.map((n) => ({ title: n.title, body: n.body })));
-/** A subagent's panel is its lead's, or its own: either name is accepted for "lead-3"/"Explore-1". */
-const panel = (page: Page, name: string) =>
-  page.getByRole("dialog", { name: name === "lead-3" ? /^(lead-3|Explore-1) details$/ : `${name} details` });
+const panel = (page: Page, name: string) => page.getByRole("dialog", { name: `${name} details` });
 const active = (page: Page) => page.evaluate(() => `${document.activeElement?.tagName}:${(document.activeElement as HTMLInputElement | null)?.value ?? ""}`);
 
 const three = () =>
@@ -77,7 +72,7 @@ test("the_needs_you_list_has_every_waiting_character_oldest_first_and_replaces_t
   await expect(page.getByText(/sessions? need you/i)).toHaveCount(0);
 
   await rows(page).nth(1).click();
-  await expect(panel(page, "lead-3")).toBeVisible();
+  await expect(panel(page, "Explore-1")).toBeVisible();
 });
 
 test("n_opens_the_oldest_then_the_next_and_wraps_and_does_nothing_with_nothing_waiting", async ({ page }) => {
@@ -91,7 +86,7 @@ test("n_opens_the_oldest_then_the_next_and_wraps_and_does_nothing_with_nothing_w
   await page.keyboard.press("n");
   await expect(panel(page, "lead-2")).toBeVisible();
   await page.keyboard.press("n");
-  await expect(panel(page, "lead-3")).toBeVisible();
+  await expect(panel(page, "Explore-1")).toBeVisible();
   await page.keyboard.press("n");
   await expect(panel(page, "lead-1")).toBeVisible();
   await page.keyboard.press("n");
@@ -138,6 +133,8 @@ test("a_character_that_joins_plays_the_sound_shows_the_toast_and_system_pop_up_a
   await toast.click();
   await expect(panel(page, "lead-2")).toBeVisible();
 
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.evaluate(() => (window as unknown as { __notes: { click(): void }[] }).__notes[0].click());
   await expect(panel(page, "lead-2")).toBeVisible();
 });
