@@ -117,12 +117,7 @@ export class TownState {
     this.claude = claude;
     this.unlistedMs = unlistedMs;
     this.journal = journal;
-    const seen = new Set<string>();
     for (const e of [...(journal?.kept ?? [])].sort((a, b) => b.at - a.at)) {
-      if (!seen.has(e.lead)) {
-        seen.add(e.lead);
-        if (e.kind === "stuck" && e.who === e.lead) this.failedSeen.add(e.lead);
-      }
       if (e.kind !== "letter") continue;
       const list = this.letterLists.get(e.lead) ?? [];
       if (list.length < MAX_LETTERS) this.letterLists.set(e.lead, [...list, e.letter]);

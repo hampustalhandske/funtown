@@ -2,7 +2,7 @@ import { readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { startServer } from "./app.ts";
-import { defaultErrorLog, serverLogger } from "./errors.ts";
+import { defaultErrorLog, describe, serverLogger } from "./errors.ts";
 
 const errorLog = process.env.FUNTOWN_LOG ?? defaultErrorLog();
 const runFile = process.env.FUNTOWN_RUN ?? join(homedir(), ".funtown", "running.json");
@@ -11,7 +11,11 @@ const fail = (step: string, err: unknown) => {
   logError(step, err);
   process.exit(1);
 };
-const crash = (err: unknown) => fail("crash", err);
+/** An uncaught error: the full error on stderr, its message and top stack frame in the log. */
+const crash = (err: unknown) => {
+  const frame = err instanceof Error ? err.stack?.split("\n").find((l) => l.trimStart().startsWith("at ")) : undefined;
+  fail("crash", frame ? `${describe(err)} ${frame.trim()}` : err);
+};
 process.on("uncaughtException", crash);
 process.on("unhandledRejection", crash);
 

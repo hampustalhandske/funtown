@@ -10,7 +10,7 @@ import type { Town } from "./types.ts";
 import { checkVersion, execFileAsync, listAgents, startBackground } from "./agents.ts";
 import { createTerminals, isSize } from "./terminal.ts";
 import { createHolds } from "./holds.ts";
-import { serverLogger } from "./errors.ts";
+import { describe, serverLogger } from "./errors.ts";
 import { morning, openJournal } from "./journal.ts";
 
 const DEFAULT_DIST = fileURLToPath(new URL("../web/dist/", import.meta.url));
@@ -149,7 +149,7 @@ export async function startServer(opts: {
   let closed = false;
   let pollTimer: NodeJS.Timeout | undefined;
   let lastReason = "";
-  let applyFailed = false;
+  let applyReason = "";
   const poll = async () => {
     let list: Awaited<ReturnType<typeof listAgents>> | undefined;
     const askedAt = Date.now();
@@ -172,10 +172,10 @@ export async function startServer(opts: {
         town.expire();
       }
       broadcast();
-      applyFailed = false;
+      applyReason = "";
     } catch (err) {
-      if (!applyFailed) logError("poll", err);
-      applyFailed = true;
+      if (describe(err) !== applyReason) logError("poll", err);
+      applyReason = describe(err);
     } finally {
       // The next poll is always scheduled, so one bad list never stops the updates.
       pollTimer = setTimeout(() => void poll(), pollMs);
@@ -275,7 +275,7 @@ export async function startServer(opts: {
         await run(...command);
         res.writeHead(204).end();
       } catch (err) {
-        logError(`jump ${lead.termProgram} ${lead.tty}`, err);
+        logError("jump", err, `${lead.termProgram} ${lead.tty}`);
         res.writeHead(500, text).end("Couldn't open the terminal.");
       }
       return;
@@ -299,7 +299,7 @@ export async function startServer(opts: {
         const id = await startBackground(claude, cwd);
         res.writeHead(201, { "content-type": "application/json" }).end(JSON.stringify({ id }));
       } catch (err) {
-        logError(`start session ${cwd}`, err);
+        logError("start session", err, cwd);
         res.writeHead(500, text).end(`Couldn't start a session: ${(err as Error).message}`);
       }
       return;

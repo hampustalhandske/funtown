@@ -13,33 +13,37 @@ export function isRefused(err: unknown): boolean {
   return e?.code === "ECONNREFUSED" || e?.cause?.code === "ECONNREFUSED";
 }
 
-/** `err` as one line: "Name: message", with the cause's code when it has one and, for an Error, its top stack frame. */
+/** `err` as "Name: message", with the cause's code when it has one. */
 export function describe(err: unknown): string {
-  let text = String(err instanceof Error ? `${err.name}: ${err.message}` : err);
+  const text = String(err instanceof Error ? `${err.name}: ${err.message}` : err);
   const code = (err as { cause?: { code?: string } } | null)?.cause?.code;
-  if (code) text += ` (${code})`;
-  const frame = err instanceof Error ? err.stack?.split("\n").find((l) => l.trimStart().startsWith("at ")) : undefined;
-  if (frame) text += ` ${frame.trim()}`;
-  return text.replace(/\s*\n\s*/g, " ").trim();
+  return code ? `${text} (${code})` : text;
 }
 
-/** Appends `<ISO time> <source> <step>: <message>` to the file at `path`; best effort, never throws. */
-export function appendError(path: string, source: Source, step: string, err: unknown): void {
+/**
+ * Appends `<ISO time> <source> <step>: [<about>: ]<message>` to the file at `path`, the message
+ * on one line; best effort, never throws.
+ */
+export function appendError(path: string, source: Source, step: string, err: unknown, about?: string): void {
+  const message = `${about ? `${about}: ` : ""}${describe(err)}`.replace(/\s*\n\s*/g, " ").trim();
   try {
     mkdirSync(dirname(path), { recursive: true });
-    appendFileSync(path, `${new Date().toISOString()} ${source} ${step}: ${describe(err)}\n`);
+    appendFileSync(path, `${new Date().toISOString()} ${source} ${step}: ${message}\n`);
   } catch {
     // Logging is best effort.
   }
 }
 
-/** Reports a server error under `step`: the error itself on stderr and one line in the error log, when the logger has a file. */
-export type LogError = (step: string, err: unknown) => void;
+/**
+ * Reports a server error under `step`, with `about` naming what it concerns (a session, a
+ * folder): the error itself on stderr and one line in the error log, when the logger has a file.
+ */
+export type LogError = (step: string, err: unknown, about?: string) => void;
 
 /** A `LogError` for the server that writes to stderr and to the error log at `path`, when given. */
 export function serverLogger(path?: string): LogError {
-  return (step, err) => {
-    console.error(`funtown: ${step}:`, err);
-    if (path) appendError(path, "server", step, err);
+  return (step, err, about) => {
+    console.error(`funtown: ${step}${about ? ` ${about}` : ""}:`, err);
+    if (path) appendError(path, "server", step, err, about);
   };
 }

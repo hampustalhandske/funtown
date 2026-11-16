@@ -7,13 +7,13 @@ import { funtownToken } from "./token.ts";
 // The Markdown renderer loads only when a letter is shown, keeping it out of the first page load.
 const LetterView = lazy(() => import("./Letters.tsx").then((m) => ({ default: m.LetterView })));
 
-const CLOSED_KEY = "funtown-morning-closed";
+const LOADED_KEY = "funtown-morning-loaded";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** When the morning view last loaded successfully (the time its request was sent; kept in localStorage when it can be); 24 hours ago the first time. */
 function windowStart(): number {
   try {
-    const saved = Number(localStorage.getItem(CLOSED_KEY));
+    const saved = Number(localStorage.getItem(LOADED_KEY));
     if (saved > 0) return saved;
   } catch {
     // storage unavailable: fall through
@@ -23,7 +23,7 @@ function windowStart(): number {
 
 function remember(at: number): void {
   try {
-    localStorage.setItem(CLOSED_KEY, String(at));
+    localStorage.setItem(LOADED_KEY, String(at));
   } catch {
     // storage unavailable: the window then always starts 24 hours ago
   }
@@ -84,7 +84,7 @@ export function MorningButton({ waiting, town, onOpen }: { waiting: Waiting[]; t
               {s.done.length > 0 && (
                 <div aria-label="Done">
                   <h4>Done</h4>
-                  <LazyBoundary resetKey={s.cwd}>
+                  <LazyBoundary>
                     <Suspense fallback={null}>{s.done.map((l) => <LetterView key={l.id} letter={l} name={names[l.from]} />)}</Suspense>
                   </LazyBoundary>
                 </div>

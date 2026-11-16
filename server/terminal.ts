@@ -35,7 +35,7 @@ export function createTerminals(claude: string, logError: LogError) {
         try {
           pty = spawn(claude, ["attach", shortId], { name: "xterm-256color", cols, rows, env: claudeEnv() });
         } catch (err) {
-          logError(`term ${shortId}`, err);
+          logError("term", err, shortId);
           ws.close(1011, "couldn't start claude attach");
           return;
         }
@@ -50,7 +50,7 @@ export function createTerminals(claude: string, logError: LogError) {
           ws.close();
         });
         ws.on("error", (err) => {
-          logError(`term ${shortId}`, err);
+          logError("term", err, shortId);
           ws.close();
         });
         ws.on("message", (data) => {

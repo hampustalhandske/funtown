@@ -195,13 +195,13 @@ function Panel({ character, lead, cards, onClose }: { character: Character; lead
           ))}
         </ul>
       )}
-      <LazyBoundary resetKey={character.id}>
+      <LazyBoundary>
         <Suspense fallback={null}>
           <Letters lead={lead.id} stamp={stamp} names={Object.fromEntries([lead, ...lead.subagents].map((c) => [c.id, c.name]))} only={character.id === lead.id ? undefined : character.id} />
         </Suspense>
       </LazyBoundary>
       {character.id === lead.id && lead.kind === "background" && (
-        <LazyBoundary resetKey={character.id}>
+        <LazyBoundary>
           <Suspense fallback={null}>
             <ReplyBox send={(text) => (reply.current ? reply.current(text) : "Not sent: the terminal isn't connected.")} />
             <SessionTerminal lead={lead.id} reply={reply} />

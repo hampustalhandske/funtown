@@ -3,18 +3,14 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 /**
  * Catches a render error instead of unmounting the page. A failed lazy import (a rebuilt
  * server no longer has the old chunk) says the page is out of date and offers a reload; any
- * other error says the part couldn't be shown. The error clears when `resetKey` changes.
+ * other error says the part couldn't be shown.
  * Every caught error is also logged to the console.
  */
-export class LazyBoundary extends Component<{ children: ReactNode; resetKey?: string }, { error: Error | null }> {
+export class LazyBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state: { error: Error | null } = { error: null };
 
   static getDerivedStateFromError(error: Error) {
     return { error };
-  }
-
-  componentDidUpdate(prev: { resetKey?: string }) {
-    if (this.state.error && prev.resetKey !== this.props.resetKey) this.setState({ error: null });
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
