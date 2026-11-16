@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, useRef } from "react";
 import type { Card, Character, House, Lead, Stage, Town } from "../../server/types.ts";
 import { AnswerCard } from "./AnswerCard.tsx";
 import { SessionTerminal, funtownToken } from "./Terminal.tsx";
+import { NeedsList, NotifyButton, Toasts, useAlerts, useMute, useNextKey, waitingList, type Waiting } from "./needs.tsx";
 
 const STAGE_LABEL: Record<Stage, string> = {
   working: "🟢 working",
@@ -187,7 +188,7 @@ function Panel({ character, lead, cards, onClose }: { character: Character; lead
   );
 }
 
-/** The town page: one house per project, its leads and their subagents, with a banner when any lead needs you. */
+/** The town page: one house per project, its leads and their subagents, with a list of everyone waiting for you. */
 export function App() {
   const town = useTown();
   const [selection, setSelection] = useState<{ lead: string; id: string } | null>(null);
@@ -242,14 +243,19 @@ export function App() {
       return "Couldn't reach Funtown.";
     }
   }, []);
-  const waiting =
-    town?.houses.flatMap((house) =>
-      house.leads.filter((lead) => lead.stage === "needs_you").map((lead) => `${lead.name} (${house.project})`),
-    ) ?? [];
+  const waiting = waitingList(town);
+  const [muted, toggleMute] = useMute();
+  const openWaiting = useCallback((w: Waiting) => setSelection({ lead: w.lead, id: w.id }), []);
+  const { toasts, drop } = useAlerts(waiting, town !== null, muted, openWaiting);
+  useNextKey(waiting, selection && `${selection.lead}/${selection.id}`, openWaiting);
   return (
     <>
       <header>
         <h1>Funtown</h1>
+        <button type="button" aria-pressed={muted} onClick={toggleMute}>
+          {muted ? "Unmute" : "Mute"}
+        </button>
+        <NotifyButton />
       </header>
       {town && town.claude.problems.length > 0 && (
         <div className="alert" role="alert" aria-label="Claude version problems">
@@ -260,12 +266,7 @@ export function App() {
           </ul>
         </div>
       )}
-      {waiting.length > 0 && (
-        <div className="alert" role="alert">
-          🔴 {waiting.length === 1 ? "1 session needs you" : `${waiting.length} sessions need you`}:{" "}
-          {waiting.join(", ")}
-        </div>
-      )}
+      <NeedsList waiting={waiting} onOpen={openWaiting} />
       {town && town.houses.length === 0 && <p className="empty">No Claude sessions running yet.</p>}
       <main className="town">
         {town?.houses.map((house) => (
@@ -280,6 +281,13 @@ export function App() {
         ))}
       </main>
       {lead && selected && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} cards={town?.cards ?? []} onClose={onClose} />}
+      <Toasts
+        toasts={toasts}
+        onOpen={(w) => {
+          drop(w);
+          openWaiting(w);
+        }}
+      />
     </>
   );
 }
