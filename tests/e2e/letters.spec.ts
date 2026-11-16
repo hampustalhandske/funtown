@@ -48,6 +48,23 @@ async function openPanel(page: Page, name = "alpha") {
   await expect(panel(page, name)).toBeVisible();
 }
 
+/** Passes the page's `/term` socket through to the server, returning every frame the page sends. */
+async function recordTermFrames(page: Page): Promise<unknown[]> {
+  const frames: unknown[] = [];
+  await page.routeWebSocket(/\/term/, (ws) => {
+    const server = ws.connectToServer();
+    ws.onMessage((m) => {
+      frames.push(JSON.parse(String(m)));
+      server.send(m);
+    });
+    server.onMessage((m) => ws.send(m));
+  });
+  return frames;
+}
+/** The input chunks the fake `attach` echoed into the panel's terminal (as `got:<JSON string>`), joined. */
+const echoed = (page: Page) => async () =>
+  [...(await panel(page, "alpha").locator(".xterm-rows").innerText()).matchAll(/got:"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]).join("");
+
 test("a_letter_renders_markdown_headings_gfm_tables_task_lists_highlighted_code_and_safe_links", async ({ page }) => {
   await openWith(page);
   await letter(
@@ -78,6 +95,8 @@ test("a_letter_renders_markdown_headings_gfm_tables_task_lists_highlighted_code_
   await expect(box.getByRole("checkbox")).toHaveCount(2);
   await expect(box.getByRole("checkbox").first()).toBeChecked();
   await expect(box.locator("code", { hasText: "npm test" })).toBeVisible();
+  // the letter is 16 lines, so its code block and link show only after "Show all"
+  await box.getByRole("button", { name: "Show all" }).click();
   // rehype-highlight marks a highlighted block with `hljs` and wraps `const` in a keyword span
   await expect(box.locator("pre code.hljs .hljs-keyword", { hasText: "const" })).toBeVisible();
   const link = box.getByRole("link", { name: "the docs" });
@@ -151,15 +170,7 @@ test("a_letter_puts_a_mail_mark_on_its_writers_row_and_opens_no_panel", async ({
 
 for (const how of ["the Send button", "Meta+Enter"] as const) {
   test(`a_reply_sent_with_${how.replace(/\W+/g, "_")}_reaches_attach_as_one_bracketed_paste_then_enter_and_clears_the_box`, async ({ page }) => {
-    const frames: unknown[] = [];
-    await page.routeWebSocket(/\/term/, (ws) => {
-      const server = ws.connectToServer();
-      ws.onMessage((m) => {
-        frames.push(JSON.parse(String(m)));
-        server.send(m);
-      });
-      server.onMessage((m) => ws.send(m));
-    });
+    const frames = await recordTermFrames(page);
     await openWith(page, true);
     await letter("Which branch should I use?");
     await openPanel(page);
@@ -172,10 +183,7 @@ for (const how of ["the Send button", "Meta+Enter"] as const) {
 
     const paste = { t: "in", d: "\x1b[200~use main\nand rebase first\x1b[201~" };
     await expect.poll(() => frames.filter((f) => (f as { t: string }).t === "in")).toEqual([paste, { t: "in", d: "\r" }]);
-    // the fake `attach` echoes each input chunk as got:<JSON string>
-    const echoed = async () =>
-      [...(await p.locator(".xterm-rows").innerText()).matchAll(/got:"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]).join("");
-    await expect.poll(echoed).toBe(JSON.stringify(paste.d + "\r").slice(1, -1));
+    await expect.poll(echoed(page)).toBe(JSON.stringify(paste.d + "\r").slice(1, -1));
     await expect(reply).toHaveValue("");
   });
 }
@@ -201,4 +209,80 @@ test("a_letter_arriving_leaves_focus_and_a_draft_reply_where_they_were", async (
   await expect(letters(page, "alpha")).toContainText("Second letter.");
   await expect(reply).toBeFocused();
   await expect(reply).toHaveValue("half a thought");
+});
+
+test("a_reply_containing_the_paste_end_sequence_reaches_attach_as_one_bracketed_paste_with_it_removed", async ({ page }) => {
+  const frames = await recordTermFrames(page);
+  await openWith(page, true);
+  await openPanel(page);
+  const p = panel(page, "alpha");
+  await expect(p.locator(".xterm-rows")).toContainText(`attached ${sid.slice(0, 8)}`);
+  await p.getByRole("textbox", { name: "Reply" }).fill("yes\x1b[201~ls\nthen stop");
+  await p.getByRole("button", { name: "Send" }).click();
+
+  const paste = { t: "in", d: "\x1b[200~yesls\nthen stop\x1b[201~" };
+  await expect.poll(() => frames.filter((f) => (f as { t: string }).t === "in")).toEqual([paste, { t: "in", d: "\r" }]);
+  await expect.poll(echoed(page)).toBe(JSON.stringify(paste.d + "\r").slice(1, -1));
+});
+
+/** Makes every `/term` socket the page opens stay connecting forever, as a stand-in WebSocket that never opens. */
+const neverConnects = (page: Page) =>
+  page.addInitScript(() => {
+    window.WebSocket = new Proxy(window.WebSocket, {
+      construct(Real, args: [string | URL, (string | string[])?]) {
+        if (!String(args[0]).includes("/term")) return Reflect.construct(Real, args);
+        return Object.assign(new EventTarget(), {
+          url: String(args[0]),
+          readyState: 0,
+          send() {
+            throw new DOMException("Still in CONNECTING state.", "InvalidStateError");
+          },
+          close() {},
+        });
+      },
+    });
+  });
+/** Answers every `/term` socket the page opens by closing it at once. */
+const closesAtOnce = (page: Page) => page.routeWebSocket(/\/term/, (ws) => ws.close());
+
+for (const [how, socket] of [["not_yet_connected", neverConnects], ["closed", closesAtOnce]] as const) {
+  test(`send_while_the_terminal_socket_is_${how}_keeps_the_text_and_shows_an_alert`, async ({ page }) => {
+    await socket(page);
+    await openWith(page, true);
+    await openPanel(page);
+    const p = panel(page, "alpha");
+    await expect(p.getByRole("alert")).toHaveCount(0);
+    const reply = p.getByRole("textbox", { name: "Reply" });
+    await reply.fill("use main");
+    await page.waitForTimeout(200); // let a closing socket finish closing before Send
+    await p.getByRole("button", { name: "Send" }).click();
+    await expect(p.getByRole("alert")).toBeVisible();
+    await expect(reply).toHaveValue("use main");
+  });
+}
+
+test("a_letters_request_failing_with_500_shows_an_error_line_not_an_empty_panel", async ({ page }) => {
+  await page.route("**/letters?**", (r) => r.fulfill({ status: 500, body: "boom" }));
+  await openWith(page);
+  await letter("You will not see this.");
+  await openPanel(page);
+  await expect(panel(page, "alpha").getByRole("alert")).toBeVisible();
+});
+
+test("a_letter_over_12_lines_shows_its_first_12_until_show_all_and_a_short_one_has_no_button", async ({ page }) => {
+  await openWith(page);
+  const lines = (n: number, tag: string) => Array.from({ length: n }, (_, i) => `${tag} line ${i + 1}`).join("\n");
+  await letter(lines(5, "short"));
+  await letter(lines(30, "long"));
+  await openPanel(page);
+  const box = letters(page, "alpha");
+  await expect(box).toContainText("short line 5");
+  await expect(box).toContainText("long line 12");
+  await expect(box).not.toContainText("long line 13");
+  // one button: the long letter's, none for the short one
+  await expect(box.getByRole("button", { name: "Show all" })).toHaveCount(1);
+  await box.getByRole("button", { name: "Show all" }).click();
+  await expect(box).toContainText("long line 30");
+  await expect(box.getByRole("button", { name: "Show less" })).toHaveCount(1);
+  await expect(box.getByRole("button", { name: "Show all" })).toHaveCount(0);
 });

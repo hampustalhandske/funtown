@@ -30,19 +30,24 @@ function runHook(env: Record<string, string>) {
 let server: Server | undefined;
 afterEach(() => server?.close());
 
-it("hook_posts_the_event_unchanged_plus_a_funtown_block_to_events", async () => {
-  const got: { method?: string; path?: string; body: string }[] = [];
+/** A loopback server answering 204 that records each request's method, path, body and arrival time. */
+async function captureServer() {
+  const bodies: { method?: string; path?: string; body: string; receivedAt: number }[] = [];
   server = createServer((req, res) => {
     let body = "";
     req.on("data", (c) => (body += c));
     req.on("end", () => {
-      got.push({ method: req.method, path: req.url, body });
+      bodies.push({ method: req.method, path: req.url, body, receivedAt: Date.now() });
       res.statusCode = 204;
       res.end();
     });
   });
   await new Promise<void>((r) => server!.listen(0, "127.0.0.1", r));
-  const port = (server.address() as { port: number }).port;
+  return { port: (server.address() as { port: number }).port, bodies };
+}
+
+it("hook_posts_the_event_unchanged_plus_a_funtown_block_to_events", async () => {
+  const { port, bodies: got } = await captureServer();
 
   // spawnSync would block the server's event loop, so run the hook asynchronously.
   const child = spawn("node", [HOOK], {
@@ -129,18 +134,7 @@ it("hook_stamps_at_before_its_ps_calls_so_a_slow_ps_does_not_make_the_event_late
   const bin = mkdtempSync(join(tmpdir(), "funtown-slow-ps-"));
   writeFileSync(join(bin, "ps"), "#!/bin/sh\nexec sleep 2\n");
   chmodSync(join(bin, "ps"), 0o755);
-  const got: { at: number; receivedAt: number }[] = [];
-  server = createServer((req, res) => {
-    let body = "";
-    req.on("data", (c) => (body += c));
-    req.on("end", () => {
-      got.push({ at: JSON.parse(body).funtown.at, receivedAt: Date.now() });
-      res.statusCode = 204;
-      res.end();
-    });
-  });
-  await new Promise<void>((r) => server!.listen(0, "127.0.0.1", r));
-  const port = (server.address() as { port: number }).port;
+  const { port, bodies: got } = await captureServer();
 
   const child = spawn(process.execPath, [HOOK], {
     env: {
@@ -155,5 +149,5 @@ it("hook_stamps_at_before_its_ps_calls_so_a_slow_ps_does_not_make_the_event_late
 
   expect(got).toHaveLength(1);
   // Stamped before ps, `at` is at least the ps timeout older than the POST; stamped after, only milliseconds.
-  expect(got[0].receivedAt - got[0].at).toBeGreaterThanOrEqual(250);
+  expect(got[0].receivedAt - JSON.parse(got[0].body).funtown.at).toBeGreaterThanOrEqual(250);
 });

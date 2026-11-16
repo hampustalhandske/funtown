@@ -1,17 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { leadWhere, leadsOf, listed, post, sleep, start, tokenOf, townWhere, type Json } from "./helpers.ts";
+import { CWD, ev, leadWhere, leadsOf, listed, post, sleep, start, tokenOf, townWhere, type Json } from "./helpers.ts";
 import type { Letter } from "../server/types.ts";
 
-const CWD = "/work/demo-app";
-let clock = Date.now();
-/** A hook event for `session` whose `funtown.at` is strictly later than the one before. */
-const ev = (name: string, extra: Json = {}, session = "s1") => ({
-  hook_event_name: name,
-  session_id: session,
-  cwd: CWD,
-  funtown: { tty: "ttys009", term_program: "TestTerm", at: (clock = Math.max(clock + 1, Date.now())) },
-  ...extra,
-});
 const sub = { agent_id: "x1", agent_type: "Explore" };
 
 /** A server listing interactive sessions `ids`, with a getter for GET /letters that sends the page token. */
@@ -46,7 +36,6 @@ describe("letters from Stop and SubagentStop", () => {
     const got = (await res.json()) as Letter[];
     expect(got).toHaveLength(1);
     expect(got[0]).toMatchObject({ from: "s1", name: "s1", text: "## Done\n\nAll **green**.", at: stop.funtown.at });
-    expect(typeof got[0].id).toBe("string");
     expect((await leadWhere(s.url, (l) => l?.letter !== undefined)).letter).toBe(stop.funtown.at);
   });
 
@@ -90,14 +79,24 @@ describe("letters from Stop and SubagentStop", () => {
     expect(new Set(got.map((l) => l.id)).size).toBe(20);
   });
 
-  it("a_message_over_64_kb_is_cut_and_ends_with_an_ellipsis", async () => {
+  it("a_message_over_65536_units_is_cut_to_65536_ending_in_an_ellipsis_and_one_of_exactly_65536_is_kept_whole", async () => {
     const s = await withListed("s1");
-    await s.send(ev("Stop", { last_assistant_message: "a".repeat(70_000) }));
+    await s.send(
+      ev("Stop", { last_assistant_message: "a".repeat(65_537) }),
+      ev("Stop", { last_assistant_message: "b".repeat(65_536) }),
+    );
+    const [whole, cut] = await s.letters();
+    expect(cut.text).toBe("a".repeat(65_535) + "…");
+    expect(whole.text).toBe("b".repeat(65_536));
+  });
+
+  it("a_cut_that_falls_inside_an_emoji_drops_the_whole_emoji_and_leaves_no_lone_surrogate", async () => {
+    const s = await withListed("s1");
+    // "😀" is two UTF-16 units at 65,534-65,535; keeping 65,535 units plus "…" would split it.
+    await s.send(ev("Stop", { last_assistant_message: "a".repeat(65_534) + "😀" + "tail" }));
     const [letter] = await s.letters();
-    expect(letter.text.endsWith("…")).toBe(true);
-    expect(letter.text.length).toBeLessThanOrEqual(64 * 1024);
-    expect(letter.text.length).toBeGreaterThan(60_000);
-    expect(letter.text.slice(0, -1)).toMatch(/^a+$/);
+    expect(letter.text).toBe("a".repeat(65_534) + "…");
+    expect(letter.text).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
   });
 
   it("a_lead_that_leaves_the_list_takes_its_letters_with_it", async () => {
@@ -121,7 +120,7 @@ describe("GET /letters", () => {
     const s = await withListed("s1");
     await s.send(ev("Stop", { last_assistant_message: "secret plan" }));
 
-    for (const headers of [{}, { "x-funtown-token": "0".repeat(32) }]) {
+    for (const headers of [{}, { "x-funtown-token": "0".repeat(32) }] as Record<string, string>[]) {
       const res = await s.get("s1", headers);
       expect(res.status).toBe(403);
       expect(await res.text()).not.toContain("secret plan");
@@ -132,18 +131,36 @@ describe("GET /letters", () => {
 });
 
 describe("a lead whose turn ends while its subagents still work", () => {
+  const x2 = { agent_id: "x2", agent_type: "Explore" };
+  /** A `background_tasks` entry. */
+  const task = (id: string, status: string, type = "subagent") => ({ id, type, status });
+
   /** s1 listed busy, with subagents x1 and x2 started and still working. */
   async function withWorkingSubagents() {
     const s = await withListed("s1");
     s.fake.list([listed("s1", CWD, { status: "busy" })]);
     await leadWhere(s.url, (l) => l?.stage === "working");
-    await s.send(ev("SubagentStart", sub), ev("SubagentStart", { agent_id: "x2", agent_type: "Explore" }));
+    await s.send(ev("SubagentStart", sub), ev("SubagentStart", x2));
     return s;
   }
 
-  it("stays_working_waiting_on_its_agents_out_of_needs_you_and_still_keeps_its_letter", async () => {
+  /** s1 waiting on x1 and x2 after a Stop listing both as running. */
+  async function waitingOnTwo() {
     const s = await withWorkingSubagents();
-    await s.send(ev("Stop", { last_assistant_message: "Waiting for the explorers." }));
+    await s.send(ev("Stop", { last_assistant_message: "Waiting for the explorers.", background_tasks: [task("x1", "running"), task("x2", "running")] }));
+    await leadWhere(s.url, (l) => l?.activity === "waiting on 2 agents");
+    return s;
+  }
+
+  it("a_stop_listing_running_or_pending_subagent_tasks_keeps_it_working_waiting_on_them_out_of_needs_you_with_its_letter", async () => {
+    const s = await withWorkingSubagents();
+    await s.send(
+      ev("Stop", {
+        last_assistant_message: "Waiting for the explorers.",
+        // counted: x1 running, x2 pending; not counted: a finished subagent and a running shell task
+        background_tasks: [task("x1", "running"), task("x2", "pending"), task("x0", "completed"), task("b1", "running", "shell")],
+      }),
+    );
     const lead = await leadWhere(s.url, (l) => l?.activity === "waiting on 2 agents");
     expect(lead.stage).toBe("working");
     expect(lead.needs).toBeUndefined();
@@ -154,24 +171,34 @@ describe("a lead whose turn ends while its subagents still work", () => {
     expect(await leadWhere(s.url, () => true)).toMatchObject({ stage: "working", activity: "waiting on 2 agents" });
   });
 
-  it("its_next_stop_with_no_working_subagents_ends_the_turn", async () => {
+  it("a_stop_without_background_tasks_ends_the_turn_even_while_a_subagent_row_still_shows_working", async () => {
     const s = await withWorkingSubagents();
-    await s.send(ev("Stop"));
-    await leadWhere(s.url, (l) => l?.activity === "waiting on 2 agents");
-    await s.send(
-      ev("SubagentStop", { ...sub, last_assistant_message: "x1 done" }),
-      ev("SubagentStop", { agent_id: "x2", agent_type: "Explore", last_assistant_message: "x2 done" }),
-      ev("Stop", { last_assistant_message: "All in." }),
-    );
+    await s.send(ev("Stop", { last_assistant_message: "Interrupted." }));
     const lead = await leadWhere(s.url, (l) => l?.stage === "needs_you");
-    expect(lead).toMatchObject({ needs: "turn ended" });
+    expect(lead).toMatchObject({ needs: "turn ended", activity: null });
     expect(typeof lead.since).toBe("number");
+    expect(lead.subagents.map((a) => a.stage)).toEqual(["working", "working"]);
   });
 
-  it("a_list_poll_saying_idle_ends_the_turn_even_while_a_subagent_still_shows_working", async () => {
-    const s = await withWorkingSubagents();
-    await s.send(ev("Stop"));
-    await leadWhere(s.url, (l) => l?.activity === "waiting on 2 agents");
+  it("each_subagent_stop_recounts_from_its_own_tasks_leaving_itself_out_and_at_0_the_lead_works_with_no_activity_until_its_next_stop", async () => {
+    const s = await waitingOnTwo();
+    // x1's own task still reads running in its SubagentStop; it must not count itself
+    await s.send(ev("SubagentStop", { ...sub, last_assistant_message: "x1 done", background_tasks: [task("x1", "running"), task("x2", "running")] }));
+    expect(await leadWhere(s.url, (l) => l?.activity === "waiting on 1 agent")).toMatchObject({ stage: "working" });
+
+    await s.send(ev("SubagentStop", { ...x2, last_assistant_message: "x2 done", background_tasks: [task("x2", "running")] }));
+    const idle = await leadWhere(s.url, (l) => l?.activity === null);
+    expect(idle.stage).toBe("working");
+    expect(idle.needs).toBeUndefined();
+
+    await s.send(ev("Stop", { last_assistant_message: "All in." }));
+    const ended = await leadWhere(s.url, (l) => l?.stage === "needs_you");
+    expect(ended).toMatchObject({ needs: "turn ended", activity: null });
+    expect(typeof ended.since).toBe("number");
+  });
+
+  it("a_list_poll_saying_idle_ends_the_turn_of_a_lead_still_waiting_on_agents", async () => {
+    const s = await waitingOnTwo();
     s.fake.list([listed("s1", CWD, { status: "idle" })]);
     const lead = await leadWhere(s.url, (l) => l?.stage === "needs_you");
     expect(lead.needs).toBe("turn ended");

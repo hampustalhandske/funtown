@@ -53,7 +53,8 @@ describe("step in the Town state", () => {
     const town = await townWhere(url, (t) => leadsOf(t)[0].subagents[0]?.step === "Read");
     const lead = leadsOf(town)[0];
     expect(lead.step).toBe("Bash: npm test");
-    expect(lead.activity).toBe("waiting on 1 agent"); // x1 is still working, so the lead waits on it
+    // the Stop lists no background tasks, so the turn ends though x1 still shows working
+    expect(lead).toMatchObject({ stage: "needs_you", needs: "turn ended", activity: null });
     expect(lead.subagents[0].step).toBe("Read");
   });
 });
