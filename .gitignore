@@ -16,3 +16,4 @@ playwright-report/
 .claude/settings.local.json
 .claude/never-push
 .claude/charter.approved
+.claude/budget.approved
