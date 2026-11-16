@@ -1,4 +1,4 @@
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -20,6 +20,26 @@ export const listedBg = (sessionId: string, cwd: string, over: Partial<Listed> =
 /** Where the e2e web server's fake `claude` lives, so the config and the specs share it. */
 export const E2E_FAKE_DIR = join(tmpdir(), "funtown-e2e-claude");
 
+const SOURCE = join(import.meta.dirname, "fake-claude.cjs");
+
+/** True when `path` holds the current fake script. */
+const isCurrent = (path: string) => existsSync(path) && readFileSync(path, "utf8") === readFileSync(SOURCE, "utf8");
+
+/**
+ * The one executable copy of the fake in this temp folder. Every installed fake is a hard link
+ * to it: macOS checks each new executable file the first time it runs, which takes about a
+ * second (more under load), and a link to an already checked file skips that check.
+ */
+function master(): string {
+  const path = join(tmpdir(), "funtown-fake-claude.cjs");
+  if (isCurrent(path)) return path;
+  const tmp = `${path}.${process.pid}.tmp`; // unique per process, so parallel workers do not clash
+  copyFileSync(SOURCE, tmp);
+  chmodSync(tmp, 0o755);
+  renameSync(tmp, path);
+  return path;
+}
+
 /** A fake `claude` executable in a folder; the tests steer it through files in that folder. */
 export class FakeClaude {
   /** Path of the executable to pass as `claude`. */
@@ -33,15 +53,14 @@ export class FakeClaude {
   static create(): FakeClaude {
     return FakeClaude.install(mkdtempSync(join(tmpdir(), "funtown-fake-claude-")));
   }
-  /** Copies the fake into `dir` (made if missing). */
+  /** Puts the fake into `dir` (made if missing) as a hard link to this temp folder's one copy. */
   static install(dir: string): FakeClaude {
     mkdirSync(dir, { recursive: true });
     const f = new FakeClaude(dir);
-    const src = join(import.meta.dirname, "fake-claude.cjs");
-    if (existsSync(f.path) && readFileSync(f.path, "utf8") === readFileSync(src, "utf8")) return f;
+    if (isCurrent(f.path)) return f;
     const tmp = `${f.path}.${process.pid}.tmp`; // unique per process, so parallel installs do not clash
-    copyFileSync(src, tmp);
-    chmodSync(tmp, 0o755);
+    rmSync(tmp, { force: true });
+    linkSync(master(), tmp);
     renameSync(tmp, f.path);
     return f;
   }

@@ -2,6 +2,7 @@
 
 One line per change, newest first.
 
+- 2026-11-16 17:50 · Tests no longer time out at random and leave nothing in the temp folder: every fake `claude` is a link to one copy, and each run removes its own temp folder.
 - 2026-11-16 15:35 · Letters: a session's end-of-turn message and each subagent's result show in its panel as rendered Markdown (12 lines, then Show all), with a reply box for background sessions; a lead whose agents still run shows "waiting on N agents", not "turn ended". CI also runs on main.
 - 2026-11-16 15:10 · The page offers a reload after Funtown restarts (its terminals failed silently before), and a session Claude lists as failed shows stuck.
 - 2026-11-16 15:02 · Pull requests run the lint, unit and browser tests on GitHub Actions (macOS, fake `claude`, no secrets).
