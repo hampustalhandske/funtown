@@ -141,7 +141,7 @@ function HouseCard({
 function Panel({ character, lead, cards, onClose }: { character: Character; lead: Lead; cards: Card[]; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const reply = useRef<((text: string) => void) | null>(null);
+  const reply = useRef<((text: string) => boolean) | null>(null);
   const stamp = [lead, ...lead.subagents].map((c) => c.letter ?? 0).join(",");
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -191,7 +191,7 @@ function Panel({ character, lead, cards, onClose }: { character: Character; lead
       <Letters lead={lead.id} stamp={stamp} only={character.id === lead.id ? undefined : character.id} />
       {character.id === lead.id && lead.kind === "background" && (
         <>
-          <ReplyBox send={(text) => reply.current?.(text)} />
+          <ReplyBox send={(text) => reply.current?.(text) ?? false} />
           <SessionTerminal lead={lead.id} reply={reply} />
         </>
       )}
