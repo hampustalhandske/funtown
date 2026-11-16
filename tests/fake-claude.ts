@@ -88,7 +88,7 @@ export class FakeClaude {
   }
   /** Empties the list and the `--bg` record and clears every failure switch. */
   reset(): this {
-    for (const n of ["started.json", "prs.json", "pr-calls.jsonl", "list-fail", "version-fail", "bg-fail", "bg-unlisted", "attach-chatty", "list-delay", "list-asks"]) rmSync(join(this.dir, n), { force: true });
+    for (const n of ["started.json", "prs.json", "pr-calls.jsonl", "list-fail", "version-fail", "bg-fail", "bg-unlisted", "attach-chatty", "attach-sticky", "list-delay", "list-asks"]) rmSync(join(this.dir, n), { force: true });
     return this.list([]);
   }
   /** Sets what `agents --json` prints. */
@@ -134,6 +134,11 @@ export class FakeClaude {
   /** Makes `attach` print something every 100 ms, so its output never pauses. */
   chattyAttach(on = true): this {
     this.flag("attach-chatty", on);
+    return this;
+  }
+  /** Makes `attach` exit only a second after it is hung up on, as a slow terminal might. */
+  stickyAttach(on = true): this {
+    this.flag("attach-sticky", on);
     return this;
   }
   /** The `--bg` calls so far: cwd, argv and the names of the Claude and AI_AGENT variables each saw. */

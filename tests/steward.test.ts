@@ -232,6 +232,36 @@ describe("the steward", () => {
     expect(pastes(fake.attachInput(st.short)).length + stewardLines(p).length).toBeGreaterThan(0);
   }, 20_000);
 
+  it("an_attach_given_up_at_the_ready_limit_writes_nothing_while_it_is_still_exiting", async () => {
+    const p = paths();
+    // The attach prints once, so its quiet write would come at 500 ms; the limit (300 ms) comes
+    // first, and the attach takes a second to exit after it is hung up on.
+    const fake = fakeWith(p, [pr(7)]).stickyAttach();
+    await startSteward(p, fake, { stewardReadyMs: 300 });
+    const st = await stewardStarted(fake, p);
+    await until(() => fake.attachPids(st.short).length > 0, 8000);
+    const [first] = fake.attachPids(st.short);
+    await until(() => gone(first), 5000);
+    expect(fake.attachInput(st.short)).toBe("");
+    expect(stewardLines(p).filter((l) => l.message.includes("within 300 ms"))).toHaveLength(1);
+  }, 20_000);
+
+  it("no_request_is_pasted_while_the_steward_is_stuck_in_a_loop_mid_turn", async () => {
+    const p = paths();
+    const s = await startSteward(p, fakeWith(p, [pr(7)]), { stewardAnswerMs: 300 });
+    const st = await stewardStarted(s.fake, p);
+    await until(() => pastes(s.fake.attachInput(st.short)).length === 1, 8000);
+    // Five identical tool calls: the steward's turn is still running, stuck in a loop.
+    for (let i = 0; i < 5; i++) {
+      expect(await post(s.url, ev("PreToolUse", { cwd: p.stewardDir, tool_name: "Bash", tool_input: { command: "gh pr view 7" } }, st.sid))).toBe(204);
+    }
+    s.fake.prs(p.project, [pr(9), pr(7)]);
+    await townWhere(s.url, (t) => reviewOf(t, p, 9)?.state === "queued");
+    await until(() => stewardLines(p).some((l) => l.message.startsWith("no answer to #7 after ")), 4000);
+    await sleep(1500); // past the answer limit, several polls with #9 due
+    expect(pastes(s.fake.attachInput(st.short))).toEqual([filled(pr(7))]);
+  }, 20_000);
+
   it("ready_keeps_naming_the_review_letter_after_twenty_more_steward_letters_and_after_a_restart", async () => {
     const p = paths();
     const fake = fakeWith(p, [pr(7)]);

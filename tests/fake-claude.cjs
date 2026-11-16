@@ -5,7 +5,8 @@
 //   what list.json held when it was asked) and list-asks (one character per `agents --json`
 //   call). `--bg` appends (cwd, argv, CLAUDE*/AI_AGENT variable names) to started.json and lists a new background session (none
 //   with bg-unlisted); `attach <id>` echoes every input chunk as `got:<JSON string>` and appends it to attach-<id>.input, and
-//   with attach-chatty also prints a dot every 100 ms, so its output never pauses.
+//   with attach-chatty also prints a dot every 100 ms, so its output never pauses, and with
+//   attach-sticky outlives a hangup by a second.
 // It also stands in for `gh`: `pr list ...` appends (cwd, argv) to pr-calls.jsonl and prints
 //   prs.json's list for its cwd (`[]` when none is set; a null entry fails like gh outside a repo).
 const fs = process.getBuiltinModule("fs");
@@ -68,6 +69,7 @@ if (argv[0] === "--version") {
   out(`attached ${id} TERM=${process.env.TERM} size:${size()} env:[${leaked.join(",")}]\r\n`);
   process.stdout.on("resize", () => out(`size:${size()}\r\n`));
   if (fs.existsSync(file("attach-chatty"))) setInterval(() => out("."), 100);
+  if (fs.existsSync(file("attach-sticky"))) process.on("SIGHUP", () => setTimeout(() => process.exit(0), 1000));
   process.stdin.on("data", (d) => {
     fs.appendFileSync(file(`attach-${id}.input`), d);
     const s = d.toString();
