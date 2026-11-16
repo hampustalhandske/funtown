@@ -10,6 +10,7 @@ const EVENTS = [
   "PermissionRequest",
   "Notification",
   "Stop",
+  "StopFailure",
   "SubagentStart",
   "SubagentStop",
 ];

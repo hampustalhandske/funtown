@@ -6,6 +6,10 @@ export type Character = {
   activity: string | null;
   step: string | null;
   needs?: string;
+  /** Date.now() (server or hook clock) when it began waiting; set while stage is needs_you. */
+  since?: number;
+  /** Why it is stuck, when needs is "stuck": "rate limit", "server error", "loop: Bash: npm test", ... */
+  reason?: string;
 };
 export type Lead = Character & {
   tty: string | null;
