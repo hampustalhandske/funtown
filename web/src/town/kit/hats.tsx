@@ -75,7 +75,7 @@ export function Hat({ kind, colour }: { kind: HatKind; colour: string }) {
     case "crown":
       return (
         <group>
-          <Clay colour={TONES.gold} position={[0, 0.06, 0]}><cylinderGeometry args={[0.25, 0.24, 0.12, 24, 1, true]} /></Clay>
+          <Clay colour={TONES.gold} position={[0, 0.06, 0]}><cylinderGeometry args={[0.25, 0.24, 0.12, 24]} /></Clay>
           <Points r={0.24} y={0.12} h={0.16} angles={ring(5, 0, (Math.PI * 8) / 5)} colour={TONES.gold} />
           {ring(3, -0.7, 1.4).map((a) => (
             <Clay key={a} colour={TONES.ribbon} position={[Math.sin(a) * 0.255, 0.06, Math.cos(a) * 0.255]}>
