@@ -1,8 +1,8 @@
 # Funtown
 
 Charter: docs/CHARTER.md. Current state: docs/HANDOFF.md. Parked ideas: docs/PARKING.md.
-These and the rest of the planning notes (MILESTONE, METRICS, spikes, history) are local only,
-listed in `.git/info/exclude`; never stage them. The public record is CHANGELOG.md: one line
+These and the rest of the planning notes (MILESTONE, METRICS, spikes, history) live in
+`docs/`, which is gitignored as a whole: local only, never staged. The public record is CHANGELOG.md: one line
 per change, newest first, with date and time. `docs/spikes/` holds the Claude Code 2.1.325
 behaviours v2 builds on; rerun a note's Reproduce before relying on it.
 
@@ -44,5 +44,5 @@ Decisions that bind
 - `/events` and `/hold` refuse any `Origin` and have no body limit; page POSTs cap at
   64 KB, `/term` frames at 1 MB; ids, cwds and ttys reach children only as arguments.
 - All code our own. Tests never run the real `claude`, use real names or the home folder.
-- Out of git: docs/ideas.md, .claude/settings.json, .claude/never-push, the planning notes;
+- Out of git: all of `docs/`, .claude/settings.json, .claude/never-push;
   a security finding is fixed before the push and never written in a tracked file.
