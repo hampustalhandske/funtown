@@ -74,6 +74,9 @@ export class TownState {
   private leadHeardAt = new Map<string, number>();
   // session id + agent id ("" for the lead) -> its last tool call and how many times in a row
   private calls = new Map<string, { sig: string; count: number }>();
+  // session ids whose lead's own last turn event was Stop: a "busy" list (background
+  // commands still running) doesn't make them working again
+  private turnEnded = new Set<string>();
   private readonly claude: Town["claude"];
   private readonly unlistedMs: number;
 
@@ -106,8 +109,12 @@ export class TownState {
     if (event.funtown?.term_program) lead.termProgram = event.funtown.term_program;
 
     const inSubagent = event.agent_id !== undefined;
-    if (!inSubagent) this.leadHeardAt.set(sid, Date.now());
     const name = event.hook_event_name;
+    if (!inSubagent) {
+      this.leadHeardAt.set(sid, Date.now());
+      if (name === "Stop") this.turnEnded.add(sid);
+      else if (name !== "Notification" && name !== "SubagentStart" && name !== "SubagentStop") this.turnEnded.delete(sid);
+    }
     const when = typeof at === "number" ? at : Date.now();
     // These events end a stuck state; any other leaves a stuck character as it is.
     const unsticks = name === "SessionStart" || name === "UserPromptSubmit" || name === "PreToolUse";
@@ -185,6 +192,8 @@ export class TownState {
         // stays stuck until the lead's SessionStart, UserPromptSubmit or PreToolUse
       } else if (hookIsNewer) {
         // keep the stage the newer hook event set
+      } else if (s.status === "busy" && this.turnEnded.has(s.sessionId)) {
+        // its turn ended; the list says busy only for background commands still running
       } else if (s.status === "busy") {
         lead.stage = "working";
         delete lead.needs;
@@ -235,6 +244,7 @@ export class TownState {
     this.leads.delete(sessionId);
     this.heard.delete(sessionId);
     this.leadHeardAt.delete(sessionId);
+    this.turnEnded.delete(sessionId);
     this.dropSession(sessionId, [this.agentCounts, this.lastAt, this.calls]);
   }
 

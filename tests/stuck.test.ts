@@ -216,3 +216,21 @@ describe("a stuck subagent", () => {
     expect((await lead(url, () => true)).subagents[0]).toMatchObject({ stage: "needs_you", needs: "stuck" });
   });
 });
+
+describe("turn ended while the list says busy", () => {
+  it("a_lead_whose_stop_arrived_stays_turn_ended_through_busy_polls_until_its_next_tool_call", async () => {
+    // Catches a session idle at its prompt showing "thinking" because background commands keep the list at busy.
+    const { url } = await withBusy();
+    await post(url, ev("PreToolUse", bash("npm start")));
+    await post(url, ev("Stop"));
+    const ended = await lead(url, (l) => l.needs === "turn ended");
+    await sleep(450); // several polls, each listing the session as busy
+    expect(await lead(url, () => true)).toMatchObject({ stage: "needs_you", needs: "turn ended", since: ended.since });
+
+    await post(url, ev("PreToolUse", bash("ls")));
+    await lead(url, (l) => l.stage === "working");
+    await post(url, ev("PostToolUse", bash("ls")));
+    await sleep(450);
+    expect((await lead(url, () => true)).stage).toBe("working");
+  });
+});

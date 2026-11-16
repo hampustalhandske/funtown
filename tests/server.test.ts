@@ -215,8 +215,11 @@ describe("a hook event that arrives while the list is being asked for", () => {
 
     const stale = await townWhere(url, () => true);
     expect(leadsOf(stale)[0]).toMatchObject({ stage: "needs_you", needs: "turn ended" });
-    // a list asked after the event applies as before
-    const next = await townWhere(url, (t) => leadsOf(t)[0]?.stage === "working", 4000);
-    expect(leadsOf(next)[0].stage).toBe("working");
+    // a later busy list doesn't undo the hook's Stop either (background commands keep it busy);
+    // the lead's next tool call does
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(leadsOf(await townWhere(url, () => true))[0]).toMatchObject({ stage: "needs_you", needs: "turn ended" });
+    await post(url, evAt(20, "PreToolUse"));
+    await townWhere(url, (t) => leadsOf(t)[0]?.stage === "working", 4000);
   });
 });
