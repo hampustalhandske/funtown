@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { basename } from "node:path";
 import type { Listed } from "./agents.ts";
-import type { LogError } from "./errors.ts";
 import type { Journal } from "./journal.ts";
 import type { Card, Character, House, Lead, Letter, Stage, Town } from "./types.ts";
 
@@ -102,6 +101,9 @@ export class TownState {
   private readonly idPrefix = randomUUID();
   // session id + agent id of the subagents whose handback report is already their letter
   private handedBack = new Map<string, true>();
+  // session ids whose failed turn the list reported and the journal already holds, while the list keeps saying failed
+  private failedSeen = new Set<string>();
+  private synced = false;
   private readonly journal: Journal | undefined;
   private readonly claude: Town["claude"];
   private readonly unlistedMs: number;
@@ -109,20 +111,19 @@ export class TownState {
 
   /**
    * `claude` is the version check's result, carried on every snapshot; `unlistedMs` how long
-   * unlisted hook data is kept; `logError` gets a journal that can't be read. With a `journal`, each kept letter and each time a character
-   * becomes stuck is appended to it, and the letters it holds are the starting letters.
+   * unlisted hook data is kept. With a `journal`, each kept letter and each time a character
+   * becomes stuck is appended to it, and the letters it kept at open are the starting letters.
    */
-  constructor(claude: Town["claude"], unlistedMs: number, logError: LogError, journal?: Journal) {
+  constructor(claude: Town["claude"], unlistedMs: number, journal?: Journal) {
     this.claude = claude;
     this.unlistedMs = unlistedMs;
     this.journal = journal;
-    let entries: ReturnType<Journal["read"]> = [];
-    try {
-      entries = journal?.read() ?? [];
-    } catch (err) {
-      logError("journal", err);
-    }
-    for (const e of entries.sort((a, b) => b.at - a.at)) {
+    const seen = new Set<string>();
+    for (const e of [...(journal?.kept ?? [])].sort((a, b) => b.at - a.at)) {
+      if (!seen.has(e.lead)) {
+        seen.add(e.lead);
+        if (e.kind === "stuck" && e.who === e.lead) this.failedSeen.add(e.lead);
+      }
       if (e.kind !== "letter") continue;
       const list = this.letterLists.get(e.lead) ?? [];
       if (list.length < MAX_LETTERS) this.letterLists.set(e.lead, [...list, e.letter]);
@@ -269,11 +270,18 @@ export class TownState {
       } else if (s.status === "idle") {
         this.mark(lead, "needs_you", null, Date.now(), "turn ended");
       }
+      if (s.state !== "failed") this.failedSeen.delete(s.sessionId);
+      else if (this.failedSeen.has(s.sessionId)) stuckBefore.add(lead.id);
+      else this.failedSeen.add(s.sessionId);
       this.noteStuck(lead, stuckBefore, Date.now(), s.cwd);
       next.set(s.sessionId, s.cwd);
     }
     for (const sid of this.listed.keys()) if (!next.has(sid)) this.forget(sid);
     this.listed = next;
+    if (!this.synced) {
+      this.synced = true;
+      for (const sid of this.letterLists.keys()) if (!next.has(sid) && !this.leads.has(sid)) this.letterLists.delete(sid);
+    }
     this.expire();
   }
 
@@ -317,6 +325,7 @@ export class TownState {
     this.leadHeardAt.delete(sessionId);
     this.turnEnded.delete(sessionId);
     this.letterLists.delete(sessionId);
+    this.failedSeen.delete(sessionId);
     this.dropSession(sessionId, [this.agentCounts, this.lastAt, this.calls, this.handedBack]);
   }
 

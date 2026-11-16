@@ -1,10 +1,9 @@
 import { createServer, STATUS_CODES, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
-import { extname, join, normalize } from "node:path";
+import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AddressInfo } from "node:net";
 import { appendFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { TownState, type HookEvent } from "./town.ts";
 import type { Town } from "./types.ts";
@@ -130,7 +129,7 @@ export async function startServer(opts: {
   const unlistedMs = opts.unlistedMs ?? 10_000;
   const logError = serverLogger(opts.errorLog);
   const journal = opts.journal ? openJournal(opts.journal, logError) : undefined;
-  const town = new TownState(version, unlistedMs, logError, journal);
+  const town = new TownState(version, unlistedMs, journal);
   const holds = createHolds(town, { unlistedMs, answerLog: opts.answerLog, logError, changed: () => broadcast() });
   const terminals = createTerminals(claude, logError);
   const clients = new Set<ServerResponse>();
@@ -150,6 +149,7 @@ export async function startServer(opts: {
   let closed = false;
   let pollTimer: NodeJS.Timeout | undefined;
   let lastReason = "";
+  let applyFailed = false;
   const poll = async () => {
     let list: Awaited<ReturnType<typeof listAgents>> | undefined;
     const askedAt = Date.now();
@@ -172,8 +172,10 @@ export async function startServer(opts: {
         town.expire();
       }
       broadcast();
+      applyFailed = false;
     } catch (err) {
-      logError("poll", err);
+      if (!applyFailed) logError("poll", err);
+      applyFailed = true;
     } finally {
       // The next poll is always scheduled, so one bad list never stops the updates.
       pollTimer = setTimeout(() => void poll(), pollMs);
@@ -273,7 +275,7 @@ export async function startServer(opts: {
         await run(...command);
         res.writeHead(204).end();
       } catch (err) {
-        logError("jump", err);
+        logError(`jump ${lead.termProgram} ${lead.tty}`, err);
         res.writeHead(500, text).end("Couldn't open the terminal.");
       }
       return;
@@ -297,7 +299,7 @@ export async function startServer(opts: {
         const id = await startBackground(claude, cwd);
         res.writeHead(201, { "content-type": "application/json" }).end(JSON.stringify({ id }));
       } catch (err) {
-        logError("start session", err);
+        logError(`start session ${cwd}`, err);
         res.writeHead(500, text).end(`Couldn't start a session: ${(err as Error).message}`);
       }
       return;

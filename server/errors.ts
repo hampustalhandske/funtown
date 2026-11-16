@@ -13,11 +13,13 @@ export function isRefused(err: unknown): boolean {
   return e?.code === "ECONNREFUSED" || e?.cause?.code === "ECONNREFUSED";
 }
 
-/** `err` as one line: "Name: message", with the cause's code when it has one. */
+/** `err` as one line: "Name: message", with the cause's code when it has one and, for an Error, its top stack frame. */
 export function describe(err: unknown): string {
   let text = String(err instanceof Error ? `${err.name}: ${err.message}` : err);
   const code = (err as { cause?: { code?: string } } | null)?.cause?.code;
   if (code) text += ` (${code})`;
+  const frame = err instanceof Error ? err.stack?.split("\n").find((l) => l.trimStart().startsWith("at ")) : undefined;
+  if (frame) text += ` ${frame.trim()}`;
   return text.replace(/\s*\n\s*/g, " ").trim();
 }
 
@@ -31,13 +33,13 @@ export function appendError(path: string, source: Source, step: string, err: unk
   }
 }
 
-/** Reports a server error: one line on stderr and, when `path` is given, one line in the error log. */
+/** Reports a server error under `step`: the error itself on stderr and one line in the error log, when the logger has a file. */
 export type LogError = (step: string, err: unknown) => void;
 
 /** A `LogError` for the server that writes to stderr and to the error log at `path`, when given. */
 export function serverLogger(path?: string): LogError {
   return (step, err) => {
-    console.error(`funtown: ${step}: ${describe(err)}`);
+    console.error(`funtown: ${step}:`, err);
     if (path) appendError(path, "server", step, err);
   };
 }

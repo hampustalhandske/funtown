@@ -46,20 +46,17 @@ function findTty(): string | null {
 }
 
 // The hook must never fail or stall Claude: any error is logged and the exit code stays 0.
+let step = "read event";
 try {
-  let event;
-  try {
-    event = JSON.parse(readFileSync(0, "utf8"));
-  } catch (err) {
-    log("read event", err);
-    process.exit(0);
-  }
+  const event = JSON.parse(readFileSync(0, "utf8"));
+  step = "add funtown fields";
   const at = Date.now();
   event.funtown = {
     tty: findTty(),
     term_program: process.env.TERM_PROGRAM ?? null,
     at,
   };
+  step = "post /events";
   const res = await fetch(`${url}/events`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -68,6 +65,6 @@ try {
   });
   if (!res.ok) log("post /events", `returned ${res.status}`);
 } catch (err) {
-  if (!isRefused(err)) log("post /events", err);
+  if (!(step === "post /events" && isRefused(err))) log(step, err);
 }
 process.exit(0);

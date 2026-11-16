@@ -4,27 +4,31 @@ import type { LogError } from "./errors.ts";
 import type { JournalEntry, Morning } from "./types.ts";
 
 const KEEP_MS = 7 * 24 * 60 * 60 * 1000;
+const PRUNE_EVERY_MS = 24 * 60 * 60 * 1000;
 
 export type Journal = {
   /** Adds one line; a failed write is logged and changes nothing else. */
   append(entry: JournalEntry): void;
   /** Every entry in the file, in file order; lines that don't parse are skipped. An absent file gives none; any other read error throws. */
   read(): JournalEntry[];
+  /** The entries that survived the prune at open, in file order; none when the file couldn't be read. */
+  readonly kept: JournalEntry[];
 };
 
 function parse(line: string): JournalEntry | null {
   try {
     const e = JSON.parse(line) as JournalEntry;
     const ok = (e.kind === "letter" || e.kind === "stuck") && typeof e.at === "number" && typeof e.cwd === "string" && typeof e.lead === "string";
-    return ok && (e.kind === "stuck" || typeof e.letter?.text === "string") ? e : null;
+    const letterOk = e.kind === "letter" && typeof e.letter?.text === "string" && typeof e.letter.id === "string" && typeof e.letter.from === "string" && typeof e.letter.at === "number";
+    return ok && (e.kind === "stuck" || letterOk) ? e : null;
   } catch {
     return null;
   }
 }
 
 /**
- * The journal file at `path`: JSON lines. Opening it drops the lines older than 7 days and the
- * lines that don't parse. Failures go to `logError`.
+ * The journal file at `path`: JSON lines. Opening it, and then once a day while the process
+ * runs, drops the lines older than 7 days and the lines that don't parse. Failures go to `logError`.
  */
 export function openJournal(path: string, logError: LogError): Journal {
   const read = (): JournalEntry[] => {
@@ -35,21 +39,29 @@ export function openJournal(path: string, logError: LogError): Journal {
       throw err;
     }
   };
-  let kept: JournalEntry[] | null = null;
-  try {
-    kept = read().filter((e) => e.at >= Date.now() - KEEP_MS);
-  } catch (err) {
-    logError("journal", err);
-  }
-  if (kept && existsSync(path)) {
+  /** Rewrites the file without its stale and unparseable lines and gives the entries kept; null when it couldn't be read. */
+  const prune = (): JournalEntry[] | null => {
+    let kept: JournalEntry[];
     try {
-      writeFileSync(path, kept.map((e) => `${JSON.stringify(e)}\n`).join(""));
+      kept = read().filter((e) => e.at >= Date.now() - KEEP_MS);
     } catch (err) {
       logError("journal", err);
+      return null;
     }
-  }
+    if (existsSync(path)) {
+      try {
+        writeFileSync(path, kept.map((e) => `${JSON.stringify(e)}\n`).join(""));
+      } catch (err) {
+        logError("journal", err);
+      }
+    }
+    return kept;
+  };
+  const kept = prune() ?? [];
+  setInterval(prune, PRUNE_EVERY_MS).unref();
   return {
     read,
+    kept,
     append(entry) {
       try {
         mkdirSync(dirname(path), { recursive: true });

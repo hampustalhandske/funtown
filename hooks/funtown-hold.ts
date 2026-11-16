@@ -36,7 +36,10 @@ try {
   // stdout to a pipe is async, so wait for the write or an exit cuts the output at 64 KB.
   if (status === 200) {
     step = "print answer";
-    await new Promise((done) => process.stdout.write(text, done));
+    await new Promise<void>((done, fail) => {
+      process.stdout.once("error", fail);
+      process.stdout.write(text, (err) => (err ? fail(err) : done()));
+    });
   } else if (status !== 204) log("post /hold", `returned ${status}`);
 } catch (err) {
   if (!(step === "post /hold" && isRefused(err))) log(step, err);
