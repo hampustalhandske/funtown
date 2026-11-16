@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AddressInfo } from "node:net";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { TownState, type HookEvent } from "./town.ts";
 import type { Town } from "./types.ts";
@@ -12,8 +12,11 @@ import { createTerminals, isSize } from "./terminal.ts";
 import { createHolds } from "./holds.ts";
 import { describe, serverLogger } from "./errors.ts";
 import { morning, openJournal } from "./journal.ts";
+import { createSteward } from "./steward.ts";
+import { listPrs, parsePhase, type PhaseFile, type Pr } from "./workflow.ts";
 
 const DEFAULT_DIST = fileURLToPath(new URL("../web/dist/", import.meta.url));
+const DEFAULT_STEWARD_PROMPT = fileURLToPath(new URL("./steward.md", import.meta.url));
 const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -107,7 +110,10 @@ async function readJson(req: IncomingMessage, max = Infinity): Promise<{ value: 
  * is how long hook data and holds wait for their session to be listed, and holds for a page to
  * be open. `errorLog` (a path) gets one line per server error, besides stderr. `POST /switch` (page
  * Origin and token) appends `{ at, reason?, open? }` to `switchLog` (a JSONL path); without one it
- * answers 500.
+ * answers 500. Each poll reads every house's `.claude/phase.json`; every `prMs` (default 60 s)
+ * `gh` (default "gh") lists each house's open PRs. With a `stewardDir`, a steward session there
+ * pre-reviews each ready PR with the text of `stewardPrompt` (a path, default server/steward.md;
+ * an empty file turns reviews off).
  */
 export async function startServer(opts: {
   port: number;
@@ -120,6 +126,10 @@ export async function startServer(opts: {
   unlistedMs?: number;
   errorLog?: string;
   switchLog?: string;
+  gh?: string;
+  prMs?: number;
+  stewardPrompt?: string;
+  stewardDir?: string;
 }): Promise<{ url: string; claude: Town["claude"]; close(): Promise<void> }> {
   const run = opts.run ?? defaultRun;
   const claude = opts.claude ?? "claude";
@@ -132,12 +142,37 @@ export async function startServer(opts: {
   const town = new TownState(version, unlistedMs, journal);
   const holds = createHolds(town, { unlistedMs, answerLog: opts.answerLog, logError, changed: () => broadcast() });
   const terminals = createTerminals(claude, logError);
+  const gh = opts.gh ?? "gh";
+  const prMs = opts.prMs ?? 60_000;
+  // cwd -> its open PRs, from the last gh list that worked
+  const prLists = new Map<string, Pr[]>();
+  // cwd -> when its last gh list started
+  const prAsked = new Map<string, number>();
+  // cwd -> its gh list still running
+  const prRunning = new Map<string, Promise<void>>();
+  const prAbort = new AbortController();
+  const prFailing = new Set<string>();
+  // cwd -> what its last unreadable phase file held (or the read error), logged once until it changes
+  const phaseFailed = new Map<string, string>();
+  const prompt = opts.stewardDir ? readFileSync(opts.stewardPrompt ?? DEFAULT_STEWARD_PROMPT, "utf8") : "";
+  const steward =
+    opts.stewardDir && prompt.trim() !== ""
+      ? createSteward({ claude, dir: opts.stewardDir, prompt, town, lists: prLists, journal, logError, retryMs: prMs, listedMs: unlistedMs, changed: () => broadcast() })
+      : undefined;
   const clients = new Set<ServerResponse>();
   const tokenBytes = Buffer.from(randomBytes(16).toString("hex"));
   const token = tokenBytes.toString();
   let port = 0;
 
-  const stateFrame = () => `event: state\ndata: ${JSON.stringify(town.snapshot(holds.cards()))}\n\n`;
+  const snapshot = () => {
+    const state = town.snapshot(holds.cards());
+    for (const house of state.houses) {
+      const prs = prLists.get(house.cwd);
+      if (prs) house.parcels = prs.map((pr) => ({ number: pr.number, title: pr.title, url: pr.url, draft: pr.draft, review: steward?.review(pr) }));
+    }
+    return state;
+  };
+  const stateFrame = () => `event: state\ndata: ${JSON.stringify(snapshot())}\n\n`;
   let lastFrame = "";
   const broadcast = () => {
     const frame = stateFrame();
@@ -147,6 +182,53 @@ export async function startServer(opts: {
   };
 
   let closed = false;
+
+  /** The phase file of the project in `cwd`; undefined when there is none or it can't be used, which is logged once until it changes. */
+  const readPhase = (cwd: string): PhaseFile | undefined => {
+    let text: string | undefined;
+    try {
+      text = readFileSync(join(cwd, ".claude", "phase.json"), "utf8");
+      const phase = parsePhase(text);
+      phaseFailed.delete(cwd);
+      return phase;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        phaseFailed.delete(cwd);
+        return undefined;
+      }
+      const seen = text ?? describe(err);
+      if (phaseFailed.get(cwd) !== seen) logError("phase", err, cwd);
+      phaseFailed.set(cwd, seen);
+      return undefined;
+    }
+  };
+
+  /** Starts `gh pr list` for each of `cwds` whose last list is `prMs` old or that has none; forgets the PRs of other folders. */
+  const pollPrs = (cwds: string[]) => {
+    for (const map of [prLists, prAsked, prFailing]) for (const cwd of map.keys()) if (!cwds.includes(cwd)) map.delete(cwd);
+    for (const cwd of cwds) {
+      if (prRunning.has(cwd) || Date.now() - (prAsked.get(cwd) ?? -Infinity) < prMs) continue;
+      prAsked.set(cwd, Date.now());
+      const run = listPrs(gh, cwd, prAbort.signal)
+        .then(
+          (prs) => {
+            if (closed || !prAsked.has(cwd)) return;
+            prLists.set(cwd, prs);
+            prFailing.delete(cwd);
+            steward?.pump();
+            broadcast();
+          },
+          (err) => {
+            if (!closed && !prFailing.has(cwd)) logError("prs", (err as Error).message, cwd);
+            prFailing.add(cwd);
+          },
+        )
+        .catch((err) => logError("prs", err, cwd))
+        .finally(() => prRunning.delete(cwd));
+      prRunning.set(cwd, run);
+    }
+  };
+
   let pollTimer: NodeJS.Timeout | undefined;
   let lastReason = "";
   let applyReason = "";
@@ -171,6 +253,16 @@ export async function startServer(opts: {
       } else {
         town.expire();
       }
+      const houses = town.snapshot().houses;
+      const phases = new Map<string, PhaseFile>();
+      for (const { cwd } of houses) {
+        const phase = readPhase(cwd);
+        if (phase) phases.set(cwd, phase);
+      }
+      town.setPhases(phases);
+      const stewardId = steward?.lead()?.id;
+      pollPrs(houses.filter((h) => !h.leads.some((l) => l.id === stewardId)).map((h) => h.cwd));
+      steward?.pump();
       broadcast();
       applyReason = "";
     } catch (err) {
@@ -248,7 +340,11 @@ export async function startServer(opts: {
         return;
       }
       try {
-        if (town.apply(event)) holds.event(event);
+        if (town.apply(event)) {
+          holds.event(event);
+          steward?.event(event);
+          steward?.pump();
+        }
         broadcast();
         res.writeHead(204).end();
       } catch (err) {
@@ -448,15 +544,19 @@ export async function startServer(opts: {
   return {
     url: `http://127.0.0.1:${port}`,
     claude: version,
-    close: () =>
-      new Promise<void>((resolve) => {
-        closed = true;
-        clearTimeout(pollTimer);
-        terminals.close();
-        holds.close();
-        for (const res of clients) res.end();
+    close: async () => {
+      closed = true;
+      clearTimeout(pollTimer);
+      prAbort.abort();
+      const children = Promise.all([...prRunning.values(), steward?.close()]);
+      terminals.close();
+      holds.close();
+      for (const res of clients) res.end();
+      await new Promise<void>((resolve) => {
         server.close(() => resolve());
         server.closeAllConnections();
-      }),
+      });
+      await children;
+    },
   };
 }

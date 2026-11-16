@@ -18,6 +18,8 @@ export type Journal = {
 function parse(line: string): JournalEntry | null {
   try {
     const e = JSON.parse(line) as JournalEntry;
+    if (e.kind === "steward") return typeof e.at === "number" && typeof e.shortId === "string" ? e : null;
+    if (e.kind === "review") return typeof e.at === "number" && typeof e.cwd === "string" && typeof e.pr === "number" && typeof e.head === "string" ? e : null;
     const ok = (e.kind === "letter" || e.kind === "stuck") && typeof e.at === "number" && typeof e.cwd === "string" && typeof e.lead === "string";
     const letterOk = e.kind === "letter" && typeof e.letter?.text === "string" && typeof e.letter.id === "string" && typeof e.letter.from === "string" && typeof e.letter.at === "number";
     return ok && (e.kind === "stuck" || letterOk) ? e : null;
@@ -39,11 +41,17 @@ export function openJournal(path: string, logError: LogError): Journal {
       throw err;
     }
   };
-  /** Rewrites the file without its stale and unparseable lines and gives the entries kept; null when it couldn't be read. */
+  /**
+   * Rewrites the file without its stale and unparseable lines and gives the entries kept; null
+   * when it couldn't be read. The newest steward line is kept at any age: it names the steward
+   * session a restart reuses.
+   */
   const prune = (): JournalEntry[] | null => {
     let kept: JournalEntry[];
     try {
-      kept = read().filter((e) => e.at >= Date.now() - KEEP_MS);
+      const all = read();
+      const steward = all.findLast((e) => e.kind === "steward");
+      kept = all.filter((e) => e === steward || e.at >= Date.now() - KEEP_MS);
     } catch (err) {
       logError("journal", err);
       return null;
@@ -73,10 +81,10 @@ export function openJournal(path: string, logError: LogError): Journal {
   };
 }
 
-/** The morning view of `entries` at or after `since`, grouped by cwd. */
+/** The morning view of the letter and stuck `entries` at or after `since`, grouped by cwd. */
 export function morning(entries: JournalEntry[], since: number): Morning {
   const projects = new Map<string, Morning["projects"][number]>();
-  for (const e of entries.filter((x) => x.at >= since).sort((a, b) => b.at - a.at)) {
+  for (const e of entries.filter((x): x is Extract<JournalEntry, { kind: "letter" | "stuck" }> => (x.kind === "letter" || x.kind === "stuck") && x.at >= since).sort((a, b) => b.at - a.at)) {
     let p = projects.get(e.cwd);
     if (!p) {
       p = { project: basename(e.cwd) || e.cwd, cwd: e.cwd, done: [], stuck: [] };

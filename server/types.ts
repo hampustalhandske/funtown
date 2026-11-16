@@ -12,6 +12,10 @@ export type Character = {
   reason?: string;
   /** `at` of its newest letter; absent when it has none. */
   letter?: number;
+  /** A subagent's SubagentStart agent_type; absent for leads and untyped agents. */
+  role?: string;
+  /** Labels from the phase file for this role or name; absent when none. */
+  tags?: string[];
 };
 /** A lead's end-of-turn message or a subagent's result. */
 export type Letter = {
@@ -29,7 +33,9 @@ export type Letter = {
 /** One line of the journal file. */
 export type JournalEntry =
   | { kind: "letter"; at: number; cwd: string; lead: string; letter: Letter }
-  | { kind: "stuck"; at: number; cwd: string; lead: string; who: string; name: string; reason: string };
+  | { kind: "stuck"; at: number; cwd: string; lead: string; who: string; name: string; reason: string }
+  | { kind: "steward"; at: number; shortId: string }
+  | { kind: "review"; at: number; cwd: string; pr: number; head: string };
 /** What the morning view shows from the journal. */
 export type Morning = {
   since: number;
@@ -51,8 +57,33 @@ export type Lead = Character & {
   kind: "terminal" | "background";
   /** The id `claude attach` takes; null for a terminal session. */
   shortId: string | null;
+  /** Files this run and another listed run both touched; absent when none. */
+  overlaps?: { file: string; with: string; withName: string }[];
 };
-export type House = { project: string; cwd: string; leads: Lead[] };
+/** An open pull request of a house's project. */
+export type Parcel = {
+  number: number;
+  title: string;
+  url: string;
+  draft: boolean;
+  /** The steward's review of the current head commit; absent for a draft or with reviews off. */
+  review?: {
+    state: "queued" | "reviewing" | "ready";
+    /** The steward's session id once it is listed. */
+    steward?: string;
+    /** The review letter's id, when ready. */
+    letter?: string;
+  };
+};
+export type House = {
+  project: string;
+  cwd: string;
+  leads: Lead[];
+  /** From .claude/phase.json; absent when there is none or it is unreadable. */
+  phase?: { phase: string; note?: string };
+  /** Open PRs, newest number first; absent until the first gh list succeeds. */
+  parcels?: Parcel[];
+};
 /** A held request waiting for the user's answer. */
 export type Card = {
   /** Server-made, unique per start. */
