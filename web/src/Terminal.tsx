@@ -36,6 +36,8 @@ export function SessionTerminal({ lead }: { lead: string }) {
       else if (frame.t === "shared") setShared(frame.n ?? 1);
     };
     socket.onclose = () => setClosed(true);
+    // A resize while the socket was connecting was dropped, so send the size it has now.
+    socket.onopen = () => send({ t: "resize", c: term.cols, r: term.rows });
 
     term.attachCustomKeyEventHandler((event) => {
       if (event.key !== "Enter" || !event.shiftKey) return true;
