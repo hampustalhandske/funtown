@@ -15,21 +15,25 @@ Early and in progress.
 ## Run it
 
     npm install
-    npm run install-hooks   # adds Funtown's hooks to ~/.claude/settings.json
     npm start               # serves http://127.0.0.1:4777
 
-`npm run uninstall-hooks` removes the hooks again, leaving your own hooks as they were.
+`npm start` first adds Funtown's hooks to Claude Code's `settings.json` (in
+`$CLAUDE_CONFIG_DIR` when set, else `~/.claude`), so they stay current with each update;
+`npm run install-hooks` does only that step. `npm run uninstall-hooks` removes them again,
+leaving your own hooks as they were.
 
 ## Privacy
 
-Funtown listens on 127.0.0.1 only and sends nothing off your machine. Sessions come from
-`claude agents --json`, terminals from `claude attach`; it never reads Claude Code's own
-files. Each answer card that closes adds a line to `~/.funtown/answers.jsonl`, saying
-whether it was answered in Funtown or elsewhere.
+Funtown listens on 127.0.0.1 only and sends nothing off your machine; a planned opt-in
+"Suggest" button will show the exact text before sending it. Sessions come from
+`claude agents --json`, terminals from `claude attach`; the server never reads Claude
+Code's own files. The only Claude Code file Funtown touches is `settings.json`, where the
+installer adds and removes its own hook entries. Each answer card that closes adds a line
+to `~/.funtown/answers.jsonl`, saying whether it was answered in Funtown or elsewhere.
 
 ## Development
 
-    npx eslint . && npx vitest run && npx playwright test
+    npm test
 
 Tests use a fake `claude` and never run the real one. Changes are listed in
 [CHANGELOG.md](CHANGELOG.md).

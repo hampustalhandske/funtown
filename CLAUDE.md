@@ -2,9 +2,11 @@
 
 Charter: docs/CHARTER.md. Current state: docs/HANDOFF.md. Parked ideas: docs/PARKING.md.
 These and the rest of the planning notes (MILESTONE, METRICS, spikes, history) live in
-`docs/`, which is gitignored as a whole: local only, never staged. The public record is CHANGELOG.md: one line
-per change, newest first, with date and time. `docs/spikes/` holds the Claude Code 2.1.325
-behaviours v2 builds on; rerun a note's Reproduce before relying on it.
+`docs/`, which is gitignored as a whole: local only, never staged, and absent from a fresh
+clone or a worktree; there, work from this file and CHANGELOG.md. The public record is
+CHANGELOG.md: one line per change, newest first, with date and time. `docs/spikes/` holds
+the Claude Code 2.1.325 behaviours v2 builds on; rerun a note's Reproduce before relying
+on it.
 
 ## Map
 
@@ -12,16 +14,19 @@ Parts
 - `hooks/funtown-hook.ts`: async hook on each event; adds tty and `at`, POSTs `/events`;
   800 ms deadline, exits 0. `hooks/funtown-hold.ts`: sync hook (2 h timeout) on
   PermissionRequest and PreToolUse AskUserQuestion|ExitPlanMode; waits on `/hold`, prints
-  the answer or nothing. `hooks/install.ts`: its twelve entries in `~/.claude/settings.json`.
+  the answer or nothing. `hooks/install.ts`: its twelve entries in Claude's
+  `settings.json` (`$CLAUDE_CONFIG_DIR` or `~/.claude`).
 - `server/` on 127.0.0.1:4777: `agents.ts` runs `claude`; `town.ts` merges the 2 s list
-  poll and hook events, and marks stuck agents (StopFailure, 5 identical calls); `terminal.ts` runs `claude attach` in node-pty per `/term` socket;
+  poll and hook events, and marks stuck agents (StopFailure, 5 identical calls);
+  `terminal.ts` runs `claude attach` in node-pty per `/term` socket;
   `holds.ts` turns held requests into answer cards and logs each close; `app.ts` serves.
 - `web/`: React page (Vite): sessions by project, a panel with an xterm.js terminal,
   answer cards (`AnswerCard.tsx`), the Needs you list with sound, mute, toast, system
   notifications and the `n` key (`needs.tsx`). `tests/`: Vitest at the seams, Playwright in
   `tests/e2e/`, a fake `claude` (`fake-claude.cjs`, steered by `fake-claude.ts`).
 
-Contracts (source of truth: docs/MILESTONE.md of the milestone that set them)
+Contracts (source of truth: this list; full text, where kept, in the local
+docs/history/m<N>-MILESTONE.md)
 - Hook event: POST `/events`, hook JSON plus `funtown: { tty, term_program, at }`; an
   event older than the last applied to the same character is ignored (m7).
 - Town state: `server/types.ts`, SSE `state`; a lead shows only while listed (m7); `cards`
@@ -37,7 +42,8 @@ Contracts (source of truth: docs/MILESTONE.md of the milestone that set them)
 - `startServer({ port, distDir?, run?, claude?, pollMs?, answerLog?, unlistedMs? })`.
   Env: `FUNTOWN_PORT`, `_URL`, `_LOG`, `_STATE`, `_CLAUDE`, `_ANSWERS`.
 
-Commands: `npm start`; `npm run install-hooks` / `uninstall-hooks`; test: .claude/test-command.
+Commands: `npm start` (reinstalls the hooks, then serves); `npm run install-hooks` /
+`uninstall-hooks`; test: `npm test` (same as .claude/test-command).
 
 Decisions that bind
 - Nothing leaves the machine (except the opt-in "Suggest" button); 127.0.0.1 only; `Host`
