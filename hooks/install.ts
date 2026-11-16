@@ -54,7 +54,8 @@ if (action !== "install" && action !== "uninstall") throw new Error(usage);
 if (flag !== undefined && (flag !== "--settings" || !custom || extra.length > 0)) {
   throw new Error(usage);
 }
-const path = custom ?? join(homedir(), ".claude", "settings.json");
+// Claude Code reads its settings from CLAUDE_CONFIG_DIR when set, else ~/.claude.
+const path = custom ?? join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "settings.json");
 
 const statePath = process.env.FUNTOWN_STATE ?? join(homedir(), ".funtown", "installed.json");
 const state: Partial<Record<string, InstallRecord>> = existsSync(statePath)
