@@ -92,3 +92,16 @@ test("clicking_a_ready_review_opens_the_stewards_panel_with_the_review_as_writte
   await expect(letters).toContainText("Squash: Fix the parser");
   await expect(letters).toContainText("Check the parser tests before merging.");
 });
+
+test("at_390_px_a_long_parcel_title_note_and_overlap_file_do_not_widen_the_page", async ({ page }) => {
+  // One word with no break opportunity (no slash, hyphen or space), as a long file name can be.
+  const long = "steward_review_requests_and_their_journal_entries_for_every_open_pull_request.ts";
+  // The town above with the parcel title, the note and the overlapping file made long.
+  const wide = JSON.parse(JSON.stringify(town).replace("Fix the parser", `Fix ${long}`).replace("tests first", `tests first for ${long}`).replaceAll("src/a.ts", long));
+  await stubStream(page, wide); // the later route answers first
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.reload();
+  await expect(parcel(page, 12)).toContainText(long);
+  await expect(row(page, "alpha")).toContainText(long);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});

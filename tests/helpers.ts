@@ -15,6 +15,7 @@ type StartOptions = Omit<Parameters<typeof startServer>[0], "port" | "claude">;
 const open: Server[] = [];
 const fakes: FakeClaude[] = [];
 const dirs: string[] = [];
+const holds: AbortController[] = [];
 
 /** A folder that exists, with symlinks resolved so a child process reports the same path. */
 export function realDir(): string {
@@ -51,6 +52,7 @@ export async function start(opts: StartOptions & { fake?: FakeClaude } = {}): Pr
   return server;
 }
 afterEach(async () => {
+  for (const h of holds.splice(0)) h.abort();
   await Promise.all(open.splice(0).map((s) => s.close()));
   for (const f of fakes.splice(0)) f.dispose();
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
@@ -89,6 +91,20 @@ export async function post(url: string, event: Json, headers: Record<string, str
     body: JSON.stringify(event),
   });
   return res.status;
+}
+
+/** POSTs a hook payload to /hold; `reply` settles when the server answers, `abort` closes the request (at the latest after the test). */
+export function hold(url: string, payload: Json, headers: Record<string, string> = {}) {
+  const ctl = new AbortController();
+  holds.push(ctl);
+  const reply = fetch(`${url}/hold`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body: JSON.stringify(payload),
+    signal: ctl.signal,
+  });
+  reply.catch(() => {});
+  return { reply, abort: () => ctl.abort() };
 }
 
 /** Opens GET /stream and resolves with the first Town state satisfying `ok`, or rejects after `ms`. */
