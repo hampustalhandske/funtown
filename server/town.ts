@@ -165,10 +165,14 @@ export class TownState {
         if (need) set(lead, "needs_you", null, need);
         break;
       }
-      case "Stop":
-        set(lead, "needs_you", null, "turn ended");
+      case "Stop": {
+        // Subagents still working keep the lead working until a Stop finds none.
+        const busy = lead.subagents.filter((a) => a.stage === "working").length;
+        if (busy > 0) set(lead, "working", `waiting on ${busy} ${busy === 1 ? "agent" : "agents"}`);
+        else set(lead, "needs_you", null, "turn ended");
         this.addLetter(lead, lead, event, when);
         break;
+      }
       case "StopFailure":
         this.mark(inSubagent ? this.agent(lead, event) : lead, "needs_you", null, when, "stuck", (event.error ?? "").replace(/_/g, " ").trim() || "error");
         break;
