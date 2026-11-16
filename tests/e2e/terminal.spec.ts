@@ -94,7 +94,7 @@ test("a_failed_version_check_shows_every_problem_line_in_a_banner", async ({ pag
 test("a_subagent_of_a_background_lead_has_no_go_to_terminal_button", async ({ page }) => {
   fake.list([bg()]);
   const hook = (extra: object) =>
-    fetch("http://127.0.0.1:4799/events", {
+    fetch(`http://127.0.0.1:${process.env.FUNTOWN_E2E_PORT ?? "4799"}/events`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ hook_event_name: "SubagentStart", session_id: sid, cwd, funtown: { tty: null, term_program: null, at: 1 }, ...extra }),
