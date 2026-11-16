@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { DataTexture, NearestFilter, RedFormat } from "three";
+import { DataTexture, MeshToonMaterial, NearestFilter, RedFormat } from "three";
 import type { ThreeElements } from "@react-three/fiber";
 import { Outlines } from "@react-three/drei";
 
@@ -28,14 +28,21 @@ const steps = new DataTexture(new Uint8Array([110, 190, 255]), 3, 1, RedFormat);
 steps.minFilter = steps.magFilter = NearestFilter;
 steps.needsUpdate = true;
 
+// One material per colour, shared by every part that uses it.
+const materials = new Map<string, MeshToonMaterial>();
+const clay = (colour: string) => {
+  let material = materials.get(colour);
+  if (!material) materials.set(colour, (material = new MeshToonMaterial({ color: colour, gradientMap: steps })));
+  return material;
+};
+
 type ClayProps = ThreeElements["mesh"] & { colour: string; children: ReactNode };
 
 /** One clay mesh with an ink outline 2.5 px wide at any distance; `children` is its geometry. */
 export function Clay({ colour, children, ...mesh }: ClayProps) {
   return (
-    <mesh castShadow receiveShadow {...mesh}>
+    <mesh castShadow receiveShadow material={clay(colour)} {...mesh}>
       {children}
-      <meshToonMaterial color={colour} gradientMap={steps} />
       <Outlines thickness={2.5} color={INK} />
     </mesh>
   );
