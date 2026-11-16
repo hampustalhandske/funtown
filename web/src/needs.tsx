@@ -116,16 +116,18 @@ export function useAlerts(waiting: Waiting[], loaded: boolean, muted: boolean, o
   return { toasts, drop: (w: Waiting) => setToasts((all) => all.filter((t) => t !== w)) };
 }
 
-/** `n` opens the oldest waiting character, then the next, wrapping; ignored while typing. */
+/** Option+N (⌥N) opens the oldest waiting character, then the next, wrapping; ignored while typing. */
 export function useNextKey(waiting: Waiting[], current: string | null, open: (w: Waiting) => void) {
   const latest = useRef({ waiting, current, open });
   latest.current = { waiting, current, open };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "n" || event.ctrlKey || event.metaKey || event.altKey) return;
+      // `code`, since on a Mac Option+N gives `key` "˜" (a dead key).
+      if (event.code !== "KeyN" || !event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
       const target = event.target;
       if (target instanceof Element && target.closest("input, textarea, select, [contenteditable], .terminal")) return;
       const { waiting: list, current: cur, open: go } = latest.current;
+      event.preventDefault();
       if (list.length === 0) return;
       const at = list.findIndex((w) => w.key === cur);
       go(list[(at + 1) % list.length]);
@@ -145,7 +147,7 @@ export function NeedsList({ waiting, onOpen }: { waiting: Waiting[]; onOpen: (w:
   if (waiting.length === 0) return null;
   return (
     <section className="needs-list" aria-label="Needs you">
-      <h2>🔴 Needs you</h2>
+      <h2>🔴 Needs you <span className="hint">⌥N opens the next</span></h2>
       <ol>
         {waiting.map((w) => (
           <li key={w.key}>

@@ -75,25 +75,28 @@ test("the_needs_you_list_has_every_waiting_character_oldest_first_and_replaces_t
   await expect(panel(page, "Explore-1")).toBeVisible();
 });
 
-test("n_opens_the_oldest_then_the_next_and_wraps_and_does_nothing_with_nothing_waiting", async ({ page }) => {
+test("option_n_opens_the_oldest_then_the_next_and_wraps_and_does_nothing_with_nothing_waiting", async ({ page }) => {
   const stream = await open(page, town([house("alpha", [lead({})])]));
-  await page.keyboard.press("n");
+  await page.keyboard.press("Alt+KeyN");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
   stream.send(three());
   await page.reload();
   await expect(rows(page)).toHaveCount(3);
+  // Catches the jump firing on a plain `n` again.
   await page.keyboard.press("n");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.keyboard.press("Alt+KeyN");
   await expect(panel(page, "lead-2")).toBeVisible();
-  await page.keyboard.press("n");
+  await page.keyboard.press("Alt+KeyN");
   await expect(panel(page, "Explore-1")).toBeVisible();
-  await page.keyboard.press("n");
+  await page.keyboard.press("Alt+KeyN");
   await expect(panel(page, "lead-1")).toBeVisible();
-  await page.keyboard.press("n");
+  await page.keyboard.press("Alt+KeyN");
   await expect(panel(page, "lead-2")).toBeVisible();
 });
 
-test("n_typed_in_a_card_text_box_is_text_and_a_new_card_or_waiting_character_leaves_focus_and_text_alone", async ({ page }) => {
+test("option_n_in_a_card_text_box_opens_nothing_and_n_is_text_and_a_new_card_or_waiting_character_leaves_focus_and_text_alone", async ({ page }) => {
   const plan = {
     id: "p1", lead: "b1", agent: null, kind: "plan", tool: "ExitPlanMode", input: { plan: "1. Do it" }, cwd: "/work/alpha", at: NOW - 1000,
   };
@@ -112,6 +115,9 @@ test("n_typed_in_a_card_text_box_is_text_and_a_new_card_or_waiting_character_lea
   expect(await active(page)).toBe("TEXTAREA:abn");
   await page.keyboard.type("c");
   await expect(box).toHaveValue("abnc");
+  // Catches the jump key firing while the user types in a text box.
+  await page.keyboard.press("Alt+KeyN");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
 test("a_character_that_joins_plays_the_sound_shows_the_toast_and_system_pop_up_and_both_open_its_panel", async ({ page }) => {
