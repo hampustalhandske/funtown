@@ -4,7 +4,9 @@
 //   list-fail, version-fail, bg-fail; list-delay (ms `agents --json` waits before printing
 //   what list.json held when it was asked) and list-asks (one character per `agents --json`
 //   call). `--bg` appends (cwd, argv, CLAUDE*/AI_AGENT variable names) to started.json and lists a new background session; `attach <id>` echoes every
-//   input chunk as `got:<JSON string>`.
+//   input chunk as `got:<JSON string>` and appends it to attach-<id>.input.
+// It also stands in for `gh`: `pr list ...` appends (cwd, argv) to pr-calls.jsonl and prints
+//   prs.json's list for its cwd (`[]` when none is set; a null entry fails like gh outside a repo).
 const fs = process.getBuiltinModule("fs");
 const path = process.getBuiltinModule("path");
 const crypto = process.getBuiltinModule("crypto");
@@ -46,6 +48,14 @@ if (argv[0] === "--version") {
   fs.writeFileSync(file("list.tmp"), JSON.stringify(list));
   fs.renameSync(file("list.tmp"), file("list.json"));
   out(`${id}\n`);
+} else if (argv[0] === "pr" && argv[1] === "list") {
+  fs.appendFileSync(file("pr-calls.jsonl"), JSON.stringify({ cwd: process.cwd(), argv }) + "\n");
+  const prs = JSON.parse(read("prs.json", "{}"))[process.cwd()];
+  if (prs === null) {
+    process.stderr.write("no git remotes found\n");
+    process.exit(1);
+  }
+  out(JSON.stringify(prs ?? []));
 } else if (argv[0] === "attach") {
   const id = argv[1];
   process.stdin.setRawMode(true);
@@ -55,6 +65,7 @@ if (argv[0] === "--version") {
   out(`attached ${id} TERM=${process.env.TERM} size:${size()} env:[${leaked.join(",")}]\r\n`);
   process.stdout.on("resize", () => out(`size:${size()}\r\n`));
   process.stdin.on("data", (d) => {
+    fs.appendFileSync(file(`attach-${id}.input`), d);
     const s = d.toString();
     if (s === "quit") process.exit(0);
     out(`got:${JSON.stringify(s)}\r\n`);

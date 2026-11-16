@@ -39,12 +39,13 @@ function minimalPage(): string {
 }
 
 /**
- * Starts a server on a free port with a fake `claude` (never the real one), polling every
- * `pollMs` (default 100). `fake.list(...)` before or after steers what it lists. Closed after each test.
+ * Starts a server on a free port with a fake `claude` (never the real one), also used as its
+ * `gh` unless one is given, polling every `pollMs` (default 100). `fake.list(...)` before or
+ * after steers what it lists, `fake.prs(...)` the PRs. Closed after each test.
  */
 export async function start(opts: StartOptions & { fake?: FakeClaude } = {}): Promise<Server> {
   const { fake = fakeClaude(), ...rest } = opts;
-  const s = await startServer({ port: 0, pollMs: 100, distDir: minimalPage(), ...rest, claude: fake.path });
+  const s = await startServer({ port: 0, pollMs: 100, distDir: minimalPage(), gh: fake.path, ...rest, claude: fake.path });
   const server = { ...s, fake };
   open.push(server);
   return server;
@@ -63,7 +64,13 @@ export async function tokenOf(url: string): Promise<string> {
   return m[1];
 }
 
-export { listed, listedBg } from "./fake-claude.ts";
+export { listed, listedBg, pr } from "./fake-claude.ts";
+
+/** The text of each request in what an `attach` received: a bracketed paste followed by `\r`. */
+export const pastes = (input: string) => [...input.matchAll(/\x1b\[200~([\s\S]*?)\x1b\[201~\r/g)].map((m) => m[1]);
+
+/** The house whose folder is `cwd`, if the town has one. */
+export const houseAt = (t: Town, cwd: string) => t.houses.find((h) => h.cwd === cwd);
 
 /** Resolves once `ok()` holds, polling every 20 ms; throws after `ms`. */
 export async function until(ok: () => boolean, ms = 3000): Promise<void> {
@@ -194,23 +201,29 @@ export async function runScript(script: string, url: string, input: string) {
 
 /**
  * Paths and env for one `node server/main.ts` child: every Funtown file, and HOME, in a fresh
- * temp folder, a fake `claude`, and port 0.
+ * temp folder, a fake `claude` that is also its `gh`, and port 0.
  */
 export function mainEnv() {
   const dir = realDir();
-  const paths = { log: join(dir, "errors.log"), run: join(dir, "running.json"), switches: join(dir, "switches.jsonl") };
+  const fake = fakeClaude();
+  const paths = {
+    log: join(dir, "errors.log"), run: join(dir, "running.json"), switches: join(dir, "switches.jsonl"),
+    home: join(dir, "home"), steward: join(dir, "steward"),
+  };
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    HOME: join(dir, "home"),
+    HOME: paths.home,
     FUNTOWN_PORT: "0",
-    FUNTOWN_CLAUDE: fakeClaude().path,
+    FUNTOWN_CLAUDE: fake.path,
+    FUNTOWN_GH: fake.path,
+    FUNTOWN_STEWARD: paths.steward,
     FUNTOWN_LOG: paths.log,
     FUNTOWN_RUN: paths.run,
     FUNTOWN_SWITCHES: paths.switches,
     FUNTOWN_ANSWERS: join(dir, "answers.jsonl"),
     FUNTOWN_JOURNAL: join(dir, "journal.jsonl"),
   };
-  return { dir, ...paths, env };
+  return { dir, ...paths, env, fake };
 }
 
 /** A loopback URL with no listener: a free port, closed again, so a connection to it is refused. */

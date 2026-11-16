@@ -1,19 +1,20 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { CWD, errorLines, ev, leadsOf, listed, post, realDir, sleep, start, tokenOf, townWhere, until } from "./helpers.ts";
+import { errorLines, ev, leadsOf, listed, post, realDir, sleep, start, tokenOf, townWhere, until } from "./helpers.ts";
 
 it("a_journal_write_that_fails_after_start_is_logged_as_server_journal", async () => {
   const dir = realDir();
   const log = join(dir, "errors.log");
   const journal = join(dir, "journal.jsonl");
+  const cwd = realDir(); // a real folder, so the PR poll there succeeds and logs nothing
   const s = await start({ journal, errorLog: log });
-  s.fake.list([listed("s1", CWD)]);
+  s.fake.list([listed("s1", cwd)]);
   await townWhere(s.url, (t) => leadsOf(t).length === 1);
   expect(errorLines(log)).toEqual([]);
 
   mkdirSync(journal); // appending a line to a folder fails
-  expect(await post(s.url, ev("Stop", { last_assistant_message: "Done." }))).toBe(204);
+  expect(await post(s.url, ev("Stop", { cwd, last_assistant_message: "Done." }))).toBe(204);
   await until(() => errorLines(log).some((l) => l.source === "server" && l.step === "journal"));
 });
 
