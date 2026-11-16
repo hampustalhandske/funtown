@@ -59,7 +59,7 @@ export class FakeClaude {
   }
   /** Empties the list and the `--bg` record and clears every failure switch. */
   reset(): this {
-    for (const n of ["started.json", "list-fail", "version-fail", "bg-fail"]) rmSync(join(this.dir, n), { force: true });
+    for (const n of ["started.json", "list-fail", "version-fail", "bg-fail", "list-delay", "list-asks"]) rmSync(join(this.dir, n), { force: true });
     return this.list([]);
   }
   /** Sets what `agents --json` prints. */
@@ -71,6 +71,17 @@ export class FakeClaude {
   rawList(text: string): this {
     this.put("list.json", text);
     return this;
+  }
+  /** Makes `agents --json` print the list as it is when asked, but only after `ms` (0 turns it off). */
+  delayList(ms: number): this {
+    this.flag("list-delay", ms > 0);
+    if (ms > 0) this.put("list-delay", String(ms));
+    return this;
+  }
+  /** How many times `agents --json` has been asked since the last reset. */
+  listAsks(): number {
+    const f = join(this.dir, "list-asks");
+    return existsSync(f) ? readFileSync(f, "utf8").length : 0;
   }
   failList(on = true): this {
     this.flag("list-fail", on);

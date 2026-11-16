@@ -3,7 +3,7 @@ import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { leadsOf, listed, post, start, townWhere } from "./helpers.ts";
+import { leadsOf, listed, post, start, townWhere, until } from "./helpers.ts";
 
 const tempDirs: string[] = [];
 const tempDir = (): string => {
@@ -197,5 +197,27 @@ describe("hook data for a session that is never listed", () => {
     fake.list([listed("s9", "/work/demo-app")]);
     const town = await townWhere(url, (t) => leadsOf(t).length === 1);
     expect(leadsOf(town)[0].tty).toBeNull();
+  });
+});
+
+describe("a hook event that arrives while the list is being asked for", () => {
+  it("a_stop_event_during_a_slow_list_call_is_not_undone_by_that_older_busy_list", async () => {
+    const { url, fake } = await start({ pollMs: 1200 });
+    fake.list([listed("s1", "/work/demo-app", { status: "busy" })]);
+    await townWhere(url, (t) => leadsOf(t)[0]?.stage === "working");
+
+    fake.delayList(600);
+    const before = fake.listAsks();
+    await until(() => fake.listAsks() > before, 4000); // the slow call is now running and has read "busy"
+    await post(url, evAt(10, "Stop"));
+    await townWhere(url, (t) => leadsOf(t)[0]?.stage === "needs_you");
+    await new Promise((r) => setTimeout(r, 900)); // the slow call has answered and been applied
+    fake.delayList(0);
+
+    const stale = await townWhere(url, () => true);
+    expect(leadsOf(stale)[0]).toMatchObject({ stage: "needs_you", needs: "turn ended" });
+    // a list asked after the event applies as before
+    const next = await townWhere(url, (t) => leadsOf(t)[0]?.stage === "working", 4000);
+    expect(leadsOf(next)[0].stage).toBe("working");
   });
 });

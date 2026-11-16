@@ -107,3 +107,24 @@ test("a_subagent_of_a_background_lead_has_no_go_to_terminal_button", async ({ pa
   await expect(panel).toBeVisible();
   await expect(panel.getByRole("button", { name: "Go to terminal" })).toHaveCount(0);
 });
+
+test("the_page_sends_the_terminals_size_as_soon_as_the_socket_opens", async ({ page }) => {
+  const sent: string[] = [];
+  let query: URLSearchParams | undefined;
+  await page.routeWebSocket(/\/term/, (ws) => {
+    query = new URL(ws.url()).searchParams;
+    const server = ws.connectToServer();
+    ws.onMessage((m) => {
+      sent.push(String(m));
+      server.send(m);
+    });
+    server.onMessage((m) => ws.send(m));
+  });
+  fake.list([bg()]);
+  await page.goto("/");
+  await row(page, "beta").click({ position: { x: 5, y: 5 } });
+  await expect(screen(page)).toContainText("attached abcd1234");
+  // nothing typed or resized by the test: the first frame is the size the terminal has when the socket opens
+  await expect.poll(() => sent.length).toBeGreaterThan(0);
+  expect(JSON.parse(sent[0])).toEqual({ t: "resize", c: Number(query!.get("cols")), r: Number(query!.get("rows")) });
+});

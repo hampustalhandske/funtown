@@ -129,3 +129,19 @@ test("equal_subagent_ids_under_two_leads_open_the_right_panel", async ({ page })
   await panel.getByRole("button", { name: "Go to terminal" }).click();
   await expect.poll(() => jumps).toEqual([{ lead: "b" }]);
 });
+
+test("a_new_session_does_not_take_over_a_panel_opened_after_it_was_started", async ({ page }) => {
+  const claude = { version: "2.1.325", problems: [] };
+  const stream = await open(page);
+  await page.route("**/sessions", (r) => r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: "newbg001" }) }));
+  await page.locator('section[aria-label="demo-app"]').getByRole("button", { name: /new session/i }).click();
+  await page.locator('section[aria-label="other-app"] .character').filter({ hasText: "lead-2" }).click();
+  const panel = page.getByRole("dialog", { name: "lead-2 details" });
+  await expect(panel).toBeVisible();
+
+  const fresh = { ...town.houses[0].leads[0], id: "s3", name: "fresh-one", kind: "background", shortId: "newbg001", subagents: [] };
+  stream.send({ claude, cards: [], houses: [{ ...town.houses[0], leads: [...town.houses[0].leads, fresh] }, town.houses[1]] });
+  await expect(page.locator('section[aria-label="demo-app"] .character').filter({ hasText: "fresh-one" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "fresh-one details" })).toHaveCount(0);
+  await expect(panel).toBeVisible();
+});

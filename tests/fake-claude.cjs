@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // A stand-in for the `claude` executable. State lives in files next to this script:
 //   list.json (the `agents --json` output, written raw), version, and the switches
-//   list-fail, version-fail, bg-fail. `--bg` appends (cwd, argv, CLAUDE*/AI_AGENT variable
-//   names) to started.json and lists a new background session; `attach <id>` echoes every
+//   list-fail, version-fail, bg-fail; list-delay (ms `agents --json` waits before printing
+//   what list.json held when it was asked) and list-asks (one character per `agents --json`
+//   call). `--bg` appends (cwd, argv, CLAUDE*/AI_AGENT variable names) to started.json and lists a new background session; `attach <id>` echoes every
 //   input chunk as `got:<JSON string>`.
 const fs = process.getBuiltinModule("fs");
 const path = process.getBuiltinModule("path");
@@ -22,7 +23,11 @@ if (argv[0] === "--version") {
     process.stderr.write("agents failed\n");
     process.exit(1);
   }
-  out(read("list.json", "[]"));
+  fs.appendFileSync(file("list-asks"), "x");
+  const text = read("list.json", "[]");
+  const delay = Number(read("list-delay", "0"));
+  if (delay > 0) setTimeout(() => out(text), delay);
+  else out(text);
 } else if (argv[0] === "--bg") {
   if (fs.existsSync(file("bg-fail"))) {
     process.stderr.write("bg failed\n");
