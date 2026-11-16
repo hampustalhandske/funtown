@@ -319,15 +319,15 @@ export async function startServer(opts: {
         res.writeHead(400).end();
         return;
       }
-      let body: string;
+      let entries;
       try {
-        body = JSON.stringify(morning(journal?.read() ?? [], since));
+        entries = journal?.read() ?? [];
       } catch (err) {
         console.error(`funtown: couldn't read the journal: ${(err as Error).message}`);
         res.writeHead(500).end();
         return;
       }
-      res.writeHead(200, { "content-type": "application/json" }).end(body);
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(morning(entries, since)));
       return;
     }
 

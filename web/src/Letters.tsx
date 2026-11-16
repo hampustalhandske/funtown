@@ -18,8 +18,8 @@ const components = {
 
 const PREVIEW_LINES = 12;
 
-/** One letter as written, headed with `name` (default: the name it was written with) and its time; long ones show 12 lines until "Show all". */
-export const LetterView = memo(function LetterView({ letter, name = letter.name }: { letter: Letter; name?: string }) {
+/** One letter as written, headed with `name`, else the name it was written with, else its writer's id (first 8 characters), and its time; long ones show 12 lines until "Show all". */
+export const LetterView = memo(function LetterView({ letter, name }: { letter: Letter; name?: string }) {
   const [expanded, setExpanded] = useState(false);
   const lines = letter.text.split("\n");
   const long = lines.length > PREVIEW_LINES;

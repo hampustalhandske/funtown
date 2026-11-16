@@ -34,11 +34,18 @@ export function openJournal(path: string): Journal {
       throw err;
     }
   };
+  let kept: JournalEntry[] | null = null;
   try {
-    const kept = read().filter((e) => e.at >= Date.now() - KEEP_MS);
-    if (existsSync(path)) writeFileSync(path, kept.map((e) => `${JSON.stringify(e)}\n`).join(""));
+    kept = read().filter((e) => e.at >= Date.now() - KEEP_MS);
   } catch (err) {
-    console.error(`funtown: couldn't open the journal ${path}: ${(err as Error).message}`);
+    console.error(`funtown: couldn't read the journal ${path}: ${(err as Error).message}`);
+  }
+  if (kept && existsSync(path)) {
+    try {
+      writeFileSync(path, kept.map((e) => `${JSON.stringify(e)}\n`).join(""));
+    } catch (err) {
+      console.error(`funtown: couldn't prune the journal ${path}: ${(err as Error).message}`);
+    }
   }
   return {
     read,

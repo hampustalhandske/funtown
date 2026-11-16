@@ -38,7 +38,7 @@ export function SessionTerminal({ lead, reply }: { lead: string; reply: MutableR
         clean = clean.replaceAll("\x1b[200~", "").replaceAll("\x1b[201~", "");
       }
       const paste = JSON.stringify({ t: "in", d: "\x1b[200~" + clean + "\x1b[201~" });
-      if (new TextEncoder().encode(paste).length > 1_048_576) return "Not sent: the reply is over 1 MB.";
+      if (new TextEncoder().encode(paste).length > 1_048_576) return "Not sent: the reply is too long.";
       socket.send(paste);
       send({ t: "in", d: "\r" });
       return null;

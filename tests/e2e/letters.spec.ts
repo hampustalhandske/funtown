@@ -308,7 +308,7 @@ test("a_reply_over_1_MB_is_not_sent_keeps_its_text_and_shows_an_alert", async ({
   const big = "a".repeat(1024 * 1024 + 1);
   await reply.fill(big);
   await p.getByRole("button", { name: "Send" }).click();
-  await expect(p.getByRole("alert")).toHaveText("Not sent: the reply is over 1 MB.");
+  await expect(p.getByRole("alert")).toHaveText("Not sent: the reply is too long.");
   expect(await reply.inputValue()).toBe(big);
   await page.waitForTimeout(300); // give a wrongly sent frame time to arrive
   expect(frames.filter((f) => (f as { t: string }).t === "in")).toEqual([]);

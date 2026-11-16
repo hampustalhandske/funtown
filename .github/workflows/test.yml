@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
 
 # A new push to the same pull request cancels the run still going for the old one. Each push to main
-# has its own group (its commit), so a newer push never cancels or replaces its pending run.
+# and each run by hand has its own group (event and commit), so no newer run cancels or replaces it.
 concurrency:
-  group: test-${{ github.event.pull_request.number || github.sha }}
+  group: test-${{ github.event.pull_request.number || format('{0}-{1}', github.event_name, github.sha) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
