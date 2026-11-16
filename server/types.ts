@@ -35,7 +35,8 @@ export type JournalEntry =
   | { kind: "letter"; at: number; cwd: string; lead: string; letter: Letter }
   | { kind: "stuck"; at: number; cwd: string; lead: string; who: string; name: string; reason: string }
   | { kind: "steward"; at: number; shortId: string }
-  | { kind: "review"; at: number; cwd: string; pr: number; head: string };
+  | { kind: "review"; at: number; cwd: string; pr: number; head: string }
+  | { kind: "reviewed"; at: number; pr: number; head: string; letter: string };
 /** What the morning view shows from the journal. */
 export type Morning = {
   since: number;

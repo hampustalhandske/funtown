@@ -113,7 +113,9 @@ async function readJson(req: IncomingMessage, max = Infinity): Promise<{ value: 
  * answers 500. Each poll reads every house's `.claude/phase.json`; every `prMs` (default 60 s)
  * `gh` (default "gh") lists each house's open PRs. With a `stewardDir`, a steward session there
  * pre-reviews each ready PR with the text of `stewardPrompt` (a path, default server/steward.md;
- * an empty file turns reviews off).
+ * an empty file turns reviews off); an attach that isn't ready within `stewardReadyMs` (default
+ * 15 s) is given up, and a request with no answer after `stewardAnswerMs` (default 30 min) no
+ * longer holds back the next.
  */
 export async function startServer(opts: {
   port: number;
@@ -130,6 +132,8 @@ export async function startServer(opts: {
   prMs?: number;
   stewardPrompt?: string;
   stewardDir?: string;
+  stewardReadyMs?: number;
+  stewardAnswerMs?: number;
 }): Promise<{ url: string; claude: Town["claude"]; close(): Promise<void> }> {
   const run = opts.run ?? defaultRun;
   const claude = opts.claude ?? "claude";
@@ -157,7 +161,20 @@ export async function startServer(opts: {
   const prompt = opts.stewardDir ? readFileSync(opts.stewardPrompt ?? DEFAULT_STEWARD_PROMPT, "utf8") : "";
   const steward =
     opts.stewardDir && prompt.trim() !== ""
-      ? createSteward({ claude, dir: opts.stewardDir, prompt, town, lists: prLists, journal, logError, retryMs: prMs, listedMs: unlistedMs, changed: () => broadcast() })
+      ? createSteward({
+          claude,
+          dir: opts.stewardDir,
+          prompt,
+          town,
+          lists: prLists,
+          cards: () => holds.cards(),
+          journal,
+          logError,
+          retryMs: prMs,
+          readyMs: opts.stewardReadyMs ?? 15_000,
+          answerMs: opts.stewardAnswerMs ?? 30 * 60_000,
+          changed: () => broadcast(),
+        })
       : undefined;
   const clients = new Set<ServerResponse>();
   const tokenBytes = Buffer.from(randomBytes(16).toString("hex"));
@@ -223,7 +240,7 @@ export async function startServer(opts: {
             prFailing.add(cwd);
           },
         )
-        .catch((err) => logError("prs", err, cwd))
+        .catch((err) => logError("steward", err))
         .finally(() => prRunning.delete(cwd));
       prRunning.set(cwd, run);
     }
@@ -253,15 +270,17 @@ export async function startServer(opts: {
       } else {
         town.expire();
       }
-      const houses = town.snapshot().houses;
+      const listed = town.cwds();
+      const cwds = [...new Set(listed.values())];
       const phases = new Map<string, PhaseFile>();
-      for (const { cwd } of houses) {
+      for (const cwd of cwds) {
         const phase = readPhase(cwd);
         if (phase) phases.set(cwd, phase);
       }
       town.setPhases(phases);
       const stewardId = steward?.lead()?.id;
-      pollPrs(houses.filter((h) => !h.leads.some((l) => l.id === stewardId)).map((h) => h.cwd));
+      const stewardCwd = stewardId === undefined ? undefined : listed.get(stewardId);
+      pollPrs(cwds.filter((cwd) => cwd !== stewardCwd));
       steward?.pump();
       broadcast();
       applyReason = "";

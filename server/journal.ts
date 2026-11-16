@@ -20,6 +20,7 @@ function parse(line: string): JournalEntry | null {
     const e = JSON.parse(line) as JournalEntry;
     if (e.kind === "steward") return typeof e.at === "number" && typeof e.shortId === "string" ? e : null;
     if (e.kind === "review") return typeof e.at === "number" && typeof e.cwd === "string" && typeof e.pr === "number" && typeof e.head === "string" ? e : null;
+    if (e.kind === "reviewed") return typeof e.at === "number" && typeof e.pr === "number" && typeof e.head === "string" && typeof e.letter === "string" ? e : null;
     const ok = (e.kind === "letter" || e.kind === "stuck") && typeof e.at === "number" && typeof e.cwd === "string" && typeof e.lead === "string";
     const letterOk = e.kind === "letter" && typeof e.letter?.text === "string" && typeof e.letter.id === "string" && typeof e.letter.from === "string" && typeof e.letter.at === "number";
     return ok && (e.kind === "stuck" || letterOk) ? e : null;
@@ -44,14 +45,15 @@ export function openJournal(path: string, logError: LogError): Journal {
   /**
    * Rewrites the file without its stale and unparseable lines and gives the entries kept; null
    * when it couldn't be read. The newest steward line is kept at any age: it names the steward
-   * session a restart reuses.
+   * session a restart reuses; so are review and reviewed lines (one per PR head commit), so an
+   * open PR is never asked again and keeps its review.
    */
   const prune = (): JournalEntry[] | null => {
     let kept: JournalEntry[];
     try {
       const all = read();
       const steward = all.findLast((e) => e.kind === "steward");
-      kept = all.filter((e) => e === steward || e.at >= Date.now() - KEEP_MS);
+      kept = all.filter((e) => e === steward || e.kind === "review" || e.kind === "reviewed" || e.at >= Date.now() - KEEP_MS);
     } catch (err) {
       logError("journal", err);
       return null;

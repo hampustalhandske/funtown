@@ -4,28 +4,24 @@ import { claudeEnv, startBackground } from "./agents.ts";
 import type { LogError } from "./errors.ts";
 import type { Journal } from "./journal.ts";
 import type { HookEvent, TownState } from "./town.ts";
-import type { Lead, Parcel } from "./types.ts";
+import type { Card, Lead, Parcel } from "./types.ts";
 import type { Pr } from "./workflow.ts";
 
-/** How long `claude attach` may stay silent before the request is given up. */
-const READY_MS = 15_000;
 /** How long its output must pause before the request is written: the screen has been drawn. */
 const QUIET_MS = 500;
 /** How long the attach stays open after the request, so the session reads it before the detach. */
 const LINGER_MS = 1_000;
+/** How long a started steward may go unlisted before another is started. */
+const LISTED_MS = 5 * 60_000;
 
 const key = (pr: number, head: string) => `${pr}\0${head}`;
 
 /**
- * The steward: one background `claude` session in `dir` that pre-reviews each ready PR (open,
- * not a draft) once per head commit. `lists` holds each house's open PRs by cwd. A request is
- * `prompt` with `{number}`, `{title}` and `{url}` filled in, pasted into the steward over
- * `claude attach` while it isn't working and has no request in flight (sent, its next Stop not
- * yet seen); requests go oldest first. The steward is started (`claude --bg`) the first time a
- * review is due and none is listed, and journaled, so a restart reuses it; each sent request is
- * journaled too, so a restart never sends it again. A failed start or attach is logged once
- * until one works, and tried again after `retryMs`; a started steward that isn't listed within
- * `listedMs` is started again. `changed` runs when a request has been sent.
+ * The steward: one background `claude` session in `dir` that pre-reviews each ready PR in
+ * `lists` (open PRs by cwd) once per head commit, pasting `prompt` filled in for it over
+ * `claude attach`. `journal` carries the session, the requests and their reviews across
+ * restarts; `cards` gives the open cards; a failed start or attach is retried after `retryMs`;
+ * `readyMs` bounds an attach and `answerMs` a request. `changed` runs when a request has been sent.
  */
 export function createSteward(opts: {
   claude: string;
@@ -33,25 +29,34 @@ export function createSteward(opts: {
   prompt: string;
   town: TownState;
   lists: Map<string, Pr[]>;
+  cards: () => Card[];
   journal?: Journal;
   logError: LogError;
   retryMs: number;
-  listedMs: number;
+  readyMs: number;
+  answerMs: number;
   changed: () => void;
 }) {
-  const { claude, dir, prompt, town, lists, journal, logError, retryMs, listedMs, changed } = opts;
+  const { claude, dir, prompt, town, lists, cards, journal, logError, retryMs, readyMs, answerMs, changed } = opts;
   // PR number and head commit -> when its request was sent
   const sent = new Map<string, number>();
-  // PR number and head commit -> when it was first seen due, so the oldest goes first
+  // PR number and head commit -> the id of the steward's letter that answered its request
+  const reviewed = new Map<string, string>();
+  // PR number and head commit of each open PR due -> its place in the order first seen, so the oldest goes first
   const seen = new Map<string, number>();
+  let seenCount = 0;
   let stewardId: string | undefined;
+  let startedAt = -Infinity;
   for (const e of journal?.kept ?? []) {
-    if (e.kind === "steward") stewardId = e.shortId;
+    if (e.kind === "steward") [stewardId, startedAt] = [e.shortId, e.at];
     else if (e.kind === "review") sent.set(key(e.pr, e.head), e.at);
+    else if (e.kind === "reviewed") reviewed.set(key(e.pr, e.head), e.letter);
   }
   let busy = false;
-  let inFlight = false;
-  let startedAt = -Infinity;
+  // the request sent whose Stop or StopFailure hasn't come yet
+  let inFlight: { pr: number; head: string; at: number } | undefined;
+  // whether the steward named by stewardId has been seen listed
+  let wasListed = false;
   let retryAt = -Infinity;
   const failing = new Set<"start" | "attach">();
   // the attach writing a request, while it runs
@@ -67,17 +72,18 @@ export function createSteward(opts: {
   };
   const lead = () => (stewardId ? town.byShortId(stewardId) : undefined);
 
-  /** The ready PRs with no request sent for their head commit, oldest first. */
+  /** The ready PRs with no request sent for their head commit, oldest first; forgets the order of the rest. */
   const due = () => {
     const found = new Map<string, { cwd: string; pr: Pr }>();
     for (const [cwd, prs] of lists) {
       for (const pr of [...prs].reverse()) {
         const k = key(pr.number, pr.head);
         if (pr.draft || sent.has(k) || found.has(k)) continue;
-        if (!seen.has(k)) seen.set(k, seen.size);
+        if (!seen.has(k)) seen.set(k, seenCount++);
         found.set(k, { cwd, pr });
       }
     }
+    for (const k of seen.keys()) if (!found.has(k)) seen.delete(k);
     return [...found].sort(([a], [b]) => seen.get(a)! - seen.get(b)!).map(([, item]) => item);
   };
 
@@ -87,6 +93,7 @@ export function createSteward(opts: {
       mkdirSync(dir, { recursive: true });
       stewardId = await startBackground(claude, dir);
       startedAt = Date.now();
+      wasListed = false;
       failing.delete("start");
       journal?.append({ kind: "steward", at: startedAt, shortId: stewardId });
     } catch (err) {
@@ -124,16 +131,19 @@ export function createSteward(opts: {
       pty.write("\r");
       const at = Date.now();
       sent.set(key(pr.number, pr.head), at);
-      inFlight = true;
+      inFlight = { pr: pr.number, head: pr.head, at };
       failing.delete("attach");
       journal?.append({ kind: "review", at, cwd, pr: pr.number, head: pr.head });
       changed();
+      clearTimeout(giveUp);
       timer = setTimeout(detach, LINGER_MS);
     };
-    let timer = setTimeout(() => {
-      fail("attach", new Error(`claude attach ${steward.shortId} showed nothing within ${READY_MS} ms`));
+    // Output that never pauses for QUIET_MS still ends the attach here.
+    const giveUp = setTimeout(() => {
+      fail("attach", new Error(`claude attach ${steward.shortId} wasn't quiet for ${QUIET_MS} ms within ${readyMs} ms`));
       detach();
-    }, READY_MS);
+    }, readyMs);
+    let timer: NodeJS.Timeout | undefined;
     pty.onData(() => {
       if (written) return;
       clearTimeout(timer);
@@ -141,6 +151,7 @@ export function createSteward(opts: {
     });
     pty.onExit(({ exitCode }) => {
       exited = true;
+      clearTimeout(giveUp);
       clearTimeout(timer);
       attach = undefined;
       busy = false;
@@ -155,32 +166,54 @@ export function createSteward(opts: {
 
     /** Starts the steward or sends the next request, when one is due and the steward can take it. */
     pump(): void {
-      if (closed || busy || Date.now() < retryAt) return;
+      if (closed) return;
+      if (inFlight && Date.now() - inFlight.at >= answerMs) {
+        const limit = answerMs >= 60_000 ? `${answerMs / 60_000} min` : `${answerMs} ms`;
+        logError("steward", `no answer to #${inFlight.pr} after ${limit}`);
+        inFlight = undefined;
+      }
+      if (busy || Date.now() < retryAt) return;
       const next = due()[0];
       const steward = lead();
-      if (!steward) inFlight = false;
+      if (steward) wasListed = true;
+      else inFlight = undefined;
       if (!next) return;
       if (!steward) {
-        if (Date.now() - startedAt >= listedMs) starting = start().finally(() => (starting = undefined));
-      } else if (!inFlight && steward.stage !== "working" && steward.shortId) {
+        if (stewardId === undefined || wasListed || Date.now() - startedAt >= LISTED_MS) starting = start().finally(() => (starting = undefined));
+      } else if (!inFlight && steward.stage !== "working" && steward.shortId && !cards().some((c) => c.lead === steward.id)) {
         send(steward, next.cwd, next.pr);
       }
     },
 
-    /** Notes an applied hook event: the steward's own Stop ends the request in flight. */
+    /**
+     * Notes an applied hook event: the steward's own Stop or StopFailure ends the request in
+     * flight, and a Stop's letter, when it is new since the request, is journaled as its review.
+     */
     event(event: HookEvent): void {
-      if (event.hook_event_name === "Stop" && event.agent_id === undefined && event.session_id === lead()?.id) inFlight = false;
+      const steward = lead();
+      if (!inFlight || !steward || event.agent_id !== undefined || event.session_id !== steward.id) return;
+      if (event.hook_event_name === "Stop") {
+        const { pr, head, at } = inFlight;
+        const letter = town.letters(steward.id)?.find((l) => l.from === steward.id);
+        if (letter && letter.at >= at) {
+          reviewed.set(key(pr, head), letter.id);
+          journal?.append({ kind: "reviewed", at: Date.now(), pr, head, letter: letter.id });
+        }
+      } else if (event.hook_event_name !== "StopFailure") {
+        return;
+      }
+      inFlight = undefined;
     },
 
     /** The review of `pr` for its parcel; undefined for a draft. */
     review(pr: Pr): Parcel["review"] {
       if (pr.draft) return undefined;
       const steward = lead();
-      const at = sent.get(key(pr.number, pr.head));
+      const k = key(pr.number, pr.head);
       const base = steward ? { steward: steward.id } : {};
-      if (at === undefined) return { state: "queued", ...base };
-      const letter = steward && town.letters(steward.id)?.filter((l) => l.from === steward.id && l.at >= at).at(-1);
-      return letter ? { state: "ready", ...base, letter: letter.id } : { state: "reviewing", ...base };
+      const letter = reviewed.get(k);
+      if (letter !== undefined) return { state: "ready", ...base, letter };
+      return { state: sent.has(k) ? "reviewing" : "queued", ...base };
     },
 
     /**

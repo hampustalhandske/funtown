@@ -322,6 +322,11 @@ export class TownState {
     return undefined;
   }
 
+  /** Each listed session's cwd by session id, in list order. */
+  cwds(): ReadonlyMap<string, string> {
+    return this.listed;
+  }
+
   /** Sets each project's phase file by cwd; a cwd not in `phases` has none. */
   setPhases(phases: Map<string, PhaseFile>): void {
     this.phases = phases;
