@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Character, House, Lead, Parcel } from "../../server/types.ts";
-import type { InPlaced } from "../../web/src/town/interior.ts";
+import type { Drawn, InPlaced } from "../../web/src/town/interior.ts";
 import { poseOf } from "../../web/src/town/layout.ts";
 import { colourFor, hatFor } from "../../web/src/town/kit/palette.ts";
 
@@ -145,5 +145,79 @@ describe("boardOf", () => {
   test("no_phase_file_gives_a_blank_board", async () => {
     const { boardOf } = await load();
     expect(boardOf(house([]))).toMatchObject({ phase: null, note: null, steps: [] });
+  });
+});
+
+describe("drawn", () => {
+  const leadAt = (id: string, x: number): InPlaced => ({ kind: "lead", id, colour: "#abc", pose: "work", at: { x, z: -3 } });
+  const hatAt = (id: string, x: number): InPlaced => ({ kind: "hat", id, lead: "a1", colour: "#abc", hat: "cap", pose: "work", at: { x, z: 1 } });
+  const parcelAt = (number: number): InPlaced => ({ kind: "parcel", cwd: "/work/alpha", number, at: { x: 4, z: 3 } });
+  const observer: InPlaced = { kind: "observer", at: { x: 0, z: 5.2 } };
+  const idsOf = (all: InPlaced[]) => all.map((p) => (p.kind === "lead" || p.kind === "hat" ? p.id : p.kind)).sort();
+  const figure = (all: Drawn[], id: string) => all.find((p) => (p.kind === "lead" || p.kind === "hat") && p.id === id);
+
+  test("everyone_placed_is_drawn_at_their_place_and_nobody_is_marked_leaving", async () => {
+    const { drawn } = await load();
+    const placed = [leadAt("a1", 0), hatAt("x1", -1), parcelAt(3), observer];
+    const out = drawn([], placed, 1000);
+    expect(out).toEqual(placed);
+    expect(out.some((p) => "leftAt" in p && p.leftAt !== undefined)).toBe(false);
+  });
+
+  test("a_figure_that_left_is_kept_at_the_door_marked_with_the_time_it_first_left", async () => {
+    const { drawn, DOOR } = await load();
+    const first = drawn([], [leadAt("a1", 0), hatAt("x1", -1), observer], 1000);
+    const out = drawn(first, [leadAt("a1", 0), observer], 5000);
+    const gone = figure(out, "x1")!;
+    expect(gone, "the hat is still drawn").toBeDefined();
+    expect(gone.at).toEqual(DOOR);
+    expect(gone.kind).toBe("hat");
+    expect(gone.leftAt).toBe(5000);
+    expect(figure(out, "a1")!.leftAt).toBeUndefined();
+
+    // A lead leaves the same way.
+    const led = drawn(drawn([], [leadAt("a1", 0), leadAt("a2", 1.5)], 0), [leadAt("a1", 0)], 10);
+    expect(figure(led, "a2")!.at).toEqual(DOOR);
+    expect(figure(led, "a2")!.leftAt).toBe(10);
+  });
+
+  test("a_leaver_keeps_its_first_leftAt_and_is_dropped_once_LEAVE_MS_has_passed", async () => {
+    const { drawn, LEAVE_MS } = await load();
+    expect(LEAVE_MS).toBe(2500);
+    const placed = [leadAt("a1", 0), observer];
+    const leaving = drawn(drawn([], [...placed, hatAt("x1", -1)], 0), placed, 10_000);
+    expect(figure(leaving, "x1")!.leftAt).toBe(10_000);
+    const later = drawn(leaving, placed, 10_000 + LEAVE_MS - 1);
+    expect(figure(later, "x1")!.leftAt, "the earlier leftAt is kept").toBe(10_000);
+    expect(idsOf(drawn(later, placed, 10_000 + LEAVE_MS)), "gone at exactly LEAVE_MS").toEqual(["a1", "observer"]);
+    expect(idsOf(drawn(later, placed, 10_000 + 60_000))).toEqual(["a1", "observer"]);
+  });
+
+  test("a_figure_that_comes_back_while_leaving_is_drawn_at_its_place_and_no_longer_marked_leaving", async () => {
+    const { drawn, DOOR } = await load();
+    const desk = hatAt("x1", -1);
+    const leaving = drawn(drawn([], [desk], 0), [], 100);
+    expect(figure(leaving, "x1")!.leftAt).toBe(100);
+    const back = drawn(leaving, [desk], 200);
+    expect(back).toEqual([desk]);
+    expect(figure(back, "x1")!.at).not.toEqual(DOOR);
+    expect(figure(back, "x1")!.leftAt).toBeUndefined();
+  });
+
+  test("a_parcel_and_the_observer_that_are_no_longer_placed_are_dropped_at_once", async () => {
+    const { drawn } = await load();
+    const before = drawn([], [leadAt("a1", 0), parcelAt(3), observer], 0);
+    expect(idsOf(drawn(before, [leadAt("a1", 0)], 1))).toEqual(["a1"]);
+  });
+
+  test("drawn_is_pure_the_same_inputs_give_the_same_output_and_the_inputs_are_left_alone", async () => {
+    const { drawn } = await load();
+    const before = drawn([], [leadAt("a1", 0), hatAt("x1", -1), hatAt("x2", 1), observer], 0);
+    const placed = [leadAt("a1", 0), hatAt("x2", 1), observer];
+    const [b, p] = [structuredClone(before), structuredClone(placed)];
+    const once = drawn(before, placed, 500);
+    expect(drawn(before, placed, 500)).toEqual(once);
+    expect(before).toEqual(b);
+    expect(placed).toEqual(p);
   });
 });

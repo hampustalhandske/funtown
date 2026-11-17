@@ -19,7 +19,8 @@ on it.
 - `web/` (React, Vite): `/` is the town (`index.html`, `src/town/`: `layout.ts` pure places, `Village.tsx`
   the 3D scene, `TownPage.tsx` icons, Settings, hidden list; `kit/` the clay parts; no visible words on the
   town). A building opens its classroom at `#in=<cwd>`: `interior.ts` pure places and the whiteboard model,
-  `Classroom.tsx` the room, the lead at the front, you the crowned observer at the back; words only on the board.
+  `Classroom.tsx` the room, the lead at the front, you the crowned observer at the back; words only on the board;
+  `drawn()` keeps a departed figure at the door for 2.5 s so it walks out.
   `/work.html` the work view (`App.tsx`: list, panels; a background lead's terminal mounts only after Show terminal; no command text on rows; `AnswerCard`, `Letters`, `Morning`,
   `Switch`, `needs.tsx`: `waitingList`, the desk order, card kinds first then oldest). Font Recursive (OFL, bundled, licence emitted next to it).
   `tests/`: Vitest; Playwright in `tests/e2e/`, one spec at a time; the fake `claude` is also `gh`.

@@ -1,5 +1,5 @@
 import type { House } from "../../../server/types.ts";
-import { poseOf, type Pose, type Spot } from "./layout.ts";
+import { keyOf, poseOf, type Pose, type Spot } from "./layout.ts";
 import { colourFor, hatFor, type HatKind } from "./kit/palette.ts";
 
 /** A place in a classroom; +z faces the camera, the front of the room (leads, whiteboard) is at -z. */
@@ -8,6 +8,8 @@ export type InPlaced =
   | { kind: "hat"; id: string; lead: string; colour: string; hat: HatKind; pose: Pose; at: Spot }
   | { kind: "parcel"; cwd: string; number: number; at: Spot }
   | { kind: "observer"; at: Spot };
+/** A place as drawn: a figure that has left carries the time it started to (`leftAt`). */
+export type Drawn = InPlaced & { leftAt?: number };
 export type BoardStep = { label: string; state: "done" | "now" | "next" | "later" };
 export type Board = { project: string; phase: string | null; note: string | null; steps: BoardStep[] };
 
@@ -19,6 +21,10 @@ export const BOARD: Spot = { x: 0, z: -4.6 };
 export const TABLE: Spot = { x: 4.1, z: 3.4 };
 /** Where the user, the king, stands: the back centre, in the aisle between the desk columns. */
 export const OBSERVER: Spot = { x: 0, z: 5.2 };
+/** Just inside the room's door, on the right wall at the table's depth: where figures come in and leave. */
+export const DOOR: Spot = { x: 5.1, z: TABLE.z };
+/** How long a figure that has left stays in the scene, walking to the door. */
+export const LEAVE_MS = 2500;
 
 const LEAD_GAP = 1.5;
 const DESKS_PER_ROW = 4;
@@ -78,4 +84,19 @@ export function boardOf(house: House): Board {
     state: at < 0 ? "later" : i < at ? "done" : i === at ? "now" : i === at + 1 ? "next" : "later",
   }));
   return { project: house.project, phase: file?.phase ?? null, note: file?.note ?? null, steps };
+}
+
+/**
+ * `placed` as drawn now, plus each lead or hat in `before` that is no longer in `placed`: standing at
+ * DOOR with `leftAt` (its earlier `leftAt`, else `now`), kept while `now - leftAt < LEAVE_MS`.
+ * Parcels and the observer are never kept. Pure.
+ */
+export function drawn(before: Drawn[], placed: InPlaced[], now: number): Drawn[] {
+  const here = new Set(placed.map(keyOf));
+  const left = before.flatMap((p): Drawn[] => {
+    if ((p.kind !== "lead" && p.kind !== "hat") || here.has(keyOf(p))) return [];
+    const leftAt = p.leftAt ?? now;
+    return now - leftAt < LEAVE_MS ? [{ ...p, at: DOOR, leftAt }] : [];
+  });
+  return [...placed, ...left];
 }
