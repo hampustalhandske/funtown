@@ -1,10 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, expect, it } from "vitest";
-import { errorLines, houseAt, listed, mainEnv, pastes, pr, realDir, sleep, townWhere, until } from "./helpers.ts";
+import { errorLines, houseAt, listed, mainEnv, pastes, postPage, pr, realDir, sleep, townWhere, until } from "./helpers.ts";
 
 const MAIN = resolve(import.meta.dirname, "../server/main.ts");
 
@@ -157,8 +157,15 @@ it("an_empty_steward_md_in_the_home_folder_turns_reviews_off", async () => {
   expect(m.fake.started()).toEqual([]);
 }, 20_000);
 
-it("without_a_home_steward_md_main_sends_server_steward_md_filled_in_to_a_steward_in_FUNTOWN_STEWARD", async () => {
+it("without_a_home_steward_md_main_sends_server_steward_md_filled_in_to_a_steward_in_FUNTOWN_STEWARD_once_asked", async () => {
   const m = await mainWithReadyPr();
+  const url = m.main.url();
+  const idle = await townWhere(url, (t) => houseAt(t, m.project)?.parcels?.length === 1, 8000);
+  expect(houseAt(idle, m.project)!.parcels![0].review?.state).toBe("idle");
+  await sleep(2500); // past the next list poll: an unasked PR starts no steward
+  expect(m.fake.started()).toEqual([]);
+
+  expect((await postPage({ url }, "/review", { cwd: m.project, number: 7 })).status).toBe(204);
   await until(() => m.fake.sessions().some((x) => x.cwd === m.steward), 10_000);
   const short = m.fake.sessions().find((x) => x.cwd === m.steward)!.id!;
   const pasted = () => pastes(m.fake.attachInput(short));
@@ -166,7 +173,8 @@ it("without_a_home_steward_md_main_sends_server_steward_md_filled_in_to_a_stewar
 
   const template = readFileSync(resolve(import.meta.dirname, "../server/steward.md"), "utf8");
   const seven = pr(7);
-  const expected = template.replaceAll("{number}", String(seven.number)).replaceAll("{title}", seven.title).replaceAll("{url}", seven.url);
+  const expected = template.replaceAll("{number}", String(seven.number)).replaceAll("{title}", seven.title).replaceAll("{url}", seven.url)
+    .replaceAll("{project}", basename(m.project)).replaceAll("{repo}", "example/repo");
   expect(pasted()[0].trim()).toBe(expected.trim());
   expect(m.fake.started().map((c) => c.cwd)).toEqual([m.steward]);
 }, 25_000);

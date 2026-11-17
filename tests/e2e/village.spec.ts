@@ -24,7 +24,7 @@ const state = (over: { houses?: unknown[] } = {}) => ({
         lead("s3", "lead-3", { stage: "needs_you", needs: "stuck", reason: "rate limit", since: 9 }),
       ],
       parcels: [
-        { number: 4217, title: "Open PR", url: PR_URL, draft: false },
+        { number: 4217, title: "Open PR", url: PR_URL, draft: false, review: { state: "idle" } },
         { number: 4218, title: "Reviewed PR", url: "https://example.test/pull/4218", draft: false, review: { state: "ready", steward: "st1", letter: "L1" } },
       ],
     },
@@ -58,6 +58,7 @@ test("the_hidden_list_names_every_character_hat_and_parcel_with_project_role_and
   await expect(hat).toHaveAccessibleName(/implementer/);
   await expect(hat).toHaveAccessibleName(/demo-app/);
   await expect(item(page, /4217/)).toHaveCount(1);
+  await expect(item(page, /4217/)).toHaveAccessibleName(/review not asked/);
   await expect(item(page, /4218/)).toHaveCount(1);
   await expect(item(page, /Finished-1/)).toHaveCount(0);
 });
@@ -84,19 +85,58 @@ test("clicking_a_lead_or_a_hat_opens_that_characters_panel", async ({ page }) =>
   await expect(page.getByRole("dialog", { name: "Explore-1 details" })).toBeVisible();
 });
 
-test("a_ready_parcel_opens_the_stewards_panel_and_an_unreviewed_one_opens_its_pr", async ({ page }) => {
+test("a_ready_parcel_opens_the_stewards_panel_and_an_unasked_one_a_panel_that_asks_only_on_its_button", async ({ page }) => {
   await openTown(page);
   const requested: string[] = [];
   await page.context().route("https://example.test/**", (r) => {
     requested.push(r.request().url());
     return r.fulfill({ status: 200, contentType: "text/html", body: "<title>pr</title>" });
   });
+  const asked: { body: unknown; token: string | undefined; origin: string | undefined }[] = [];
+  await page.route("**/review", (r) => {
+    const req = r.request();
+    asked.push({ body: req.postDataJSON(), token: req.headers()["x-funtown-token"], origin: req.headers()["origin"] });
+    return r.fulfill({ status: 204 });
+  });
   await item(page, /4218/).click();
   await expect(page.getByRole("dialog", { name: "steward details" })).toBeVisible();
   expect(requested).toEqual([]);
   await page.keyboard.press("Escape");
+
+  // An unasked parcel opens its panel: nothing is asked and no PR is opened until a button is chosen.
   await item(page, /4217/).click();
+  const ask = page.getByRole("button", { name: "Ask steward to review" });
+  const open = page.getByRole("link", { name: "Open PR", exact: true }).or(page.getByRole("button", { name: "Open PR", exact: true }));
+  await expect(ask).toBeVisible();
+  await expect(open).toBeVisible();
+  await page.waitForTimeout(300);
+  expect(asked).toEqual([]);
+  expect(requested).toEqual([]);
+
+  await ask.click();
+  await expect.poll(() => asked.length).toBe(1);
+  expect(asked[0].body).toEqual({ cwd: "/work/demo-app", number: 4217 });
+  expect(asked[0].token).toBeTruthy();
+  expect(asked[0].origin).toBeTruthy();
+  expect(requested).toEqual([]);
+});
+
+test("an_unasked_parcels_panel_opens_the_pr_from_open_pr_and_asks_nothing", async ({ page }) => {
+  await openTown(page);
+  const requested: string[] = [];
+  await page.context().route("https://example.test/**", (r) => {
+    requested.push(r.request().url());
+    return r.fulfill({ status: 200, contentType: "text/html", body: "<title>pr</title>" });
+  });
+  let asked = 0;
+  await page.route("**/review", (r) => {
+    asked++;
+    return r.fulfill({ status: 204 });
+  });
+  await item(page, /4217/).click();
+  await page.getByRole("link", { name: "Open PR", exact: true }).or(page.getByRole("button", { name: "Open PR", exact: true })).click();
   await expect.poll(() => requested).toContain(PR_URL);
+  expect(asked).toBe(0);
 });
 
 test("the_town_page_shows_no_words_outside_panels_and_has_a_full_window_canvas_with_labelled_icon_buttons", async ({ page }) => {
