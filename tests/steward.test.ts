@@ -348,4 +348,17 @@ describe("the steward in the state", () => {
     expect(houseAt(t, p.project)?.leads[0].id).toBe("s1");
     expect(houseAt(t, p.project)?.leads[0]).not.toHaveProperty("steward");
   });
+
+  it("with_a_projects_file_the_steward_still_shows_though_its_folder_is_not_an_added_project", async () => {
+    const p = paths();
+    const { lead, steward } = reused(p, []);
+    const elsewhere = realDir();
+    const fake = fakeClaude().list([lead, steward("idle"), listed("s9", elsewhere)]).prs(p.project, []);
+    const projects = join(realDir(), "projects.json");
+    writeFileSync(projects, JSON.stringify([p.project]));
+    const s = await startSteward(p, fake, { projects });
+    const t = await townWhere(s.url, (x) => houseAt(x, p.stewardDir)?.leads.length === 1 && houseAt(x, p.project)?.leads.length === 1);
+    expect(houseAt(t, p.stewardDir)?.leads[0]).toMatchObject({ id: SID, steward: true });
+    expect(houseAt(t, elsewhere)).toBeUndefined();
+  });
 });

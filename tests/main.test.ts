@@ -132,15 +132,17 @@ it("a_run_file_that_does_not_parse_logs_unclean_exit_instead_of_passing_for_a_cl
   expect(errorLines(m.log).filter((l) => l.step === "unclean-exit")).toEqual([expect.objectContaining({ source: "server" })]);
 }, 15_000);
 
-/** Starts main with a lead listed in a real project whose gh lists the ready PR #7; `homePrompt` is ~/.funtown/steward.md, if any. */
+/**
+ * Starts main with a lead listed in a real added project whose gh lists the ready PR #7;
+ * `homePrompt` is ~/.funtown/steward.md, if any.
+ */
 async function mainWithReadyPr(homePrompt?: string) {
   const m = mainEnv();
   const project = realDir();
   m.fake.list([listed("s1", project)]).prs(project, [pr(7)]);
-  if (homePrompt !== undefined) {
-    mkdirSync(join(m.home, ".funtown"), { recursive: true });
-    writeFileSync(join(m.home, ".funtown", "steward.md"), homePrompt);
-  }
+  mkdirSync(join(m.home, ".funtown"), { recursive: true });
+  writeFileSync(join(m.home, ".funtown", "projects.json"), JSON.stringify([project]));
+  if (homePrompt !== undefined) writeFileSync(join(m.home, ".funtown", "steward.md"), homePrompt);
   const main = startMain(m.env);
   await main.running();
   return { ...m, main, project };

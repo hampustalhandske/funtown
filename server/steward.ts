@@ -171,6 +171,9 @@ export function createSteward(opts: {
     /** The steward's lead while it is listed. */
     lead,
 
+    /** The short id of the steward session started or reused last, or undefined before one is. */
+    shortId: () => stewardId,
+
     /** Starts the steward or sends the next request, when one is due and the steward can take it. */
     pump(): void {
       if (closed) return;
