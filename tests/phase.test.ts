@@ -57,22 +57,41 @@ describe("the phase file", () => {
 });
 
 describe("the phase file's steps", () => {
-  it("steps_are_kept_in_order_only_as_a_list_of_strings_and_a_list_over_24_never_passes_whole", async () => {
+  /** Writes a phase file carrying `steps` under the phase name `phase` and returns the house's phase once the poll shows it. */
+  async function stepsShown(s: Awaited<ReturnType<typeof withProject>>, value: unknown, phase: string) {
+    s.phaseFile(JSON.stringify({ phase, steps: value }));
+    return houseAt(await townWhere(s.url, (t) => houseAt(t, s.cwd)?.phase?.phase === phase), s.cwd)!.phase!;
+  }
+  const names = (n: number) => Array.from({ length: n }, (_, i) => `step ${i}`);
+
+  it("steps_are_kept_whole_and_in_order", async () => {
     const s = await withProject();
-    const steps = async (value: unknown, phase: string) => {
-      s.phaseFile(JSON.stringify({ phase, steps: value }));
-      return houseAt(await townWhere(s.url, (t) => houseAt(t, s.cwd)?.phase?.phase === phase), s.cwd)!.phase!;
-    };
-    expect((await steps(["plan", "build", "review"], "p1")).steps).toEqual(["plan", "build", "review"]);
-    const full = Array.from({ length: 24 }, (_, i) => `step ${i}`);
-    expect((await steps(full, "p2")).steps).toEqual(full);
-    expect((await steps("plan, build", "p3")).steps).toBeUndefined();
-    expect((await steps(["plan", 3], "p4")).steps).toBeUndefined();
-    const long = Array.from({ length: 30 }, (_, i) => `step ${i}`);
-    expect((await steps(long, "p5")).steps?.length ?? 0).toBeLessThanOrEqual(24);
-    s.phaseFile(JSON.stringify({ phase: "p6" }));
-    const none = await townWhere(s.url, (t) => houseAt(t, s.cwd)?.phase?.phase === "p6");
-    expect(houseAt(none, s.cwd)!.phase).toEqual({ phase: "p6" });
+    expect((await stepsShown(s, ["plan", "build", "review"], "p1")).steps).toEqual(["plan", "build", "review"]);
+  });
+
+  it("a_list_of_exactly_24_steps_is_kept_whole", async () => {
+    const s = await withProject();
+    expect((await stepsShown(s, names(24), "p2")).steps).toEqual(names(24));
+  });
+
+  it.each([25, 30])("a_list_of_%i_steps_is_dropped_whole_never_cut_to_24", async (n) => {
+    const s = await withProject();
+    expect((await stepsShown(s, names(n), "p3")).steps).toBeUndefined();
+  });
+
+  it.each([
+    ["a string", "plan, build"],
+    ["a list with a non-string", ["plan", 3]],
+  ])("steps_that_are_%s_are_dropped_and_the_phase_stays", async (_what, value) => {
+    const s = await withProject();
+    expect(await stepsShown(s, value, "p4")).toEqual({ phase: "p4" });
+  });
+
+  it("a_file_without_steps_shows_the_phase_alone", async () => {
+    const s = await withProject();
+    s.phaseFile(JSON.stringify({ phase: "p5" }));
+    const none = await townWhere(s.url, (t) => houseAt(t, s.cwd)?.phase?.phase === "p5");
+    expect(houseAt(none, s.cwd)!.phase).toEqual({ phase: "p5" });
   });
 });
 

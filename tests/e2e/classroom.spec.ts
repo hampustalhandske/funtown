@@ -55,9 +55,16 @@ const inTown = async (page: Page) => {
   await expect(building(page, "demo-app")).toBeAttached();
   await expect.poll(() => hash(page)).toBe("");
 };
-/** The texts of the page's list items that mention `label` (the board and the hidden list both carry them). */
-const rows = async (page: Page, label: string) => (await page.getByRole("listitem").filter({ hasText: label }).allTextContents()).map((t) => t.toLowerCase());
-/** Whether text `text` is drawn on screen as a card: an element that is wide enough and not transparent. */
+const TICK = /[\u2713\u2714\u2611]/;
+/**
+ * How the board marks the step `label`: the board's line for it is an item of its ordered list: its mark then its label. A tick is done, the words next and later are themselves, any other mark is now.
+ */
+const markOf = async (page: Page, label: string) => {
+  const line = new RegExp(`^(.*?)\\s*${label}$`, "i");
+  const marks = (await page.locator("ol > li").allInnerTexts()).map((t) => line.exec(t.trim())?.[1].trim()).filter((m): m is string => m !== undefined);
+  const kinds = marks.map((m) => (TICK.test(m) ? "done" : /^next$/i.test(m) ? "next" : /^later$/i.test(m) ? "later" : m === "" ? "plain" : "now"));
+  return kinds.length === 1 ? kinds[0] : `${kinds.length} lines: ${kinds.join(",")}`;
+};
 const drawn = (page: Page, text: string) =>
   page.getByText(text).evaluateAll((els) =>
     els.some((e) => {
@@ -195,17 +202,53 @@ test("the_whiteboard_shows_the_project_phase_note_and_marks_each_step_and_follow
   expect(await drawn(page, "build")).toBe(true);
   await expect(page.getByText("build").first()).toHaveCSS("font-family", /Recursive Variable/);
 
-  // The phase is `build`: plan is done, review is next, ship is later; neither done nor now steps carry the words next or later.
-  const marks = async () => Object.fromEntries(await Promise.all(STEPS.map(async (s) => [s, (await rows(page, s)).some((t) => /\bnext\b/.test(t)) ? "next" : (await rows(page, s)).some((t) => /\blater\b/.test(t)) ? "later" : "plain"])));
-  await expect.poll(marks).toEqual({ plan: "plain", build: "plain", review: "next", ship: "later" });
+  // The phase is `build`: plan is done (ticked), build is now (marked, not ticked), review is next, ship is later.
+  const marks = async () => Object.fromEntries(await Promise.all(STEPS.map(async (s) => [s, await markOf(page, s)])));
+  await expect.poll(marks).toEqual({ plan: "done", build: "now", review: "next", ship: "later" });
 
   stream.send(state({ phase: "review", steps: STEPS }));
-  await expect.poll(marks, { timeout: 5000 }).toEqual({ plan: "plain", build: "plain", review: "plain", ship: "next" });
+  await expect.poll(marks, { timeout: 5000 }).toEqual({ plan: "done", build: "done", review: "now", ship: "next" });
   await expect.poll(() => drawn(page, "tests first"), { timeout: 5000 }).toBe(false);
 
   stream.send(state({ phase: "polish", note: "off the list", steps: STEPS }));
   await expect.poll(marks, { timeout: 5000 }).toEqual({ plan: "later", build: "later", review: "later", ship: "later" });
   await expect.poll(() => drawn(page, "off the list"), { timeout: 5000 }).toBe(true);
+});
+
+/** The board's line for step `label`: an item of the board's ordered list (the hidden list is unordered). */
+const boardLine = (page: Page, label: string) => page.locator("ol > li").filter({ hasText: new RegExp(`^\\S*\\s*${label}$`) });
+
+test("a_board_with_24_steps_draws_every_one_inside_the_board_card_with_nothing_clipped", async ({ page }) => {
+  const many = Array.from({ length: 24 }, (_, i) => `step ${String(i + 1).padStart(2, "0")}`);
+  await open(page, `/#in=${encodeURIComponent(DEMO)}`, state({ phase: many[11], note: "a long plan", steps: many }));
+  await expect.poll(() => drawn(page, "a long plan")).toBe(true);
+  for (const label of many) await expect(boardLine(page, label), label).toHaveCount(1);
+  // The card is the nearest ancestor of a step's line that also holds the project heading.
+  const edges = await Promise.all(
+    many.map((label) =>
+      boardLine(page, label).evaluate((li) => {
+        let card: Element | null = li;
+        while (card && ![...card.querySelectorAll("h2")].some((h) => h.textContent === "demo-app")) card = card.parentElement;
+        const [c, b] = [card!.getBoundingClientRect(), li.getBoundingClientRect()];
+        return { label: li.textContent, top: b.top - c.top, bottom: c.bottom - b.bottom, left: b.left - c.left, right: c.right - b.right, height: b.height, inView: b.top >= 0 && b.bottom <= innerHeight && b.left >= 0 && b.right <= innerWidth };
+      }),
+    ),
+  );
+  for (const e of edges) {
+    expect(Math.min(e.top, e.bottom, e.left, e.right), `${e.label} lies inside the card`).toBeGreaterThanOrEqual(-1);
+    expect(e.height, `${e.label} is tall enough to read`).toBeGreaterThan(4);
+    expect(e.inView, `${e.label} is on screen`).toBe(true);
+  }
+});
+
+test("a_board_whose_steps_repeat_a_label_draws_every_line_through_a_phase_change", async ({ page }) => {
+  const steps = ["plan", "review", "review", "ship"];
+  const stream = await open(page, `/#in=${encodeURIComponent(DEMO)}`, state({ phase: "plan", steps }));
+  await expect(boardLine(page, "review")).toHaveCount(2);
+  stream.send(state({ phase: "ship", steps }));
+  await expect.poll(() => markOf(page, "plan"), { timeout: 5000 }).toBe("done");
+  await expect(boardLine(page, "review")).toHaveCount(2);
+  await expect(boardLine(page, "ship")).toHaveCount(1);
 });
 
 test("a_whiteboard_without_steps_shows_the_phase_and_note_only_and_without_a_phase_file_shows_neither", async ({ page }) => {
