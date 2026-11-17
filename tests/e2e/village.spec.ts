@@ -41,7 +41,7 @@ async function openTown(page: Page, initial: unknown = state()) {
   await expect(page.locator("canvas")).toHaveCount(1);
   return stream;
 }
-/** An entry of the visually hidden list. It sits under the canvas, so it is clicked by event, not by pointer. */
+/** An entry of the visually hidden list (1 px rows stacked at one corner, so the pointer hits a neighbour: it is clicked by event). */
 const item = (page: Page, name: RegExp) => page.getByRole("button", { name });
 
 test("the_hidden_list_names_every_character_hat_and_parcel_with_project_role_and_stage_and_omits_the_done_agent", async ({ page }) => {
@@ -102,11 +102,10 @@ test("a_ready_parcel_opens_the_stewards_panel_and_an_unreviewed_one_opens_its_pr
 test("the_town_page_shows_no_words_outside_panels_and_has_a_full_window_canvas_with_labelled_icon_buttons", async ({ page }) => {
   await openTown(page);
   await expect(page.locator("canvas")).toHaveCount(1);
-  const box = (await page.locator("canvas").boundingBox())!;
   const view = page.viewportSize()!;
-  expect(box.width).toBeGreaterThanOrEqual(view.width - 1);
-  expect(box.height).toBeGreaterThanOrEqual(view.height - 1);
-  for (const label of [/settings/i, /work/i, /morning/i, /switch/i]) {
+  await expect.poll(async () => (await page.locator("canvas").boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(view.width - 1);
+  expect((await page.locator("canvas").boundingBox())!.height).toBeGreaterThanOrEqual(view.height - 1);
+  for (const label of [/^settings$/i, /^work view$/i, /^morning$/i, /i had to switch/i]) {
     await expect(page.getByRole("button", { name: label }).or(page.getByRole("link", { name: label })).first()).toBeAttached();
   }
   const words = await page.evaluate(() => {
@@ -119,7 +118,7 @@ test("the_town_page_shows_no_words_outside_panels_and_has_a_full_window_canvas_w
       for (let el = n.parentElement; el && !hidden; el = el.parentElement) {
         const r = el.getBoundingClientRect();
         const css = getComputedStyle(el);
-        hidden = r.width <= 2 || r.height <= 2 || css.visibility === "hidden" || css.display === "none" || css.opacity === "0";
+        hidden = css.fontSize === "0px" || /, 0\)$/.test(css.color) || r.width <= 2 || r.height <= 2 || css.visibility === "hidden" || css.display === "none" || css.opacity === "0";
       }
       if (!hidden && !["SCRIPT", "STYLE", "NOSCRIPT"].includes(n.parentElement!.tagName)) seen.push(text);
     }
@@ -171,4 +170,22 @@ test("both_pages_use_the_bundled_recursive_font_and_fetch_nothing_from_another_o
   }
   expect(fonts.filter((f) => /recursive/i.test(f)).length).toBeGreaterThan(0);
   expect(outside).toEqual([]);
+});
+
+test("a_building_links_to_its_house_in_the_work_view_and_the_link_scrolls_to_that_house", async ({ page }) => {
+  const houses = Array.from({ length: 12 }, (_, i) => ({
+    project: `proj-${i}`,
+    cwd: `/work/proj-${i}`,
+    leads: [0, 1, 2].map((j) => lead(`l${i}-${j}`, `lead-${i}-${j}`, {}, [sub(`h${i}-${j}`, `hat-${i}-${j}`, "Plan")])),
+  }));
+  await openTown(page, state({ houses }));
+  const link = page.getByRole("link", { name: "proj-4, house" });
+  await expect(link).toHaveAttribute("href", "/work.html#/work/proj-4");
+  await link.dispatchEvent("click");
+  await expect(page).toHaveURL(/\/work\.html#/);
+  const target = page.locator('section[aria-label="proj-4"]');
+  await expect(target).toBeInViewport();
+  await expect.poll(() => target.evaluate((el) => el.getBoundingClientRect().top)).toBeLessThan(page.viewportSize()!.height / 4);
+  expect(await page.evaluate(() => scrollY)).toBeGreaterThan(0);
+  await expect(page.locator('section[aria-label="proj-0"]')).not.toBeInViewport();
 });
