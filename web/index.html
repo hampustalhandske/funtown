@@ -7,7 +7,7 @@
     <title>Funtown</title>
     <style>
       body { margin: 0; font-family: system-ui, sans-serif; background: #eef5e9; color: #222; }
-      header { display: flex; align-items: baseline; gap: 1rem; padding: 1rem 1.5rem; }
+      header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 1rem; padding: 1rem 1.5rem; }
       .switch-box { position: fixed; top: 4rem; left: 1rem; right: 1rem; max-width: 30rem; box-sizing: border-box; z-index: 20;
         display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.3rem 0.6rem; background: #fff; border: 2px solid #c8a97e; border-radius: 0.5rem; }
       h1 { margin: 0; font-size: 1.6rem; }
@@ -84,6 +84,14 @@
       .letter pre { overflow: auto; }
       .reply { display: flex; gap: 0.5rem; align-items: flex-end; margin-top: 0.5rem; }
       .reply textarea { flex: 1; box-sizing: border-box; }
+      .add-project, .run { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-end; margin: 0 1.5rem 1rem; }
+      .add-project input { flex: 1; min-width: 0; box-sizing: border-box; }
+      .add-project .error { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
+      .run { margin: 0.5rem 0; }
+      .run textarea { flex: 1; min-width: 0; box-sizing: border-box; }
+      .house { max-width: 100%; box-sizing: border-box; }
+      .house [role="tabpanel"] { margin-top: 0.5rem; max-width: 100%; }
+      .house [role="tab"][aria-selected="true"] { background: #e6e6ef; }
       .error { color: #d32f2f; }
     </style>
   </head>

@@ -137,17 +137,22 @@ function LeadItem({ lead, cards, onSelect }: { lead: Lead; cards: Card[]; onSele
   );
 }
 
-/** POSTs JSON with the page token; gives null on one of `ok`, else the server's reason. */
-async function post(path: string, body: object, ok: number[]): Promise<string | null> {
+/** Why a request failed: the text to show, and the HTTP status (0 when the server was not reached). */
+type Failure = { message: string; status: number };
+
+/** POSTs JSON with the page token; gives null on one of `ok`, else the failure. */
+async function post(path: string, body: object, ok: number[]): Promise<Failure | null> {
   try {
     const reply = await fetch(path, {
       method: "POST",
       headers: { "content-type": "application/json", "x-funtown-token": funtownToken() },
       body: JSON.stringify(body),
     });
-    return ok.includes(reply.status) ? null : (await reply.text()) || `Request failed (${reply.status}).`;
+    return ok.includes(reply.status)
+      ? null
+      : { message: (await reply.text()) || `Request failed (${reply.status}).`, status: reply.status };
   } catch {
-    return "Couldn't reach Funtown.";
+    return { message: "Couldn't reach Funtown.", status: 0 };
   }
 }
 
@@ -161,7 +166,7 @@ function AddProject() {
     event.preventDefault();
     setError(null);
     const failed = await post("/projects", { cwd: cwd.trim() }, [200, 201]);
-    setError(failed);
+    setError(failed?.message ?? null);
     if (!failed) setCwd("");
   }
   return (
@@ -183,7 +188,7 @@ function HouseCard({
   house: House;
   cards: Card[];
   onSelect: Select;
-  onNew: (cwd: string) => Promise<string | null>;
+  onNew: (cwd: string) => Promise<Failure | null>;
   notice?: string;
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -194,19 +199,21 @@ function HouseCard({
   const [failed, setFailed] = useState(false);
   async function start() {
     setError(null);
+    setFailed(false);
     setPending(true);
     const reason = await onNew(house.cwd);
-    setError(reason);
-    setFailed(reason !== null);
+    setError(reason?.message ?? null);
+    setFailed(reason?.status === 500);
     setPending(false);
   }
   async function run(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    setFailed(false);
     setPending(true);
     const reason = await post("/runs", { cwd: house.cwd, prompt }, [201]);
-    setError(reason);
-    setFailed(reason !== null);
+    setError(reason?.message ?? null);
+    setFailed(reason?.status === 500);
     if (!reason) {
       setPrompt("");
       setRunOpen(false);
@@ -214,8 +221,16 @@ function HouseCard({
     setPending(false);
   }
   async function closeShell() {
-    setError(await post("/shells/close", { cwd: house.cwd }, [204, 404]));
+    setError(null);
+    setFailed(false);
+    setError((await post("/shells/close", { cwd: house.cwd }, [204, 404]))?.message ?? null);
     setShell(false);
+  }
+  async function removeProject() {
+    if (!window.confirm(`Remove ${house.project} from Funtown? Its shell ends; sessions keep running.`)) return;
+    setError(null);
+    setFailed(false);
+    setError((await post("/projects/remove", { cwd: house.cwd }, [204, 404]))?.message ?? null);
   }
   const needsYou = house.leads.some((lead) => lead.stage === "needs_you");
   return (
@@ -248,7 +263,7 @@ function HouseCard({
         Shell
       </button>
       {house.added && (
-        <button type="button" onClick={() => post("/projects/remove", { cwd: house.cwd }, [204, 404]).then(setError)}>
+        <button type="button" onClick={removeProject}>
           Remove project
         </button>
       )}
@@ -396,21 +411,21 @@ export function App() {
     );
     return () => timers.forEach(clearTimeout);
   }, [opening]);
-  /** Starts a background session in `cwd`; gives an error text, or null once started (its terminal opens when listed). */
-  const startSession = useCallback(async (cwd: string): Promise<string | null> => {
+  /** Starts a background session in `cwd`; gives the failure, or null once started (its terminal opens when listed). */
+  const startSession = useCallback(async (cwd: string): Promise<Failure | null> => {
     try {
       const reply = await fetch("/sessions", {
         method: "POST",
         headers: { "content-type": "application/json", "x-funtown-token": funtownToken() },
         body: JSON.stringify({ cwd }),
       });
-      if (reply.status !== 201) return (await reply.text()) || `Start failed (${reply.status}).`;
+      if (reply.status !== 201) return { message: (await reply.text()) || `Start failed (${reply.status}).`, status: reply.status };
       const { id } = (await reply.json()) as { id: string };
       setMissing((all) => all.filter((c) => c !== cwd));
       setOpening((all) => [...all, { id, cwd, at: Date.now(), from: selectionNow.current }]);
       return null;
     } catch {
-      return "Couldn't reach Funtown.";
+      return { message: "Couldn't reach Funtown.", status: 0 };
     }
   }, []);
   const openCwd = lead && town?.houses.find((house) => house.leads.includes(lead))?.cwd;
