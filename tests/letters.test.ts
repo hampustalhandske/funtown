@@ -69,25 +69,20 @@ describe("letters from Stop and SubagentStop", () => {
     ]);
   });
 
-  it("a_lead_keeps_its_newest_20_letters_its_own_and_its_subagents_together_newest_first", async () => {
+  it("a_lead_keeps_only_its_newest_letter_whether_its_own_or_a_subagents", async () => {
     const s = await withListed("s1");
-    await s.send(ev("SubagentStart", sub), ev("SubagentStop", { ...sub, last_assistant_message: "oldest, from x1" }));
-    for (let i = 1; i <= 20; i++) await s.send(ev("Stop", { last_assistant_message: `turn ${i}` }));
-
-    const got = await s.letters();
-    expect(got.map((l) => l.text)).toEqual(Array.from({ length: 20 }, (_, i) => `turn ${20 - i}`));
-    expect(new Set(got.map((l) => l.id)).size).toBe(20);
+    await s.send(ev("Stop", { last_assistant_message: "turn 1" }), ev("Stop", { last_assistant_message: "turn 2" }));
+    expect((await s.letters()).map((l) => l.text)).toEqual(["turn 2"]);
+    await s.send(ev("SubagentStart", sub), ev("SubagentStop", { ...sub, last_assistant_message: "from x1" }));
+    expect((await s.letters()).map((l) => l.text)).toEqual(["from x1"]);
   });
 
   it("a_message_over_65536_units_is_cut_to_65536_ending_in_an_ellipsis_and_one_of_exactly_65536_is_kept_whole", async () => {
     const s = await withListed("s1");
-    await s.send(
-      ev("Stop", { last_assistant_message: "a".repeat(65_537) }),
-      ev("Stop", { last_assistant_message: "b".repeat(65_536) }),
-    );
-    const [whole, cut] = await s.letters();
-    expect(cut.text).toBe("a".repeat(65_535) + "…");
-    expect(whole.text).toBe("b".repeat(65_536));
+    await s.send(ev("Stop", { last_assistant_message: "a".repeat(65_537) }));
+    expect((await s.letters())[0].text).toBe("a".repeat(65_535) + "…");
+    await s.send(ev("Stop", { last_assistant_message: "b".repeat(65_536) }));
+    expect((await s.letters())[0].text).toBe("b".repeat(65_536));
   });
 
   it("a_cut_that_falls_inside_an_emoji_drops_the_whole_emoji_and_leaves_no_lone_surrogate", async () => {
