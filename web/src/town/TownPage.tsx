@@ -245,11 +245,11 @@ export function TownPage() {
         {inside
           ? [
               ...inside.placed.map((p) => (
-                <li key={p.kind === "parcel" ? `parcel:${p.cwd}#${p.number}` : p.kind === "observer" ? "observer" : `character:${p.id}`}>
+                <li key={keyOf(p)}>
                   {p.kind === "observer" ? <span>{words(p, index).label}</span> : <button type="button" onClick={() => pick(p)}>{words(p, index).label}</button>}
                 </li>
               )),
-              ...boardLines(inside.board).map((line) => <li key={`board:${line}`}><span>{line}</span></li>),
+              ...boardLines(inside.board).map((line, i) => <li key={`board:${i}`}><span>{line}</span></li>),
             ]
           : placed.map((p) => (
               <li key={keyOf(p)}>

@@ -25,8 +25,8 @@ const DESKS_PER_ROW = 4;
 const DESK_GAP = 1.5;
 const ROW_GAP = 1.5;
 const FIRST_ROW = 0;
-const PARCEL_GAP = 0.5;
-const PARCELS_PER_ROW = 3;
+export const PARCEL_GAP = 0.5;
+export const PARCELS_PER_ROW = 3;
 
 /** The i-th of `count` leads, side by side across the front and centred on FRONT. */
 const leadSpot = (i: number, count: number): Spot => ({ x: FRONT.x + (i - (count - 1) / 2) * LEAD_GAP, z: FRONT.z });
