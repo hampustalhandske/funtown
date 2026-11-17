@@ -25,6 +25,12 @@ export const pr = (number: number, over: Partial<Pr> = {}): Pr => ({
   number, title: `PR ${number}`, url: `https://github.com/example/repo/pull/${number}`, isDraft: false, headRefOid: `head-${number}`, ...over,
 });
 
+/** The e2e web server's port: `FUNTOWN_E2E_PORT`, so two checkouts can run their browser tests side by side; 4799 by default. */
+export const E2E_PORT = process.env.FUNTOWN_E2E_PORT ?? "4799";
+
+/** The e2e web server's address. */
+export const E2E_URL = `http://127.0.0.1:${E2E_PORT}`;
+
 /** Where the e2e web server's fake `claude` lives, so the config and the specs share it. */
 export const E2E_FAKE_DIR = join(tmpdir(), "funtown-e2e-claude");
 
