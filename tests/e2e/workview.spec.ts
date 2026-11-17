@@ -8,20 +8,9 @@ import { addProjectFolder, removeProjectFolder, showTerminal, stubStream } from 
 const EMOJI_STATUS = /[🟢🔴⚪🟡]/u;
 const dialog = (page: Page, name: string) => page.getByRole("dialog", { name: `${name} details` });
 
-/** The background colour of the small round-ish box (an element or its ::before/::after) that has no text of its own, or null. */
-const dotColour = (where: Locator) =>
-  where.evaluate((root) => {
-    for (const el of [root, ...root.querySelectorAll("*")]) {
-      for (const pseudo of [null, "::before", "::after"]) {
-        const css = getComputedStyle(el, pseudo);
-        if (pseudo ? css.content === "none" : el.textContent?.trim()) continue;
-        const [w, h] = [parseFloat(css.width), parseFloat(css.height)];
-        if (!(w >= 4 && w <= 24 && Math.abs(w - h) < 1)) continue;
-        if (css.backgroundColor !== "rgba(0, 0, 0, 0)") return css.backgroundColor;
-      }
-    }
-    return null;
-  });
+/** The background colour of the status dot (`.dot[data-stage="<stage>"]`) inside `where`. */
+const dotColour = (where: Locator, stage: string) =>
+  where.locator(`.dot[data-stage="${stage}"]`).first().evaluate((el) => getComputedStyle(el).backgroundColor);
 
 const NOW = Date.now();
 const claude = { version: "2.1.325", problems: [] };
@@ -69,14 +58,13 @@ test.describe("with a stubbed stream", () => {
     await stubStream(page, { claude, houses: [house(leads)], cards: [] });
     await page.goto("/work.html");
 
-    const colours: Record<string, string | null> = {};
-    for (const [name, word] of [["alpha", "working"], ["bravo", "needs you"], ["charlie", "done"]]) {
+    const colours: Record<string, string> = {};
+    for (const [name, word, stage] of [["alpha", "working", "working"], ["bravo", "needs you", "needs_you"], ["charlie", "done", "done"]]) {
       const row = rowOf(page, name);
       await expect(row).toContainText(word);
       expect(await row.innerText(), `${name} row`).not.toMatch(EMOJI_STATUS);
-      colours[word] = await dotColour(row);
+      colours[word] = await dotColour(row, stage);
     }
-    expect(Object.values(colours).every((c) => c !== null), JSON.stringify(colours)).toBe(true);
     expect(new Set(Object.values(colours)).size, "one colour per status").toBe(3);
 
     const queue = page.getByRole("region", { name: /needs you/i });

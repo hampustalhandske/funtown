@@ -603,4 +603,13 @@ describe("the steward in the state", () => {
     expect(houseAt(t, p.stewardDir)?.leads[0]).toMatchObject({ id: SID, steward: true });
     expect(houseAt(t, elsewhere)).toBeUndefined();
   });
+
+  it("the_stewards_lead_can_be_stopped_like_any_listed_background_session", async () => {
+    const p = paths();
+    const { fake } = reused(p, []);
+    const s = await startSteward(p, fake);
+    await townWhere(s.url, (x) => houseAt(x, p.stewardDir)?.leads[0]?.steward === true);
+    expect((await postPage(s, "/sessions/stop", { lead: SID })).status).toBe(204);
+    expect(fake.stopCalls()).toEqual([["stop", SHORT]]);
+  });
 });
