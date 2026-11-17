@@ -170,7 +170,12 @@ export async function startServer(opts: {
     logError("projects", err, opts.projects);
   }
   town.setProjects(projects);
-  let avatar = opts.avatar ? readAvatar(opts.avatar) : undefined;
+  let avatar: string | undefined;
+  try {
+    if (opts.avatar) avatar = readAvatar(opts.avatar);
+  } catch (err) {
+    logError("avatar", err, opts.avatar);
+  }
   const gh = opts.gh ?? "gh";
   const prMs = opts.prMs ?? 60_000;
   // cwd -> its open PRs, from the last gh list that worked
@@ -614,12 +619,13 @@ export async function startServer(opts: {
         if (!opts.avatar) throw new Error("no avatar file is set");
         writeAvatar(opts.avatar, id);
         avatar = id;
-        broadcast();
-        res.writeHead(204).end();
       } catch (err) {
         logError("avatar", err, id);
         res.writeHead(500, text).end(`Couldn't save the avatar: ${(err as Error).message}`);
+        return;
       }
+      broadcast();
+      res.writeHead(204).end();
       return;
     }
 

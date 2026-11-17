@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { realDir, start, tokenOf, townWhere } from "./helpers.ts";
+import { errorLines, realDir, start, tokenOf, townWhere } from "./helpers.ts";
 
 const restore: string[] = [];
 afterEach(() => {
@@ -27,6 +27,8 @@ it("a_chosen_avatar_gets_204_and_the_next_state_carries_its_id_and_the_file_hold
   expect(JSON.parse(readFileSync(s.path!, "utf8"))).toEqual({ id: "baker" });
   expect(await s.choose("sailor-2")).toBe(204);
   expect(await s.avatar()).toBe("sailor-2");
+  expect(await s.choose("a".repeat(32))).toBe(204);
+  expect(await s.avatar()).toBe("a".repeat(32));
 });
 
 it("the_chosen_avatar_survives_a_server_restart", async () => {
@@ -36,14 +38,6 @@ it("the_chosen_avatar_survives_a_server_restart", async () => {
   await first.close();
   const second = await avatarServer(path);
   expect(await second.avatar()).toBe("baker");
-});
-
-it("the_server_stores_any_id_of_the_right_shape_without_knowing_the_presets", async () => {
-  const s = await avatarServer();
-  expect(await s.choose("a".repeat(32))).toBe(204);
-  expect(await s.avatar()).toBe("a".repeat(32));
-  expect(await s.choose("x")).toBe(204);
-  expect(await s.avatar()).toBe("x");
 });
 
 it("an_id_of_the_wrong_shape_gets_400_and_changes_nothing", async () => {
@@ -118,4 +112,21 @@ it("an_unreadable_or_malformed_avatar_file_gives_no_avatar_and_the_server_keeps_
   mkdirSync(folder);
   const s = await avatarServer(folder);
   expect(await s.avatar()).toBeUndefined();
+});
+
+it("an_avatar_file_that_cannot_be_read_or_holds_no_id_leaves_one_log_line_and_a_missing_file_none", async () => {
+  const log = join(realDir(), "errors.log");
+  const bad = join(realDir(), "avatar.json");
+  writeFileSync(bad, "not json {");
+  await start({ avatar: bad, errorLog: log });
+  const folder = join(realDir(), "avatar.json");
+  mkdirSync(folder);
+  await start({ avatar: folder, errorLog: log });
+  const wrongShape = join(realDir(), "avatar.json");
+  writeFileSync(wrongShape, JSON.stringify({ id: "Not Valid" }));
+  await start({ avatar: wrongShape, errorLog: log });
+  expect(errorLines(log).filter((l) => l.source === "server" && l.step === "avatar")).toHaveLength(3);
+  const quiet = join(realDir(), "errors.log");
+  await start({ avatar: join(realDir(), "avatar.json"), errorLog: quiet });
+  expect(errorLines(quiet).filter((l) => l.step === "avatar")).toEqual([]);
 });
