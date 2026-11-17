@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_FAKE_DIR, FakeClaude, listed } from "../fake-claude.ts";
-import { hook as postHook } from "./stream.ts";
+import { addProjectFolder, hook as postHook, removeProjectFolder } from "./stream.ts";
 
 const fake = FakeClaude.at(E2E_FAKE_DIR);
 let cwd = "";
@@ -12,12 +12,17 @@ let project = "";
 let sidA = "";
 let sidB = "";
 
-test.beforeEach(() => {
+test.beforeEach(async () => {
   cwd = realpathSync(mkdtempSync(join(tmpdir(), "funtown-e2e-morning-")));
   project = basename(cwd);
   sidA = randomUUID();
   sidB = randomUUID();
   fake.reset();
+  await addProjectFolder(cwd);
+});
+
+test.afterEach(async () => {
+  await removeProjectFolder(cwd);
 });
 
 const hook = (sid: string, name: string, extra: Record<string, unknown> = {}) => postHook(sid, cwd, name, extra);
@@ -144,6 +149,8 @@ test("a_waiting_character_shows_under_its_own_project_only_when_two_projects_sha
   const y = join(root, "y", "app");
   mkdirSync(x, { recursive: true });
   mkdirSync(y, { recursive: true });
+  await addProjectFolder(x);
+  await addProjectFolder(y);
   fake.list([listed(sidA, x, { name: "alpha" }), listed(sidB, y, { name: "beta" })]);
   await page.goto("/work.html");
   await expect(page.locator(".character").filter({ hasText: "alpha" }).first()).toBeVisible();
@@ -159,4 +166,6 @@ test("a_waiting_character_shows_under_its_own_project_only_when_two_projects_sha
   await expect(inY).toContainText("Done in y.");
   await expect(inY.locator('[aria-label="Next"]')).toContainText("beta");
   await expect(inY).not.toContainText("alpha");
+  await removeProjectFolder(x);
+  await removeProjectFolder(y);
 });

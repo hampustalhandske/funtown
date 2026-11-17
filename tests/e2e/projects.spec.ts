@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_FAKE_DIR, FakeClaude, listed } from "../fake-claude.ts";
+import { addProjectFolder } from "./stream.ts";
 
 const fake = FakeClaude.at(E2E_FAKE_DIR);
 let cwd = "";
@@ -55,6 +56,7 @@ test("an_added_project_is_a_house_with_no_session_and_the_first_time_hint_until_
 });
 
 test("background_run_posts_the_prompt_as_one_argument_for_the_house", async ({ page }) => {
+  await addProjectFolder(cwd);
   fake.list([listed("t1", cwd, { name: "alpha" })]);
   await page.goto("/work.html");
   await house(page).getByRole("button", { name: /background run/i }).click();
@@ -83,6 +85,7 @@ test("the_shell_tab_echoes_input_survives_a_reload_replays_its_output_and_close_
 });
 
 test("a_failed_start_shows_the_reason_and_the_setup_hint_in_a_house_that_has_a_session", async ({ page }) => {
+  await addProjectFolder(cwd);
   fake.list([listed("t1", cwd, { name: "alpha" })]);
   fake.failBg();
   await page.goto("/work.html");
@@ -94,6 +97,7 @@ test("a_failed_start_shows_the_reason_and_the_setup_hint_in_a_house_that_has_a_s
 });
 
 test("the_setup_hint_shows_only_after_a_500_and_goes_when_the_next_action_starts", async ({ page }) => {
+  await addProjectFolder(cwd);
   fake.list([listed("t1", cwd, { name: "alpha" })]);
   await page.goto("/work.html");
   await house(page).getByRole("button", { name: /background run/i }).click();

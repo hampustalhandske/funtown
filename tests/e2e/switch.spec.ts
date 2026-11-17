@@ -4,17 +4,23 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_FAKE_DIR, FakeClaude, listed, listedBg } from "../fake-claude.ts";
+import { addProjectFolder, removeProjectFolder } from "./stream.ts";
 
 const fake = FakeClaude.at(E2E_FAKE_DIR);
 let cwd = "";
 let project = "";
 let sid = "";
 
-test.beforeEach(() => {
+test.beforeEach(async () => {
   cwd = realpathSync(mkdtempSync(join(tmpdir(), "funtown-e2e-switch-")));
   project = basename(cwd);
   sid = randomUUID();
   fake.reset();
+  await addProjectFolder(cwd);
+});
+
+test.afterEach(async () => {
+  await removeProjectFolder(cwd);
 });
 
 const row = (page: Page) => page.locator(`section[aria-label="${project}"] .character`).filter({ hasText: "alpha" }).first();
