@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Character, House, Town } from "../../../server/types.ts";
-import { AddProject, Panel, removeProject, useSelection, useTown } from "../App.tsx";
+import type { Character, House, Parcel, Town } from "../../../server/types.ts";
+import { AddProject, askReview, Panel, removeProject, useSelection, useTown } from "../App.tsx";
 import { MorningButton } from "../Morning.tsx";
 import { SwitchButton, type OpenSession } from "../Switch.tsx";
 import { needOf, NotifyButton, Toasts } from "../needs.tsx";
 import { keyOf, layout, type Placed } from "./layout.ts";
 import { Village } from "./Village.tsx";
 
-const REVIEW_WORDS = { queued: "review queued", reviewing: "reviewing", ready: "review ready" } as const;
+const REVIEW_WORDS = { idle: "review not asked", queued: "review queued", reviewing: "reviewing", ready: "review ready" } as const;
 
 /** A character's stage in words: working, done, stuck with its reason, or what it needs from you. */
 const stageWords = (c: Character) => (c.stage !== "needs_you" ? c.stage : c.needs === "stuck" ? needOf(c) : `needs you: ${needOf(c)}`);
@@ -108,17 +108,53 @@ function Settings({ town, muted, onMute, open, onClose }: SettingsProps) {
   );
 }
 
+type AskTarget = { cwd: string; parcel: Parcel };
+
+/** A small panel for a pull request with no review: ask the steward for one, or open the PR. Asking is only on the button. */
+function AskPanel({ target, onClose }: { target: AskTarget; onClose: () => void }) {
+  const { cwd, parcel } = target;
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  async function ask() {
+    const failed = await askReview(cwd, parcel.number);
+    if (failed) setError(failed.message);
+    else onClose();
+  }
+  return (
+    <aside className="pane" role="dialog" aria-label={`Pull request ${parcel.number}`}>
+      <button type="button" className="icon close" aria-label="Close" title="Close" onClick={onClose}>{ICONS.close}</button>
+      <h2>#{parcel.number} {parcel.title}</h2>
+      <p>No review asked yet.</p>
+      <div className="row">
+        <button type="button" onClick={() => void ask()}>Ask steward to review</button>
+        <a href={parcel.url} target="_blank" rel="noopener noreferrer">Open PR</a>
+      </div>
+      {error && <p role="alert" className="error">{error}</p>}
+    </aside>
+  );
+}
+
 /** The town page: the village in one canvas, a row of icon buttons, panels on demand, and a hidden list for screen readers. */
 export function TownPage() {
   const [town, restarted] = useTown();
   const { setSelection, onClose, lead, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop } = useSelection(town);
   const [settings, setSettings] = useState(false);
+  const [asking, setAsking] = useState<AskTarget | null>(null);
+  const closeAsking = useCallback(() => setAsking(null), []);
   const closeSettings = useCallback(() => setSettings(false), []);
   const placed = useMemo(() => (town ? layout(town, waiting) : []), [town]);
   const index = useMemo(() => indexOf(town), [town]);
   const name = useCallback((p: Placed) => words(p, index).name, [index]);
 
-  /** Opens what `p` stands for: a character's panel, a parcel's review or PR, a building's house in the work view. */
+  /** Opens what `p` stands for: a character's panel, a parcel's review panel, letter or PR, a building's house in the work view. */
   const pick = useCallback(
     (p: Placed) => {
       if (p.kind === "building") location.assign(workLink(p.cwd));
@@ -126,6 +162,7 @@ export function TownPage() {
         const parcel = index.houses.get(p.cwd)?.parcels?.find((x) => x.number === p.number);
         const steward = parcel?.review?.state === "ready" ? parcel.review.steward : undefined;
         if (steward && index.characters.has(steward)) setSelection({ lead: steward, id: steward });
+        else if (parcel?.review?.state === "idle") setAsking({ cwd: p.cwd, parcel });
         else if (parcel) window.open(parcel.url, "_blank", "noopener,noreferrer");
       } else setSelection({ lead: p.kind === "hat" ? p.lead : p.id, id: p.id });
     },
@@ -167,6 +204,7 @@ export function TownPage() {
         </button>
       </nav>
       {settings && <Settings town={town} muted={muted} onMute={toggleMute} open={openSession} onClose={closeSettings} />}
+      {asking && <AskPanel key={`${asking.cwd}/${asking.parcel.number}`} target={asking} onClose={closeAsking} />}
       {lead && selected && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} cards={town?.cards ?? []} onClose={onClose} />}
       <Toasts
         toasts={toasts}
