@@ -8,8 +8,17 @@ import { funtownToken } from "./token.ts";
  * Live terminal of one background session: an xterm.js view over the `/term` WebSocket; closing it
  * closes the socket. `reply` is set to a function that types a text into the session
  * as one prompt (bracketed paste, then Enter); it gives null when both frames were sent, else the reason it wasn't.
+ * With `shell` (a house's folder) instead of `lead`, it shows that project's lasting shell; closing the view leaves the shell running.
  */
-export function SessionTerminal({ lead, reply }: { lead: string; reply: MutableRefObject<((text: string) => string | null) | null> }) {
+export function SessionTerminal({
+  lead,
+  shell,
+  reply,
+}: {
+  lead?: string;
+  shell?: string;
+  reply?: MutableRefObject<((text: string) => string | null) | null>;
+}) {
   const host = useRef<HTMLDivElement>(null);
   const [shared, setShared] = useState(1);
   const [closed, setClosed] = useState(false);
@@ -22,7 +31,7 @@ export function SessionTerminal({ lead, reply }: { lead: string; reply: MutableR
     fit.fit();
 
     const query = new URLSearchParams({
-      lead,
+      ...(shell === undefined ? { lead: lead ?? "" } : { shell }),
       token: funtownToken(),
       cols: String(term.cols),
       rows: String(term.rows),
@@ -30,7 +39,7 @@ export function SessionTerminal({ lead, reply }: { lead: string; reply: MutableR
     const socket = new WebSocket(`ws://${location.host}/term?${query}`);
     const send = (frame: object) => socket.readyState === WebSocket.OPEN && socket.send(JSON.stringify(frame));
 
-    reply.current = (text) => {
+    if (reply) reply.current = (text) => {
       if (socket.readyState !== WebSocket.OPEN) return "Not sent: the terminal isn't connected.";
       let clean = text;
       for (let before = ""; before !== clean; ) {
@@ -65,12 +74,12 @@ export function SessionTerminal({ lead, reply }: { lead: string; reply: MutableR
     term.focus();
 
     return () => {
-      reply.current = null;
+      if (reply) reply.current = null;
       observer.disconnect();
       socket.close();
       term.dispose();
     };
-  }, [lead, reply]);
+  }, [lead, shell, reply]);
 
   return (
     <>
@@ -80,7 +89,7 @@ export function SessionTerminal({ lead, reply }: { lead: string; reply: MutableR
         </p>
       )}
       {closed && <p className="activity">Terminal closed.</p>}
-      <div className="terminal" ref={host} aria-label="Session terminal" />
+      <div className="terminal" ref={host} aria-label={shell === undefined ? "Session terminal" : "Shell terminal"} />
     </>
   );
 }
