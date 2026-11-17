@@ -27,7 +27,7 @@ const CASTLE_SCALE = 1.6;
 export const plates = { current: document.getElementById("plates")! };
 
 /** A scene's extent on the ground, with the points above it that must stay in view and a key that changes only when the extent does. */
-type Bounds = { minX: number; maxX: number; minZ: number; maxZ: number; tops: [number, number, number][]; key: string };
+type Bounds = { minX: number; maxX: number; minZ: number; maxZ: number; tops: [number, number, number][]; margin: [number, number]; key: string };
 
 const CASTLE_REACH = 1.6 * CASTLE_SCALE;
 
@@ -45,14 +45,14 @@ function boundsOf(placed: Placed[]): Bounds {
   const tops: Bounds["tops"] = [
     [CASTLE.x - CASTLE_REACH, 3.9, CASTLE.z - CASTLE_REACH], [CASTLE.x + CASTLE_REACH, 3.9, CASTLE.z - CASTLE_REACH], [minX, 2, maxZ], [maxX, 2, maxZ],
   ];
-  return { minX, maxX, minZ, maxZ, tops, key: [minX, maxX, minZ, maxZ].join() };
+  return { minX, maxX, minZ, maxZ, tops, margin: [0.92, 0.84], key: [minX, maxX, minZ, maxZ].join() };
 }
 
 /** The classroom's extent: the floor, the tall front wall behind the whiteboard and the low side walls. */
 function roomBounds(placed: ClassroomProps["placed"]): Bounds {
   const { minX, maxX, minZ, maxZ } = roomOf(placed);
   const tops: Bounds["tops"] = [[minX, WALL_HEIGHT, minZ], [maxX, WALL_HEIGHT, minZ], [minX, SIDE_WALL_HEIGHT, maxZ], [maxX, SIDE_WALL_HEIGHT, maxZ]];
-  return { minX, maxX, minZ, maxZ, tops, key: ["room", minX, maxX, minZ, maxZ].join() };
+  return { minX, maxX, minZ, maxZ, tops, margin: [0.97, 0.9], key: ["room", minX, maxX, minZ, maxZ].join() };
 }
 
 /** The camera position and look-at point that fit `b` in a window of the given aspect, with a margin. */
@@ -74,7 +74,7 @@ function fit(camera: PerspectiveCamera, b: Bounds, aspect: number): { position: 
     probe.updateMatrixWorld();
     const inside = corners.every((c) => {
       const v = c.clone().project(probe);
-      return Math.abs(v.x) <= 0.92 && Math.abs(v.y) <= 0.84;
+      return Math.abs(v.x) <= b.margin[0] && Math.abs(v.y) <= b.margin[1];
     });
     if (inside) far = d;
     else near = d;

@@ -18,28 +18,33 @@ export type ClassroomProps = {
   onPick: (p: InPlaced) => void;
 };
 
-/** The floor's extent: wide and deep enough for everything in `placed`, with a margin. */
+/** The floor's extent: symmetric about the aisle, wide and deep enough for everything in `placed`, with a margin. */
 export function roomOf(placed: InPlaced[]) {
-  let [minX, maxX, maxZ] = [-5.2, 5.2, 0];
+  let [half, maxZ] = [5.2, 0];
   for (const p of placed) {
-    minX = Math.min(minX, p.at.x - 1);
-    maxX = Math.max(maxX, p.at.x + 1);
-    maxZ = Math.max(maxZ, p.at.z + 1.2);
+    half = Math.max(half, Math.abs(p.at.x) + 0.8);
+    maxZ = Math.max(maxZ, p.at.z + 1);
   }
-  return { minX, maxX, minZ: BOARD.z - 0.05, maxZ };
+  return { minX: -half, maxX: half, minZ: BOARD.z - 0.05, maxZ };
 }
 
-const TABLE_WIDTH = 2;
+const TABLE_WIDTH = 1.8;
 const PARCELS_PER_ROW = 3;
 const PARCEL_ROW = 0.5;
-/** The board's card in pixels: the CSS 3D scale is 200 px to a world unit at `BOARD_SCALE`. */
+/** The board's card is laid out in CSS pixels at 400 / `BOARD_SCALE` to a world unit. */
 const BOARD_SCALE = 2;
 const PIXELS = 400 / BOARD_SCALE;
+/** The steps and the phase lines fit the card's height at `BASE_FONT` px up to this many lines; a longer list shrinks to fit. */
+const BOARD_LINES = 10;
+const BASE_FONT = 60;
+/** How much taller than a student a lead stands. */
+const LEAD_SCALE = 1.25;
 
 const keyOf = (p: InPlaced): string =>
   p.kind === "parcel" ? `parcel:${p.cwd}#${p.number}` : p.kind === "observer" ? "observer" : `character:${p.id}`;
 
-const plateHeight = (p: InPlaced) => (p.kind === "parcel" ? 0.9 : p.kind === "hat" ? (p.pose === "queue" ? 2.2 : 1.7) : p.kind === "lead" && p.pose === "queue" ? 2.2 : 1.8);
+const plateHeight = (p: InPlaced) =>
+  p.kind === "parcel" ? 0.9 : p.kind === "hat" ? (p.pose === "queue" ? 2.2 : 1.7) : p.kind === "lead" ? (p.pose === "queue" ? 2.7 : 2.3) : 1.8;
 
 /** A subagent at its desk: nodding when working, with its slip up when it needs you, askew with stars when stuck. */
 function Pupil({ pose, colour, hat }: { pose: Pose; colour: string; hat: HatKind }) {
@@ -53,23 +58,22 @@ function Pupil({ pose, colour, hat }: { pose: Pose; colour: string; hat: HatKind
   );
 }
 
-/** The whiteboard's words on a card over the board: the project, the phase and its note, the steps; nothing when there is no phase. */
+/** The whiteboard's words on a card over the board, in one column: the project, the phase and its note, then a line per step; nothing when there is no phase. */
 function BoardText({ board }: { board: Board }) {
   if (board.phase === null) return null;
   const { width, height } = BOARD_SIZE;
+  const fontSize = BASE_FONT * Math.max(0.35, Math.min(1, BOARD_LINES / (board.steps.length + 4)));
   return (
     <Html transform distanceFactor={BOARD_SCALE} portal={plates} pointerEvents="none" zIndexRange={[100, 1]} position={[BOARD.x, BOARD_HEIGHT, BOARD.z + 0.1]}>
-      <div className="board" style={{ width: width * PIXELS, height: height * PIXELS, fontSize: 24, display: "flex", gap: 24 }}>
-        <div style={{ flex: "0 0 40%" }}>
-          <h2>{board.project}</h2>
-          <p>{board.phase}</p>
-          {board.note !== null && <p>{board.note}</p>}
-        </div>
+      <div className="board" style={{ width: width * PIXELS, height: height * PIXELS, fontSize }}>
+        <h2>{board.project}</h2>
+        <p>{board.phase}</p>
+        {board.note !== null && <p>{board.note}</p>}
         {board.steps.length > 0 && (
-          <ol style={{ flex: 1, columns: 2, columnGap: 24 }}>
+          <ol>
             {board.steps.map((step, i) => (
-              <li key={i} data-state={step.state} style={{ breakInside: "avoid" }}>
-                <span style={{ display: "inline-block", width: "3.2em" }}>{step.state === "done" ? "✓" : step.state === "now" ? "▶" : step.state}</span>
+              <li key={i} data-state={step.state}>
+                <span style={{ display: "inline-block", width: "3em" }}>{step.state === "done" ? "\u2713" : step.state === "now" ? "\u25B6" : step.state}</span>
                 {step.label}
               </li>
             ))}
@@ -119,7 +123,7 @@ export function Classroom({ house, placed, board, name, onPick }: ClassroomProps
           </group>
         );
       case "lead":
-        return <Mover to={p.at} facing={0}>{pick(p, <Body pose={p.pose} colour={p.colour} hat="cap" />)}</Mover>;
+        return <Mover to={p.at} facing={0}>{pick(p, <group scale={LEAD_SCALE}><Body pose={p.pose} colour={p.colour} hat="cap" /></group>)}</Mover>;
       case "hat":
         return (
           <group position={[p.at.x, 0, p.at.z]} rotation-y={Math.PI}>
@@ -139,7 +143,7 @@ export function Classroom({ house, placed, board, name, onPick }: ClassroomProps
       <group position={[room.maxX - 0.03, 0, TABLE.z]}><Door /></group>
       <group position={[BOARD.x, BOARD_HEIGHT, BOARD.z]}><Whiteboard /></group>
       <BoardText board={board} />
-      <group position={[FRONT.x, 0, FRONT.z - 0.9]}><TeacherDesk width={Math.max(2.4, leads * 1.2 + 0.8)} /></group>
+      <group position={[FRONT.x, 0, FRONT.z - 0.9]}><TeacherDesk width={Math.max(2.4, leads * 1.5 + 0.8)} /></group>
       <group position={[TABLE.x, 0, TABLE.z - (PARCEL_ROW * (rows - 1)) / 2]}><Table width={TABLE_WIDTH} depth={tableDepth} /></group>
       {placed.map((p) => <group key={keyOf(p)}>{thing(p)}</group>)}
     </>

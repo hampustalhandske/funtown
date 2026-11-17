@@ -4,12 +4,12 @@ import { Figure } from "./parts.tsx";
 import type { HatKind } from "./palette.ts";
 
 /** How tall the front wall behind the whiteboard is, and the side walls, which stay low so the room can be seen into. */
-export const WALL_HEIGHT = 3.8;
+export const WALL_HEIGHT = 4.6;
 export const SIDE_WALL_HEIGHT = 1.6;
 /** The whiteboard's face, in world units. */
-export const BOARD_SIZE = { width: 5.6, height: 2 };
+export const BOARD_SIZE = { width: 6, height: 3.2 };
 /** How high the whiteboard's middle is above the floor. */
-export const BOARD_HEIGHT = 2.4;
+export const BOARD_HEIGHT = 2.9;
 
 /** A floor slab `width` by `depth`, its top at y = 0, centred on the origin. */
 export function Floor({ width, depth }: { width: number; depth: number }) {

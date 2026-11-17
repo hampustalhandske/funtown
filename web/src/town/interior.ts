@@ -16,15 +16,15 @@ export const FRONT: Spot = { x: 0, z: -3 };
 /** The whiteboard's middle, on the front wall behind the leads. */
 export const BOARD: Spot = { x: 0, z: -4.6 };
 /** The middle of the table by the door, back right. */
-export const TABLE: Spot = { x: 3.6, z: 3.4 };
+export const TABLE: Spot = { x: 4.1, z: 3.4 };
 /** Where the user, the king, stands: the back centre, in the aisle between the desk columns. */
-export const OBSERVER: Spot = { x: 0, z: 6 };
+export const OBSERVER: Spot = { x: 0, z: 5.2 };
 
-const LEAD_GAP = 1.2;
+const LEAD_GAP = 1.5;
 const DESKS_PER_ROW = 4;
-const DESK_GAP = 1.2;
-const ROW_GAP = 1.3;
-const FIRST_ROW = -1.5;
+const DESK_GAP = 1.5;
+const ROW_GAP = 1.5;
+const FIRST_ROW = 0;
 const PARCEL_GAP = 0.5;
 const PARCELS_PER_ROW = 3;
 
