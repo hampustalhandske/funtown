@@ -2,6 +2,7 @@
 
 One line per change, newest first.
 
+- 2026-11-17 16:08 · The desk queue puts sessions that ask a question or need a permission or plan approval ahead of ones that only finished a turn, in the town, the Needs you list and ⌥N; oldest first within each group.
 - 2026-11-17 15:52 · The steward reviews a pull request only when you ask: a button on the town's parcel panel and on the work view. A reply that isn't a review no longer counts as one, and typing to the steward yourself stops further requests. Each review names its project, repo and PR.
 - 2026-11-17 11:56 · The town shows only projects you added in Settings (and their worktrees) plus the steward: chats in other folders stay out of the town and Morning. PR boxes show only PRs you opened. A session keeps only its newest letter.
 - 2026-11-17 11:11 · Funtown opens on a 3D clay town: your castle with you at the desk and the steward as queen, one building per project in its colour, each session standing at its building, its working agents as hats on a rack, open PRs as parcels; a session that needs you walks to your desk and queues, a stuck one sits down, finished ones leave. No words on the town: names show on hover, a click opens the session's panel, and Settings holds adding and removing projects, mute and "I had to switch". The list, panels and terminals moved to `/work.html`. New font: Recursive (OFL, bundled with its licence).

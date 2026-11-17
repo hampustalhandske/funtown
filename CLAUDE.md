@@ -19,7 +19,7 @@ on it.
 - `web/` (React, Vite): `/` is the town (`index.html`, `src/town/`: `layout.ts` pure places, `Village.tsx`
   the 3D scene, `TownPage.tsx` icons, Settings, hidden list; `kit/` the clay parts; no visible words).
   `/work.html` the work view (`App.tsx`: list, panels, terminals; `AnswerCard`, `Letters`, `Morning`,
-  `Switch`, `needs.tsx`). Font Recursive (OFL, bundled, licence emitted next to it).
+  `Switch`, `needs.tsx`: `waitingList`, the desk order, card kinds first then oldest). Font Recursive (OFL, bundled, licence emitted next to it).
   `tests/`: Vitest; Playwright in `tests/e2e/`, one spec at a time; the fake `claude` is also `gh`.
 Contracts (source of truth: this list; full text in the local .workflow/history/m<N>-MILESTONE.md)
 - Event: POST `/events`, hook JSON + `funtown: { tty, term_program, at }`; stale ones ignored.
