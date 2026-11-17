@@ -16,10 +16,10 @@ export const plates = { current: document.getElementById("plates")! };
 /** The shortest signed turn from angle `from` to `to`. */
 const turn = (from: number, to: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 
-/** Walks its children to `to`, facing the way it goes, then turns to `facing`; it appears at its first spot. */
-export function Mover({ to, facing, children }: { to: Spot; facing: number; children: ReactNode }) {
+/** Walks its children to `to`, facing the way it goes, then turns to `facing`; it appears at `from`, else at its first `to`. */
+export function Mover({ to, from, facing, children }: { to: Spot; from?: Spot; facing: number; children: ReactNode }) {
   const ref = useRef<Group>(null);
-  const [start] = useState({ ...to, facing });
+  const [start] = useState({ ...(from ?? to), facing });
   useFrame(({ clock }, delta) => {
     const g = ref.current!;
     const dt = Math.min(delta, 0.1);

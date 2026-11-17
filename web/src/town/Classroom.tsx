@@ -1,10 +1,10 @@
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Html } from "@react-three/drei";
 import { TONES } from "./kit/clay.tsx";
 import type { HatKind } from "./kit/palette.ts";
 import { Figure, Parcel } from "./kit/parts.tsx";
 import { BOARD_HEIGHT, BOARD_SIZE, Door, Floor, SIDE_WALL_HEIGHT, SeatedFigure, StudentDesk, Table, TeacherDesk, Wall, WALL_HEIGHT, Whiteboard } from "./kit/classroom.tsx";
-import { BOARD, FRONT, PARCEL_GAP, PARCELS_PER_ROW, TABLE, type Board, type InPlaced } from "./interior.ts";
+import { BOARD, DOOR, FRONT, LEAVE_MS, PARCEL_GAP, PARCELS_PER_ROW, TABLE, drawn, type Board, type Drawn, type InPlaced } from "./interior.ts";
 import { keyOf, type Pose } from "./layout.ts";
 import type { House } from "../../../server/types.ts";
 import { Bob, Body, Dizzy, Mover, Pennant, Pick, Slip, plates } from "./kit/actors.tsx";
@@ -96,7 +96,11 @@ function BoardText({ board }: { board: Board }) {
   );
 }
 
-/** A house's classroom: leads at the front, subagents at desks, the whiteboard behind, the parcels on the table by the door and the observer at the back. */
+/**
+ * A house's classroom: leads at the front, subagents at desks, the whiteboard behind, the parcels on the table by the door and the observer at the back.
+ * Whoever is there when the room first shows stands at their place; a lead or subagent that comes later walks in from the door,
+ * and one that goes walks to the door, out of reach of the pointer, and is dropped `LEAVE_MS` after it went.
+ */
 export function Classroom({ house, placed, board, name, onPick, hover, onHover }: ClassroomProps & HoverProps) {
   const room = useMemo(() => roomOf(placed), [placed]);
   const [width, depth] = [room.maxX - room.minX, room.maxZ - room.minZ];
@@ -105,10 +109,29 @@ export function Classroom({ house, placed, board, name, onPick, hover, onHover }
   const rows = Math.max(1, Math.ceil(parcels / PARCELS_PER_ROW));
   const tableDepth = 0.8 + PARCEL_GAP * (rows - 1);
 
-  const pick = (p: InPlaced, children: ReactNode) => (
-    <Pick id={keyOf(p)} height={plateHeight(p)} plate={keyOf(p) === hover ? name(p) : null} onPick={() => onPick(p)} onHover={onHover}>{children}</Pick>
-  );
-  const thing = (p: InPlaced) => {
+  const before = useRef<Drawn[]>([]);
+  const shown = drawn(before.current, placed, Date.now());
+  before.current = shown;
+  const [, redraw] = useState(0);
+  useEffect(() => {
+    const leaving = shown.flatMap((p) => (p.leftAt === undefined ? [] : [p.leftAt + LEAVE_MS - Date.now()]));
+    if (leaving.length === 0) return;
+    const timer = setTimeout(() => redraw((n) => n + 1), Math.max(0, Math.min(...leaving)));
+    return () => clearTimeout(timer);
+  });
+  const mounted = useRef(false);
+  const arriving = mounted.current;
+  useEffect(() => {
+    mounted.current = true;
+  }, []);
+
+  const pick = (p: Drawn, children: ReactNode) =>
+    p.leftAt === undefined ? (
+      <Pick id={keyOf(p)} height={plateHeight(p)} plate={keyOf(p) === hover ? name(p) : null} onPick={() => onPick(p)} onHover={onHover}>{children}</Pick>
+    ) : (
+      children
+    );
+  const thing = (p: Drawn) => {
     switch (p.kind) {
       case "observer":
         return <group position={[p.at.x, 0, p.at.z]} rotation-y={Math.PI}><Bob speed={1.2}><Figure colour={TONES.ribbon} hat="crown" /></Bob></group>;
@@ -125,12 +148,12 @@ export function Classroom({ house, placed, board, name, onPick, hover, onHover }
           </group>
         );
       case "lead":
-        return <Mover to={p.at} facing={0}>{pick(p, <group scale={LEAD_SCALE}><Body pose={p.pose} colour={p.colour} hat="cap" /></group>)}</Mover>;
+        return <Mover to={p.at} from={arriving ? DOOR : undefined} facing={0}>{pick(p, <group scale={LEAD_SCALE}><Body pose={p.pose} colour={p.colour} hat="cap" /></group>)}</Mover>;
       case "hat":
         return (
-          <group position={[p.at.x, 0, p.at.z]} rotation-y={Math.PI}>
+          <Mover to={p.at} from={arriving ? DOOR : undefined} facing={Math.PI}>
             {pick(p, <><StudentDesk /><Pupil pose={p.pose} colour={p.colour} hat={p.hat} /></>)}
-          </group>
+          </Mover>
         );
     }
   };
@@ -147,7 +170,7 @@ export function Classroom({ house, placed, board, name, onPick, hover, onHover }
       <BoardText board={board} />
       <group position={[FRONT.x, 0, FRONT.z - 0.9]}><TeacherDesk width={Math.max(2.4, leads * 1.5 + 0.8)} /></group>
       <group position={[TABLE.x, 0, TABLE.z - (PARCEL_GAP * (rows - 1)) / 2]}><Table width={TABLE_WIDTH} depth={tableDepth} /></group>
-      {placed.map((p) => <group key={keyOf(p)}>{thing(p)}</group>)}
+      {shown.map((p) => <group key={keyOf(p)}>{thing(p)}</group>)}
     </>
   );
 }
