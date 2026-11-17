@@ -2,6 +2,7 @@
 
 One line per change, newest first.
 
+- 2026-11-17 21:40 · Settings has a row of eight avatars; the one you pick is the king at the castle desk and the observer in every classroom, and is kept across restarts. Only the king wears a hat.
 - 2026-11-17 20:48 · In a classroom, a subagent or lead that shows up walks in through the door and one that finishes walks out through it and is gone within 2.5 s; desks stay put.
 - 2026-11-17 20:22 · Click a building to step into its classroom: you stand at the back as an observer, the project's leads stand at the front, their subagents sit at desks in their hats (a raised slip when one needs you, askew when stuck), open PRs sit on a table by the door, and a whiteboard shows the project's phase, its note and the workflow's steps (done, now, next, later) from `.claude/phase.json`'s new `steps` list. Escape or the back icon returns to the town; the work view is one icon away.
 - 2026-11-17 19:00 · The work view keeps a session's terminal hidden until you press Show terminal (nothing renders or connects meanwhile), shows no command text on rows or panels, shows status as a coloured dot with its word instead of an emoji, and has a Close session button (`claude stop`: the conversation is kept and `claude attach` resumes it).
