@@ -46,7 +46,7 @@ describe("waitingList", () => {
     const spot = (all: ReturnType<typeof layout>, id: string) => all.find((p) => p.kind === "lead" && p.id === id)!.at;
     const placed = layout(t, waitingList(t));
     const swapped = layout(t, [second, first]);
-    // The card holder takes the first desk spot; the swapped queue (the old pure oldest-first order) gives it to the other.
+    // The card holder takes the first desk spot; the swapped queue gives it to the other.
     expect(spot(placed, "perm-new")).toEqual(spot(swapped, "ended-old"));
     expect(spot(placed, "ended-old")).toEqual(spot(swapped, "perm-new"));
     expect(spot(placed, "perm-new")).not.toEqual(spot(placed, "ended-old"));

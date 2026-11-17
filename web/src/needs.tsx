@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import type { Character, Town } from "../../server/types.ts";
+import type { Card, Character, Town } from "../../server/types.ts";
 
 /** One character waiting for the user: where it is, what it needs and since when. */
 export type Waiting = { key: string; lead: string; id: string; project: string; cwd: string; name: string; need: string; since: number };
 
 const MUTE_KEY = "funtown-muted";
 const TOAST_MS = 8000;
-const CARD_KINDS = ["permission", "question", "plan"];
+/** The needs that hold a card; every `Card["kind"]` must be listed. */
+const CARD_KINDS: Record<Card["kind"], true> = { permission: true, question: true, plan: true };
 
 /** What a needs_you character waits for, in words: "stuck: <reason>", the card kind, or "waiting". */
 export const needOf = (c: Character): string => (c.needs === "stuck" ? `stuck: ${c.reason ?? "error"}` : c.needs) ?? "waiting";
@@ -22,7 +23,7 @@ export function waitingList(town: Town | null): Waiting[] {
       }
     }
   }
-  const card = (w: Waiting) => (CARD_KINDS.includes(w.need) ? 0 : 1);
+  const card = (w: Waiting) => (w.need in CARD_KINDS ? 0 : 1);
   return list.sort((a, b) => card(a) - card(b) || a.since - b.since);
 }
 
@@ -120,7 +121,7 @@ export function useAlerts(waiting: Waiting[], loaded: boolean, muted: boolean, o
   return { toasts, drop: (w: Waiting) => setToasts((all) => all.filter((t) => t !== w)) };
 }
 
-/** Option+N (⌥N) opens the oldest waiting character, then the next, wrapping; ignored while typing. */
+/** Option+N (⌥N) opens the first waiting character of the list, then the next, wrapping; ignored while typing. */
 export function useNextKey(waiting: Waiting[], current: string | null, open: (w: Waiting) => void) {
   const latest = useRef({ waiting, current, open });
   latest.current = { waiting, current, open };
@@ -141,7 +142,7 @@ export function useNextKey(waiting: Waiting[], current: string | null, open: (w:
   }, []);
 }
 
-/** The "Needs you" list: one row per waiting character, oldest first. */
+/** The "Needs you" list: one row per waiting character, in `waitingList` order. */
 export function NeedsList({ waiting, onOpen }: { waiting: Waiting[]; onOpen: (w: Waiting) => void }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
