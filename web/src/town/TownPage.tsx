@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Character, House, Parcel, Town } from "../../../server/types.ts";
-import { AddProject, askReview, Panel, removeProject, useSelection, useTown } from "../App.tsx";
+import { AddProject, askReview, Panel, post, removeProject, useSelection, useTown } from "../App.tsx";
 import { MorningButton } from "../Morning.tsx";
 import { SwitchButton, type OpenSession } from "../Switch.tsx";
 import { needOf, NotifyButton, Toasts } from "../needs.tsx";
 import { boardOf, interior, type Board, type InPlaced } from "./interior.ts";
+import { AVATARS, avatarFor } from "./kit/avatars.ts";
 import { keyOf, layout, type Placed } from "./layout.ts";
 import { Village } from "./Village.tsx";
 
@@ -83,7 +84,7 @@ const ICONS = {
 
 type SettingsProps = { town: Town | null; muted: boolean; onMute: () => void; open: OpenSession | null; onClose: () => void };
 
-/** The settings pane: add or remove projects, sounds and pop-ups, "I had to switch", and Claude version problems. */
+/** The settings pane: add or remove projects, your avatar, sounds and pop-ups, "I had to switch", and Claude version problems. */
 function Settings({ town, muted, onMute, open, onClose }: SettingsProps) {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -99,7 +100,11 @@ function Settings({ town, muted, onMute, open, onClose }: SettingsProps) {
   async function remove(house: House) {
     setError((await removeProject(house))?.message ?? null);
   }
+  async function choose(id: string) {
+    setError((await post("/avatar", { id }, [204]))?.message ?? null);
+  }
   const added = town?.houses.filter((h) => h.added) ?? [];
+  const chosen = avatarFor(town?.avatar).id;
   return (
     <aside className="pane settings" role="dialog" aria-label="Settings">
       <button type="button" className="icon close" aria-label="Close settings" title="Close" onClick={onClose}>{ICONS.close}</button>
@@ -115,6 +120,20 @@ function Settings({ town, muted, onMute, open, onClose }: SettingsProps) {
           ))}
         </ul>
       )}
+      <div className="avatars" role="group" aria-label="Avatar">
+        {AVATARS.map((avatar) => (
+          <button
+            key={avatar.id}
+            type="button"
+            className="swatch"
+            style={{ background: avatar.coat }}
+            aria-label={avatar.label}
+            title={avatar.label}
+            aria-pressed={avatar.id === chosen}
+            onClick={() => void choose(avatar.id)}
+          />
+        ))}
+      </div>
       {error && <p role="alert" className="error">{error}</p>}
       <div className="row">
         <button type="button" aria-pressed={muted} onClick={onMute}>Mute</button>
@@ -239,7 +258,7 @@ export function TownPage() {
   return (
     <>
       <div className="village" aria-hidden="true">
-        <Village index={index} placed={placed} name={name} onPick={pick} inside={inside} />
+        <Village index={index} avatar={town?.avatar} placed={placed} name={name} onPick={pick} inside={inside} />
       </div>
       <ul className="town-list" aria-label="Town">
         {inside
