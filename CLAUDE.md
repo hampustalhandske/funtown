@@ -1,10 +1,10 @@
 # Funtown
 
-Charter: docs/CHARTER.md. Current state: docs/HANDOFF.md. Parked ideas: docs/PARKING.md.
+Charter: .workflow/CHARTER.md. Current state: .workflow/HANDOFF.md. Parked ideas: .workflow/PARKING.md.
 These and the rest of the planning notes (MILESTONE, METRICS, spikes, history) live in
-`docs/`, which is gitignored as a whole: local only, never staged, and absent from a fresh
+`.workflow/`, which is gitignored as a whole: local only, never staged, and absent from a fresh
 clone or a worktree; there, work from this file and CHANGELOG.md. The public record is
-CHANGELOG.md: one line per change, newest first, with date and time. `docs/spikes/` holds
+CHANGELOG.md: one line per change, newest first, with date and time. `.workflow/spikes/` holds
 the Claude Code 2.1.325 behaviours v2 builds on; rerun a note's Reproduce before relying
 on it.
 
@@ -17,7 +17,7 @@ on it.
   `workflow.ts` phase file, `gh pr list`; `steward.ts` the steward; `main.ts` run file, signals.
 - `web/` (React, Vite): `AnswerCard`, `Letters`, `Morning`, `Switch`, `needs.tsx` (Needs you).
   `tests/`: Vitest; Playwright in `tests/e2e/`, one spec at a time; the fake `claude` is also `gh`.
-Contracts (source of truth: this list; full text in the local docs/history/m<N>-MILESTONE.md)
+Contracts (source of truth: this list; full text in the local .workflow/history/m<N>-MILESTONE.md)
 - Event: POST `/events`, hook JSON + `funtown: { tty, term_program, at }`; stale ones ignored.
 - State (`server/types.ts`, SSE `state`): leads only while listed; `cards` oldest first, a carded
   character is needs_you with `needs` = card kind; waiting has `since`; stuck has `needs` "stuck"
@@ -46,5 +46,5 @@ Decisions that bind
   page POSTs cap at 64 KB, `/term` frames 1 MB; ids, cwds, ttys reach children only as arguments.
 - All code our own. Tests never run the real `claude` or `gh`, use real names or the home folder.
   Replies are shaped only through SessionStart context; only the steward gets requests (reviews).
-- Out of git: `docs/`, .claude/settings.json, .claude/never-push; a security finding is fixed
+- Out of git: `.workflow/`, .claude/settings.json, .claude/never-push; a security finding is fixed
   before the push and never written in a tracked file. Fixed CSP; no raw HTML in letters.
