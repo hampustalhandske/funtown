@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
+import { Vector3 } from "three";
 import { Html, OrbitControls } from "@react-three/drei";
 import { TONES } from "./kit/clay.tsx";
 import { Hat } from "./kit/hats.tsx";
@@ -31,10 +32,25 @@ function Row({ z, gap, items }: { z: number; gap: number; items: [string, ReactN
   ));
 }
 
+const FOV = 45;
+const TARGET = new Vector3(0, 0.5, -1.5);
+// Half the layout's width plus room for the front rows, which perspective draws wider.
+const REACH = 17;
+
+/** Pulls the camera back far enough that the layout fits the window's width. */
+function FitWidth() {
+  const { camera, size } = useThree();
+  useEffect(() => {
+    const fit = REACH / (Math.tan(((FOV / 2) * Math.PI) / 180) * (size.width / size.height));
+    camera.position.sub(TARGET).setLength(fit).add(TARGET);
+  }, [camera, size]);
+  return null;
+}
+
 /** The kit preview: every part laid out in rows, tallest at the back, the camera slowly circling them. */
 function Preview() {
   return (
-    <Canvas shadows="percentage" camera={{ position: [0, 15, 15], fov: 45 }}>
+    <Canvas shadows="percentage" camera={{ position: [0, 15, 15], fov: FOV }}>
       <hemisphereLight args={["#fff8ec", "#b9a98f", 1.6]} />
       <directionalLight position={[6, 12, 8]} intensity={1.8} castShadow shadow-mapSize={[2048, 2048]}
         shadow-camera-left={-16} shadow-camera-right={16} shadow-camera-top={16} shadow-camera-bottom={-16} />
@@ -46,9 +62,10 @@ function Preview() {
       <Row z={-3.5} gap={3.5} items={[
         ["ground tile", <GroundTile />, 0], ["castle", <Castle />, 2.4], ["desk", <Desk />, 0.6], ["parcel", <Parcel />, 0.5],
       ]} />
-      <Row z={1} gap={2.2} items={HATS.map(([hat, role], i) => [role, <Figure colour={PALETTE[i]} hat={hat} />, 1.8])} />
-      <Row z={4} gap={2.2} items={HATS.map(([hat]) => [hat, <group scale={1.5}><Hat kind={hat} colour={TONES.ribbon} /></group>, 0.8])} />
-      <OrbitControls autoRotate autoRotateSpeed={0.6} target={[0, 0.5, -1.5]} />
+      <Row z={1} gap={2.6} items={HATS.map(([hat, role], i) => [role, <Figure colour={PALETTE[i]} hat={hat} />, 1.8])} />
+      <Row z={4} gap={2.6} items={HATS.map(([hat]) => [hat, <group scale={1.5}><Hat kind={hat} colour={TONES.ribbon} /></group>, 0.8])} />
+      <OrbitControls autoRotate autoRotateSpeed={0.6} target={TARGET} />
+      <FitWidth />
     </Canvas>
   );
 }
