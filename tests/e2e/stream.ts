@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import { E2E_URL } from "../fake-claude.ts";
 
 const sse = (t: unknown) => `retry: 50\nevent: state\ndata: ${JSON.stringify(t)}\n\n`;
@@ -40,3 +40,6 @@ async function pagePost(path: string, body: unknown) {
 export const addProjectFolder = (cwd: string) => pagePost("/projects", { cwd });
 /** Takes `cwd` off the project list again. */
 export const removeProjectFolder = (cwd: string) => pagePost("/projects/remove", { cwd });
+
+/** Presses "Show terminal" in a background lead's panel, which is what mounts its live terminal and reply box. */
+export const showTerminal = (panel: Locator) => panel.getByRole("button", { name: /show terminal/i }).click();

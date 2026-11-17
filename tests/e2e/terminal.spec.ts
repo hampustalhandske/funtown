@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_FAKE_DIR, E2E_URL, FakeClaude, listed, listedBg } from "../fake-claude.ts";
-import { addProjectFolder, removeProjectFolder } from "./stream.ts";
+import { addProjectFolder, removeProjectFolder, showTerminal } from "./stream.ts";
 
 const fake = FakeClaude.at(E2E_FAKE_DIR);
 const sid = "abcd1234-0000-4000-8000-000000000000";
@@ -42,6 +42,7 @@ test("a_background_session_opens_a_live_terminal_that_echoes_typed_text_and_send
   fake.list([bg()]);
   await page.goto("/work.html");
   await row(page, "beta").click({ position: { x: 5, y: 5 } });
+  await showTerminal(page.getByRole("dialog"));
   await expect(screen(page)).toContainText("attached abcd1234");
   await page.locator(".xterm").click();
   await page.keyboard.type("hello");
@@ -63,12 +64,14 @@ test("a_terminal_session_shows_the_hint_and_go_to_terminal_and_no_live_terminal"
   await expect(panel.locator(".xterm")).toHaveCount(0);
 });
 
-test("new_session_starts_a_background_session_in_the_project_and_opens_its_terminal", async ({ page }) => {
+test("new_session_starts_a_background_session_in_the_project_and_opens_its_panel_whose_terminal_shows_on_request", async ({ page }) => {
   fake.list([session()]);
   await page.goto("/work.html");
   await page.locator(`section[aria-label="${project}"]`).getByRole("button", { name: /new session/i }).click();
-  // --bg plus the next poll and the attach can take longer than the default 5 s
-  await expect(screen(page)).toContainText("attached", { timeout: 10_000 });
+  // --bg plus the next poll can take longer than the default 5 s
+  await expect(page.getByRole("dialog")).toBeVisible({ timeout: 10_000 });
+  await showTerminal(page.getByRole("dialog"));
+  await expect(screen(page)).toContainText("attached");
   expect(fake.started().map((s) => s.cwd)).toEqual([cwd]);
 });
 
@@ -129,6 +132,7 @@ test("the_page_sends_the_terminals_size_as_soon_as_the_socket_opens", async ({ p
   fake.list([bg()]);
   await page.goto("/work.html");
   await row(page, "beta").click({ position: { x: 5, y: 5 } });
+  await showTerminal(page.getByRole("dialog"));
   await expect(screen(page)).toContainText("attached abcd1234");
   // nothing typed or resized by the test: the first frame is the size the terminal has when the socket opens
   await expect.poll(() => sent.length).toBeGreaterThan(0);
