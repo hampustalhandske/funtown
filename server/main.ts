@@ -1,4 +1,4 @@
-import { readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { startServer } from "./app.ts";
@@ -7,6 +7,7 @@ import { defaultErrorLog, describe, serverLogger } from "./errors.ts";
 const errorLog = process.env.FUNTOWN_LOG ?? defaultErrorLog();
 const runFile = process.env.FUNTOWN_RUN ?? join(homedir(), ".funtown", "running.json");
 const logError = serverLogger(errorLog);
+const stewardPrompt = join(homedir(), ".funtown", "steward.md");
 const fail = (step: string, err: unknown) => {
   logError(step, err);
   process.exit(1);
@@ -38,6 +39,9 @@ try {
     journal: process.env.FUNTOWN_JOURNAL ?? join(homedir(), ".funtown", "journal.jsonl"),
     errorLog,
     switchLog: process.env.FUNTOWN_SWITCHES ?? join(homedir(), ".funtown", "switches.jsonl"),
+    gh: process.env.FUNTOWN_GH,
+    stewardDir: process.env.FUNTOWN_STEWARD ?? join(homedir(), ".funtown", "steward"),
+    stewardPrompt: existsSync(stewardPrompt) ? stewardPrompt : undefined,
   });
 } catch (err) {
   fail("start", err);

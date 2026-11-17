@@ -17,6 +17,14 @@ export const listed = (sessionId: string, cwd: string, over: Partial<Listed> = {
 export const listedBg = (sessionId: string, cwd: string, over: Partial<Listed> = {}): Listed =>
   listed(sessionId, cwd, { kind: "background", id: sessionId.slice(0, 8), ...over });
 
+/** One entry of `gh pr list --json number,title,url,isDraft,headRefOid`. */
+export type Pr = { number: number; title: string; url: string; isDraft: boolean; headRefOid: string };
+
+/** An open, ready PR with a fixed title, url and head commit unless given. */
+export const pr = (number: number, over: Partial<Pr> = {}): Pr => ({
+  number, title: `PR ${number}`, url: `https://github.com/example/repo/pull/${number}`, isDraft: false, headRefOid: `head-${number}`, ...over,
+});
+
 /** Where the e2e web server's fake `claude` lives, so the config and the specs share it. */
 export const E2E_FAKE_DIR = join(tmpdir(), "funtown-e2e-claude");
 
@@ -80,7 +88,7 @@ export class FakeClaude {
   }
   /** Empties the list and the `--bg` record and clears every failure switch. */
   reset(): this {
-    for (const n of ["started.json", "list-fail", "version-fail", "bg-fail", "list-delay", "list-asks"]) rmSync(join(this.dir, n), { force: true });
+    for (const n of ["started.json", "prs.json", "pr-calls.jsonl", "list-fail", "version-fail", "bg-fail", "bg-unlisted", "attach-chatty", "attach-sticky", "list-delay", "list-asks", "agents.pids"]) rmSync(join(this.dir, n), { force: true });
     return this.list([]);
   }
   /** Sets what `agents --json` prints. */
@@ -98,6 +106,11 @@ export class FakeClaude {
     this.flag("list-delay", ms > 0);
     if (ms > 0) this.put("list-delay", String(ms));
     return this;
+  }
+  /** Pids of every `agents --json` process since the last reset. */
+  agentsPids(): number[] {
+    const f = join(this.dir, "agents.pids");
+    return existsSync(f) ? readFileSync(f, "utf8").split("\n").filter(Boolean).map(Number) : [];
   }
   /** How many times `agents --json` has been asked since the last reset. */
   listAsks(): number {
@@ -118,10 +131,46 @@ export class FakeClaude {
     this.flag("bg-fail", on);
     return this;
   }
+  /** Makes `--bg` start sessions that `agents --json` never lists. */
+  unlistedBg(on = true): this {
+    this.flag("bg-unlisted", on);
+    return this;
+  }
+  /** Makes `attach` print something every 100 ms, so its output never pauses. */
+  chattyAttach(on = true): this {
+    this.flag("attach-chatty", on);
+    return this;
+  }
+  /** Makes `attach` exit only a second after it is hung up on, as a slow terminal might. */
+  stickyAttach(on = true): this {
+    this.flag("attach-sticky", on);
+    return this;
+  }
   /** The `--bg` calls so far: cwd, argv and the names of the Claude and AI_AGENT variables each saw. */
   started(): { cwd: string; argv: string[]; env: string[] }[] {
     const f = join(this.dir, "started.json");
     return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : [];
+  }
+  /** What `agents --json` prints now, parsed: the set list plus each session `--bg` added. */
+  sessions(): Listed[] {
+    return JSON.parse(readFileSync(join(this.dir, "list.json"), "utf8"));
+  }
+  /** Sets what `pr list` prints when run in `cwd`; null makes it fail there. */
+  prs(cwd: string, prs: Pr[] | null): this {
+    const f = join(this.dir, "prs.json");
+    const all = existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : {};
+    this.put("prs.json", JSON.stringify({ ...all, [cwd]: prs }));
+    return this;
+  }
+  /** The `pr list` calls so far: the folder each ran in and its arguments. */
+  prCalls(): { cwd: string; argv: string[] }[] {
+    const f = join(this.dir, "pr-calls.jsonl");
+    return existsSync(f) ? readFileSync(f, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+  }
+  /** Every input chunk the `attach <id>` processes received, joined. */
+  attachInput(id: string): string {
+    const f = join(this.dir, `attach-${id}.input`);
+    return existsSync(f) ? readFileSync(f, "utf8") : "";
   }
   /** Pids of every `attach <id>` process started so far. */
   attachPids(id: string): number[] {

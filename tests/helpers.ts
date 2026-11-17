@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +15,7 @@ type StartOptions = Omit<Parameters<typeof startServer>[0], "port" | "claude">;
 const open: Server[] = [];
 const fakes: FakeClaude[] = [];
 const dirs: string[] = [];
+const holds: AbortController[] = [];
 
 /** A folder that exists, with symlinks resolved so a child process reports the same path. */
 export function realDir(): string {
@@ -39,17 +40,19 @@ function minimalPage(): string {
 }
 
 /**
- * Starts a server on a free port with a fake `claude` (never the real one), polling every
- * `pollMs` (default 100). `fake.list(...)` before or after steers what it lists. Closed after each test.
+ * Starts a server on a free port with a fake `claude` (never the real one), also used as its
+ * `gh` unless one is given, polling every `pollMs` (default 100). `fake.list(...)` before or
+ * after steers what it lists, `fake.prs(...)` the PRs. Closed after each test.
  */
 export async function start(opts: StartOptions & { fake?: FakeClaude } = {}): Promise<Server> {
   const { fake = fakeClaude(), ...rest } = opts;
-  const s = await startServer({ port: 0, pollMs: 100, distDir: minimalPage(), ...rest, claude: fake.path });
+  const s = await startServer({ port: 0, pollMs: 100, distDir: minimalPage(), gh: fake.path, ...rest, claude: fake.path });
   const server = { ...s, fake };
   open.push(server);
   return server;
 }
 afterEach(async () => {
+  for (const h of holds.splice(0)) h.abort();
   await Promise.all(open.splice(0).map((s) => s.close()));
   for (const f of fakes.splice(0)) f.dispose();
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
@@ -63,7 +66,13 @@ export async function tokenOf(url: string): Promise<string> {
   return m[1];
 }
 
-export { listed, listedBg } from "./fake-claude.ts";
+export { listed, listedBg, pr } from "./fake-claude.ts";
+
+/** The text of each request in what an `attach` received: a bracketed paste followed by `\r`. */
+export const pastes = (input: string) => [...input.matchAll(/\x1b\[200~([\s\S]*?)\x1b\[201~\r/g)].map((m) => m[1]);
+
+/** The house whose folder is `cwd`, if the town has one. */
+export const houseAt = (t: Town, cwd: string) => t.houses.find((h) => h.cwd === cwd);
 
 /** Resolves once `ok()` holds, polling every 20 ms; throws after `ms`. */
 export async function until(ok: () => boolean, ms = 3000): Promise<void> {
@@ -82,6 +91,20 @@ export async function post(url: string, event: Json, headers: Record<string, str
     body: JSON.stringify(event),
   });
   return res.status;
+}
+
+/** POSTs a hook payload to /hold; `reply` settles when the server answers, `abort` closes the request (at the latest after the test). */
+export function hold(url: string, payload: Json, headers: Record<string, string> = {}) {
+  const ctl = new AbortController();
+  holds.push(ctl);
+  const reply = fetch(`${url}/hold`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body: JSON.stringify(payload),
+    signal: ctl.signal,
+  });
+  reply.catch(() => {});
+  return { reply, abort: () => ctl.abort() };
 }
 
 /** Opens GET /stream and resolves with the first Town state satisfying `ok`, or rejects after `ms`. */
@@ -156,15 +179,35 @@ export function jsonLines<T = Json>(path: string): T[] {
   return existsSync(path) ? readFileSync(path, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as T) : [];
 }
 
+let fakePsDir: string | undefined;
+
+/**
+ * A folder holding a `ps` that answers at once "no tty, parent 1", made once per test worker
+ * in the run's temp folder. It is run once here, so macOS's first-run check of a new
+ * executable (about a second) never lands inside a hook's 300 ms ps timeout.
+ */
+function fakePs(): string {
+  if (!fakePsDir) {
+    fakePsDir = mkdtempSync(join(tmpdir(), "funtown-fake-ps-"));
+    const ps = join(fakePsDir, "ps");
+    writeFileSync(ps, "#!/bin/sh\necho '?? 1'\n");
+    chmodSync(ps, 0o755);
+    execFileSync(ps);
+  }
+  return fakePsDir;
+}
+
 /**
  * Runs the hook `script` against `url` with `input` on stdin and its error log in a fresh temp
- * folder; resolves with its exit code, stdout, run time and error-log lines.
+ * folder; resolves with its exit code, stdout, run time and error-log lines. Its tty lookup
+ * uses the fake `ps`, so how fast the machine's own `ps` is never adds a line.
  */
 export async function runScript(script: string, url: string, input: string) {
   const log = join(realDir(), "errors.log");
+  const env = { ...process.env, PATH: `${fakePs()}:${process.env.PATH}`, FUNTOWN_URL: url, FUNTOWN_LOG: log };
   const t0 = Date.now();
   // Asynchronous, as spawnSync would block a test server's event loop.
-  const child = spawn(process.execPath, [script], { env: { ...process.env, FUNTOWN_URL: url, FUNTOWN_LOG: log } });
+  const child = spawn(process.execPath, [script], { env });
   let out = "";
   child.stdout.on("data", (c) => (out += c));
   child.stdin.end(input);
@@ -174,23 +217,29 @@ export async function runScript(script: string, url: string, input: string) {
 
 /**
  * Paths and env for one `node server/main.ts` child: every Funtown file, and HOME, in a fresh
- * temp folder, a fake `claude`, and port 0.
+ * temp folder, a fake `claude` that is also its `gh`, and port 0.
  */
 export function mainEnv() {
   const dir = realDir();
-  const paths = { log: join(dir, "errors.log"), run: join(dir, "running.json"), switches: join(dir, "switches.jsonl") };
+  const fake = fakeClaude();
+  const paths = {
+    log: join(dir, "errors.log"), run: join(dir, "running.json"), switches: join(dir, "switches.jsonl"),
+    home: join(dir, "home"), steward: join(dir, "steward"),
+  };
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    HOME: join(dir, "home"),
+    HOME: paths.home,
     FUNTOWN_PORT: "0",
-    FUNTOWN_CLAUDE: fakeClaude().path,
+    FUNTOWN_CLAUDE: fake.path,
+    FUNTOWN_GH: fake.path,
+    FUNTOWN_STEWARD: paths.steward,
     FUNTOWN_LOG: paths.log,
     FUNTOWN_RUN: paths.run,
     FUNTOWN_SWITCHES: paths.switches,
     FUNTOWN_ANSWERS: join(dir, "answers.jsonl"),
     FUNTOWN_JOURNAL: join(dir, "journal.jsonl"),
   };
-  return { dir, ...paths, env };
+  return { dir, ...paths, env, fake };
 }
 
 /** A loopback URL with no listener: a free port, closed again, so a connection to it is refused. */

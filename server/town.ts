@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { basename } from "node:path";
+import { basename, relative, resolve } from "node:path";
 import type { Listed } from "./agents.ts";
 import type { Journal } from "./journal.ts";
 import type { Card, Character, House, Lead, Letter, Stage, Town } from "./types.ts";
+import type { PhaseFile } from "./workflow.ts";
 
 /** The hook payload fields the reducer reads. */
 export type HookEvent = {
@@ -40,6 +41,22 @@ function describeTool(event: HookEvent): string | null {
   if (!tool) return null;
   const command = event.tool_input?.command;
   return tool === "Bash" && typeof command === "string" ? `Bash: ${command}` : tool;
+}
+
+/** The file a PreToolUse edits (Edit, Write, MultiEdit, NotebookEdit), or undefined. */
+function editedFile(event: HookEvent): unknown {
+  const input = event.tool_input;
+  if (event.tool_name === "NotebookEdit") return input?.notebook_path;
+  return ["Edit", "Write", "MultiEdit"].includes(event.tool_name ?? "") ? input?.file_path : undefined;
+}
+
+/** `path` with a worktree's `/.claude/worktrees/<name>` cut off, so a worktree's files match the main tree's. */
+const mainTree = (path: string) => path.replace(/\/\.claude\/worktrees\/[^/]+/, "");
+
+/** `c` with the phase file's labels for its role, then its name (no repeats), or `c` itself when there are none. */
+function withTags<C extends Character>(c: C, tags: Map<string, string[]> | undefined): C {
+  const labels = new Set([...((c.role && tags?.get(c.role)) || []), ...(tags?.get(c.name) ?? [])]);
+  return labels.size > 0 ? { ...c, tags: [...labels] } : c;
 }
 
 /** Identical tool calls in a row that make a character stuck. */
@@ -103,6 +120,10 @@ export class TownState {
   private handedBack = new Map<string, true>();
   // session ids whose failed turn the list reported and the journal already holds, while the list keeps saying failed
   private failedSeen = new Set<string>();
+  // session id -> the files its run and its subagents edited, absolute, worktree part cut off
+  private touched = new Map<string, Set<string>>();
+  // cwd -> its project's phase file
+  private phases = new Map<string, PhaseFile>();
   private readonly journal: Journal | undefined;
   private readonly claude: Town["claude"];
   private readonly unlistedMs: number;
@@ -185,6 +206,12 @@ export class TownState {
         if (loop) set(target, "needs_you", activity, "stuck", `loop: ${activity ?? event.tool_name}`);
         else set(target, "working", activity);
         if (activity) target.step = activity;
+        const file = name === "PreToolUse" ? editedFile(event) : undefined;
+        if (typeof file === "string" && file !== "") {
+          const files = this.touched.get(sid) ?? new Set();
+          files.add(mainTree(resolve(typeof event.cwd === "string" ? event.cwd : "/", file)));
+          this.touched.set(sid, files);
+        }
         const handback = event.tool_input?.message;
         if (name === "PostToolUse" && event.tool_name === "SubagentHandback" && inSubagent && typeof handback === "string") {
           this.handedBack.set(key, true);
@@ -211,9 +238,12 @@ export class TownState {
       case "StopFailure":
         this.mark(inSubagent ? this.agent(lead, event) : lead, "needs_you", null, when, "stuck", (event.error ?? "").replace(/_/g, " ").trim() || "error");
         break;
-      case "SubagentStart":
-        this.agent(lead, event).stage = "working";
+      case "SubagentStart": {
+        const sub = this.agent(lead, event);
+        sub.stage = "working";
+        if (event.agent_type) sub.role = event.agent_type;
         break;
+      }
       case "SubagentStop": {
         const sub = this.agent(lead, event);
         set(sub, "done", null);
@@ -286,6 +316,22 @@ export class TownState {
     return this.listed.has(sessionId) ? this.leads.get(sessionId) : undefined;
   }
 
+  /** The listed background lead with this short id, or undefined. */
+  byShortId(shortId: string): Lead | undefined {
+    for (const sid of this.listed.keys()) if (this.leads.get(sid)!.shortId === shortId) return this.leads.get(sid);
+    return undefined;
+  }
+
+  /** Each listed session's cwd by session id, in list order. */
+  cwds(): ReadonlyMap<string, string> {
+    return this.listed;
+  }
+
+  /** Sets each project's phase file by cwd; a cwd not in `phases` has none. */
+  setPhases(phases: Map<string, PhaseFile>): void {
+    this.phases = phases;
+  }
+
   /** The listed lead's letters, newest first (at most 20), or undefined when it is not listed. */
   letters(sessionId: string): Letter[] | undefined {
     return this.listed.has(sessionId) ? [...(this.letterLists.get(sessionId) ?? [])] : undefined;
@@ -294,23 +340,43 @@ export class TownState {
   /**
    * The listed sessions, one house per cwd in list order, with `cards` (open cards of listed
    * leads): while a card is open, the subagent it names, or else its lead, needs the user
-   * for the card's kind whatever the list or hooks say.
+   * for the card's kind whatever the list or hooks say. Each house has its phase, each
+   * character its tags, and each lead the files it shares with another listed lead.
    */
   snapshot(cards: Card[] = []): Town {
     const houses = new Map<string, House>();
     for (const [sid, cwd] of this.listed) {
+      const phase = this.phases.get(cwd);
       let house = houses.get(cwd);
       if (!house) {
         house = { project: basename(cwd) || cwd, cwd, leads: [] };
+        if (phase) house.phase = { phase: phase.phase, ...(phase.note !== undefined ? { note: phase.note } : {}) };
         houses.set(cwd, house);
       }
-      house.leads.push(withCards(this.leads.get(sid)!, cards));
+      const lead = this.leads.get(sid)!;
+      const shown = { ...withTags(lead, phase?.tags), subagents: lead.subagents.map((a) => withTags(a, phase?.tags)) };
+      const overlaps = this.overlaps(sid, cwd);
+      if (overlaps.length > 0) shown.overlaps = overlaps;
+      house.leads.push(withCards(shown, cards));
     }
     return { houses: [...houses.values()], cards, started: this.started, claude: this.claude };
   }
 
+  /** The files lead `sid` (listed in `cwd`) touched that another listed lead touched too, relative to its project root. */
+  private overlaps(sid: string, cwd: string): NonNullable<Lead["overlaps"]> {
+    const found: NonNullable<Lead["overlaps"]> = [];
+    for (const file of this.touched.get(sid) ?? []) {
+      for (const other of this.listed.keys()) {
+        if (other === sid || !this.touched.get(other)?.has(file)) continue;
+        found.push({ file: relative(mainTree(cwd), file), with: other, withName: this.leads.get(other)!.name });
+      }
+    }
+    return found;
+  }
+
   private forget(sessionId: string): void {
     this.leads.delete(sessionId);
+    this.touched.delete(sessionId);
     this.heard.delete(sessionId);
     this.leadHeardAt.delete(sessionId);
     this.turnEnded.delete(sessionId);

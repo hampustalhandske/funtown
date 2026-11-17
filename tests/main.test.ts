@@ -1,10 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, expect, it } from "vitest";
-import { errorLines, mainEnv, until } from "./helpers.ts";
+import { errorLines, houseAt, listed, mainEnv, pastes, pr, realDir, sleep, townWhere, until } from "./helpers.ts";
 
 const MAIN = resolve(import.meta.dirname, "../server/main.ts");
 
@@ -25,7 +25,9 @@ function startMain(env: NodeJS.ProcessEnv, nodeArgs: string[] = []) {
   const exited = new Promise<number | null>((r) => child.on("exit", (code) => r(code)));
   /** Resolves once the server says it is running. */
   const running = () => until(() => output.includes("running at"), 8000);
-  return { child, exited, running, output: () => output };
+  /** The URL the server says it runs at. */
+  const url = () => /running at (\S+)/.exec(output)![1];
+  return { child, exited, running, url, output: () => output };
 }
 
 /** The run file at `path`, parsed. */
@@ -129,3 +131,40 @@ it("a_run_file_that_does_not_parse_logs_unclean_exit_instead_of_passing_for_a_cl
   await runFileOf(m.run, main.child.pid);
   expect(errorLines(m.log).filter((l) => l.step === "unclean-exit")).toEqual([expect.objectContaining({ source: "server" })]);
 }, 15_000);
+
+/** Starts main with a lead listed in a real project whose gh lists the ready PR #7; `homePrompt` is ~/.funtown/steward.md, if any. */
+async function mainWithReadyPr(homePrompt?: string) {
+  const m = mainEnv();
+  const project = realDir();
+  m.fake.list([listed("s1", project)]).prs(project, [pr(7)]);
+  if (homePrompt !== undefined) {
+    mkdirSync(join(m.home, ".funtown"), { recursive: true });
+    writeFileSync(join(m.home, ".funtown", "steward.md"), homePrompt);
+  }
+  const main = startMain(m.env);
+  await main.running();
+  return { ...m, main, project };
+}
+
+it("an_empty_steward_md_in_the_home_folder_turns_reviews_off", async () => {
+  const m = await mainWithReadyPr("");
+  const url = m.main.url();
+  await townWhere(url, (t) => houseAt(t, m.project)?.parcels?.length === 1, 8000);
+  await sleep(2500); // past the next list poll, when a started steward would be listed
+  expect(houseAt(await townWhere(url, () => true), m.project)!.parcels![0].review).toBeUndefined();
+  expect(m.fake.started()).toEqual([]);
+}, 20_000);
+
+it("without_a_home_steward_md_main_sends_server_steward_md_filled_in_to_a_steward_in_FUNTOWN_STEWARD", async () => {
+  const m = await mainWithReadyPr();
+  await until(() => m.fake.sessions().some((x) => x.cwd === m.steward), 10_000);
+  const short = m.fake.sessions().find((x) => x.cwd === m.steward)!.id!;
+  const pasted = () => pastes(m.fake.attachInput(short));
+  await until(() => pasted().length === 1, 10_000);
+
+  const template = readFileSync(resolve(import.meta.dirname, "../server/steward.md"), "utf8");
+  const seven = pr(7);
+  const expected = template.replaceAll("{number}", String(seven.number)).replaceAll("{title}", seven.title).replaceAll("{url}", seven.url);
+  expect(pasted()[0].trim()).toBe(expected.trim());
+  expect(m.fake.started().map((c) => c.cwd)).toEqual([m.steward]);
+}, 25_000);
