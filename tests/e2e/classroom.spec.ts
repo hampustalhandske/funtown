@@ -219,9 +219,11 @@ test("the_whiteboard_shows_the_project_phase_note_and_marks_each_step_and_follow
 const boardLine = (page: Page, label: string) => page.locator("ol > li").filter({ hasText: new RegExp(`^\\S*\\s*${label}$`) });
 
 test("a_board_with_24_steps_draws_every_one_inside_the_board_card_with_nothing_clipped", async ({ page }) => {
-  const many = Array.from({ length: 24 }, (_, i) => `step ${String(i + 1).padStart(2, "0")}`);
-  await open(page, `/#in=${encodeURIComponent(DEMO)}`, state({ phase: many[11], note: "a long plan", steps: many }));
-  await expect.poll(() => drawn(page, "a long plan")).toBe(true);
+  // Long labels wrap and the note runs over several lines, so 24 lines cannot fit at the full font size.
+  const many = Array.from({ length: 24 }, (_, i) => `step ${String(i + 1).padStart(2, "0")} write the failing test then the code that makes it pass and check the result`);
+  const note = "a long note about why this plan has so many steps, which keeps going so that it takes several lines of the card on its own";
+  await open(page, `/#in=${encodeURIComponent(DEMO)}`, state({ phase: many[11], note, steps: many }));
+  await expect.poll(() => drawn(page, "a long note")).toBe(true);
   for (const label of many) await expect(boardLine(page, label), label).toHaveCount(1);
   // The card is the nearest ancestor of a step's line that also holds the project heading.
   const edges = await Promise.all(
