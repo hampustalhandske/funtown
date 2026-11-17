@@ -369,7 +369,7 @@ export class TownState {
       if (!found) {
         const phase = this.phases.get(cwd);
         found = { project: basename(cwd) || cwd, cwd, leads: [] };
-        if (phase) found.phase = { phase: phase.phase, ...(phase.note !== undefined ? { note: phase.note } : {}) };
+        if (phase) found.phase = { phase: phase.phase, ...(phase.note !== undefined ? { note: phase.note } : {}), ...(phase.steps ? { steps: phase.steps } : {}) };
         if (this.seen.has(cwd)) found.seen = true;
         houses.set(cwd, found);
       }
