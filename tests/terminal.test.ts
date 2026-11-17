@@ -1,13 +1,14 @@
-import { afterEach, expect, it } from "vitest";
-import WebSocket from "ws";
-import { listed, listedBg, leadsOf, realDir, start, tokenOf, townWhere, until } from "./helpers.ts";
+import { expect, it } from "vitest";
+import { alive, connect as open, listed, listedBg, leadsOf, realDir, start, tokenOf, townWhere, until } from "./helpers.ts";
 
 const SID = "abcd1234-0000-4000-8000-000000000000";
 const SHORT = "abcd1234";
-const sockets: WebSocket[] = [];
-afterEach(() => {
-  for (const w of sockets.splice(0)) w.terminate();
-});
+
+/** Opens /term on session SID, or on `q.lead`. */
+const connect = (
+  s: { url: string; token: string },
+  q: { lead?: string; cols?: number; rows?: number; token?: string | null; origin?: string | null } = {},
+) => open(s, { lead: q.lead ?? SID }, q);
 
 /** A server listing background session SID and interactive session TERMINAL. */
 async function withSessions() {
@@ -15,34 +16,6 @@ async function withSessions() {
   s.fake.list([listedBg(SID, "/work/a"), listed("terminal-1", "/work/a")]);
   await townWhere(s.url, (t) => leadsOf(t).length === 2);
   return { ...s, token: await tokenOf(s.url) };
-}
-
-type Conn = { ws: WebSocket; out: () => string; shared: number[]; closed: () => boolean; send: (f: object) => void };
-
-/** Opens /term; resolves once the socket is open, rejects with the HTTP status when the upgrade is refused. */
-function connect(
-  s: { url: string; token: string },
-  q: { lead?: string; cols?: number; rows?: number; token?: string | null; origin?: string | null } = {},
-): Promise<Conn> {
-  const params = new URLSearchParams({ lead: q.lead ?? SID, cols: String(q.cols ?? 100), rows: String(q.rows ?? 30) });
-  if (q.token !== null) params.set("token", q.token ?? s.token);
-  const headers = q.origin === null ? {} : { origin: q.origin ?? s.url };
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`${s.url.replace("http", "ws")}/term?${params}`, { headers });
-    sockets.push(ws);
-    let out = "";
-    let closed = false;
-    const shared: number[] = [];
-    ws.on("message", (m) => {
-      const f = JSON.parse(m.toString());
-      if (f.t === "out") out += f.d;
-      if (f.t === "shared") shared.push(f.n);
-    });
-    ws.on("close", () => (closed = true));
-    ws.on("open", () => resolve({ ws, out: () => out, shared, closed: () => closed, send: (f) => ws.send(JSON.stringify(f)) }));
-    ws.on("unexpected-response", (_req, res) => reject(new Error(`status ${res.statusCode}`)));
-    ws.on("error", () => {});
-  });
 }
 
 it("term_is_refused_with_403_without_the_token_with_a_wrong_one_or_from_another_origin", async () => {
@@ -116,10 +89,9 @@ it("closing_the_socket_kills_the_pty_and_the_pty_exiting_closes_the_socket", asy
   const a = await connect(s);
   await until(() => s.fake.attachPids(SHORT).length === 1);
   const [pid] = s.fake.attachPids(SHORT);
-  const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
-  expect(alive()).toBe(true);
+  expect(alive(pid)).toBe(true);
   a.ws.close();
-  await until(() => !alive(), 5000);
+  await until(() => !alive(pid), 5000);
 
   const b = await connect(s);
   await until(() => b.out().includes("attached"));

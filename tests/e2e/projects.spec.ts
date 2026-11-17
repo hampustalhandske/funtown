@@ -81,3 +81,33 @@ test("the_shell_tab_echoes_input_survives_a_reload_replays_its_output_and_close_
   await house(page).getByRole("button", { name: "Close shell" }).click();
   await expect.poll(() => { try { process.kill(pid, 0); return true; } catch { return false; } }).toBe(false);
 });
+
+test("a_failed_start_shows_the_reason_and_the_setup_hint_in_a_house_that_has_a_session", async ({ page }) => {
+  fake.list([listed("t1", cwd, { name: "alpha" })]);
+  fake.failBg();
+  await page.goto("/");
+  await expect(house(page)).toBeVisible();
+  await expect(house(page)).not.toContainText("First time here?");
+  await house(page).getByRole("button", { name: "New session" }).click();
+  await expect(house(page).getByRole("alert")).toHaveText(/\S/);
+  await expect(house(page)).toContainText(/First time here\?.*Shell tab.*trust prompt/s);
+});
+
+test("the_setup_hint_shows_only_after_a_500_and_goes_when_the_next_action_starts", async ({ page }) => {
+  fake.list([listed("t1", cwd, { name: "alpha" })]);
+  await page.goto("/");
+  await house(page).getByRole("button", { name: /background run/i }).click();
+  await page.getByRole("textbox", { name: "Prompt" }).fill("-not allowed");
+  await page.getByRole("button", { name: "Start run" }).click();
+  await expect(house(page).getByRole("alert")).toHaveText(/\S/); // a 400
+  await expect(house(page)).not.toContainText("First time here?");
+
+  fake.failBg();
+  await house(page).getByRole("button", { name: "New session" }).click();
+  await expect(house(page)).toContainText("First time here?");
+
+  await page.getByRole("textbox", { name: "Prompt" }).fill("-again");
+  await page.getByRole("button", { name: "Start run" }).click();
+  await expect(house(page).getByRole("alert")).toHaveText(/\S/);
+  await expect(house(page)).not.toContainText("First time here?");
+});
