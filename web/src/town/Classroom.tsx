@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Html } from "@react-three/drei";
-import { TONES } from "./kit/clay.tsx";
+import type { Avatar } from "./kit/avatars.ts";
 import type { HatKind } from "./kit/palette.ts";
 import { Figure, Parcel } from "./kit/parts.tsx";
 import { BOARD_HEIGHT, BOARD_SIZE, Door, Floor, SIDE_WALL_HEIGHT, SeatedFigure, StudentDesk, Table, TeacherDesk, Wall, WALL_HEIGHT, Whiteboard } from "./kit/classroom.tsx";
@@ -18,8 +18,8 @@ export type ClassroomProps = {
   onPick: (p: InPlaced) => void;
 };
 
-/** The scene's hover, which `Village` owns so the town and the classroom share one. */
-type HoverProps = { hover: string | null; onHover: (key: string | null) => void };
+/** The scene's hover, which `Village` owns so the town and the classroom share one, and the look the observer wears. */
+type HoverProps = { look: Avatar; hover: string | null; onHover: (key: string | null) => void };
 
 /** The floor's extent: symmetric about the aisle, wide and deep enough for everything in `placed`, with a margin. */
 export function roomOf(placed: InPlaced[]) {
@@ -103,7 +103,7 @@ function BoardText({ board }: { board: Board }) {
  * Whoever is there when the room first shows stands at their place; a lead or subagent that comes later walks in from the door,
  * and one that goes walks to the door, out of reach of the pointer, and is dropped `LEAVE_MS` after it went. Desks stay at their seats; only the figures walk.
  */
-export function Classroom({ house, placed, board, name, onPick, hover, onHover }: ClassroomProps & HoverProps) {
+export function Classroom({ house, placed, board, name, onPick, look, hover, onHover }: ClassroomProps & HoverProps) {
   const room = useMemo(() => roomOf(placed), [placed]);
   const [width, depth] = [room.maxX - room.minX, room.maxZ - room.minZ];
   const leads = placed.filter((p) => p.kind === "lead").length;
@@ -138,7 +138,7 @@ export function Classroom({ house, placed, board, name, onPick, hover, onHover }
   const thing = (p: Drawn) => {
     switch (p.kind) {
       case "observer":
-        return <group position={[p.at.x, 0, p.at.z]} rotation-y={Math.PI}><Bob speed={1.2}><Figure colour={TONES.ribbon} hat="crown" /></Bob></group>;
+        return <group position={[p.at.x, 0, p.at.z]} rotation-y={Math.PI}><Bob speed={1.2}><Figure colour={look.coat} hat={look.hat} skin={look.skin} /></Bob></group>;
       case "parcel":
         return (
           <group position={[p.at.x, 0.6, p.at.z]} rotation-y={((p.number % 5) - 2) * 0.12}>

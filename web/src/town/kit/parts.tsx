@@ -42,12 +42,12 @@ export function Castle() {
   );
 }
 
-/** A character facing +z: a body in `colour`, a head with ink eyes and the given `hat`. */
-export function Figure({ colour, hat }: { colour: string; hat: HatKind }) {
+/** A character facing +z: a body in `colour`, a head in `skin` (default `TONES.skin`) with ink eyes and the given `hat`. */
+export function Figure({ colour, hat, skin = TONES.skin }: { colour: string; hat: HatKind; skin?: string }) {
   return (
     <group>
       <Clay colour={colour} position={[0, 0.4, 0]}><capsuleGeometry args={[0.25, 0.3, 8, 16]} /></Clay>
-      <Clay colour={TONES.skin} position={[0, 0.98, 0]}><sphereGeometry args={[0.28, 24, 16]} /></Clay>
+      <Clay colour={skin} position={[0, 0.98, 0]}><sphereGeometry args={[0.28, 24, 16]} /></Clay>
       {[-0.1, 0.1].map((x) => (
         <mesh key={x} position={[x, 1.0, 0.26]}>
           <sphereGeometry args={[0.035, 8, 8]} />
