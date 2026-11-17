@@ -220,7 +220,7 @@ export function Village({ index, placed, name, onPick, inside }: Props) {
         <meshLambertMaterial color={GROUND} />
       </mesh>
       {inside ? (
-        <Classroom {...inside} hover={hover} onHover={setHover} />
+        <Classroom key={inside.house.cwd} {...inside} hover={hover} onHover={setHover} />
       ) : (
         <>
           {/* The board the town stands on: grass on soil, catching shadows but casting none. */}

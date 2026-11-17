@@ -8,7 +8,7 @@ import type { HatKind } from "./palette.ts";
 import { Figure } from "./parts.tsx";
 import type { Pose, Spot } from "../layout.ts";
 
-const WALK_SPEED = 2.4;
+export const WALK_SPEED = 2.4;
 
 // Plates go in their own element beside the React root: drei's default target changes once the canvas connects.
 export const plates = { current: document.getElementById("plates")! };
@@ -16,8 +16,8 @@ export const plates = { current: document.getElementById("plates")! };
 /** The shortest signed turn from angle `from` to `to`. */
 const turn = (from: number, to: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 
-/** Walks its children to `to`, facing the way it goes, then turns to `facing`; it appears at `from`, else at its first `to`. */
-export function Mover({ to, from, facing, children }: { to: Spot; from?: Spot; facing: number; children: ReactNode }) {
+/** Walks its children to `to` at `speed` units a second, facing the way it goes, then turns to `facing`; it appears at `from`, else at its first `to`. */
+export function Mover({ to, from, speed = WALK_SPEED, facing, children }: { to: Spot; from?: Spot; speed?: number; facing: number; children: ReactNode }) {
   const ref = useRef<Group>(null);
   const [start] = useState({ ...(from ?? to), facing });
   useFrame(({ clock }, delta) => {
@@ -27,7 +27,7 @@ export function Mover({ to, from, facing, children }: { to: Spot; from?: Spot; f
     const d = Math.hypot(dx, dz);
     const walking = d > 0.01;
     if (walking) {
-      const step = Math.min(d, WALK_SPEED * dt);
+      const step = Math.min(d, speed * dt);
       g.position.x += (dx / d) * step;
       g.position.z += (dz / d) * step;
     }
@@ -129,22 +129,22 @@ export function Pennant() {
   );
 }
 
-type PickProps = { id: string; height: number; plate: string | null; onPick: () => void; onHover: (id: string | null) => void; children: ReactNode };
+type PickProps = { id: string; height: number; plate: string | null; disabled?: boolean; onPick: () => void; onHover: (id: string | null) => void; children: ReactNode };
 
-/** Makes its children hoverable and clickable as `id`; shows `plate`, when given, as a name plate `height` above them that moves with them. */
-export function Pick({ id, height, plate, onPick, onHover, children }: PickProps) {
+/** Makes its children hoverable and clickable as `id` (not when `disabled`); shows `plate`, when given, as a name plate `height` above them that moves with them. */
+export function Pick({ id, height, plate, disabled = false, onPick, onHover, children }: PickProps) {
   const stop = (e: ThreeEvent<PointerEvent | MouseEvent>) => e.stopPropagation();
   return (
     <group
-      onClick={(e) => {
+      onClick={disabled ? undefined : (e) => {
         stop(e);
         onPick();
       }}
-      onPointerOver={(e) => {
+      onPointerOver={disabled ? undefined : (e) => {
         stop(e);
         onHover(id);
       }}
-      onPointerOut={() => onHover(null)}>
+      onPointerOut={disabled ? undefined : () => onHover(null)}>
       {children}
       {plate !== null && (
         <Html center portal={plates} zIndexRange={[100, 1]} className="plate" position={[0, height, 0]}>

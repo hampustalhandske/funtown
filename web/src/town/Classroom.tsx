@@ -7,7 +7,7 @@ import { BOARD_HEIGHT, BOARD_SIZE, Door, Floor, SIDE_WALL_HEIGHT, SeatedFigure, 
 import { BOARD, DOOR, FRONT, LEAVE_MS, PARCEL_GAP, PARCELS_PER_ROW, TABLE, drawn, type Board, type Drawn, type InPlaced } from "./interior.ts";
 import { keyOf, type Pose } from "./layout.ts";
 import type { House } from "../../../server/types.ts";
-import { Bob, Body, Dizzy, Mover, Pennant, Pick, Slip, plates } from "./kit/actors.tsx";
+import { Bob, Body, Dizzy, Mover, Pennant, Pick, Slip, WALK_SPEED, plates } from "./kit/actors.tsx";
 
 /** What the classroom shows: the house's places, the whiteboard's text, the words for hover plates and what a click does. */
 export type ClassroomProps = {
@@ -42,6 +42,8 @@ const MIN_FONT = 8;
 const ONE_COLUMN = 10;
 /** How much taller than a student a lead stands. */
 const LEAD_SCALE = 1.25;
+/** A leaver walks fast enough to cover the longest walk to the door in this share of `LEAVE_MS`, the rest being slack for turning and slow frames. */
+const LEAVE_SHARE = 0.75;
 
 const plateHeight = (p: InPlaced) =>
   p.kind === "parcel" ? 0.9 : p.kind === "hat" ? (p.pose === "queue" ? 2.2 : 1.7) : p.kind === "lead" ? (p.pose === "queue" ? 2.7 : 2.3) : 1.8;
@@ -99,7 +101,7 @@ function BoardText({ board }: { board: Board }) {
 /**
  * A house's classroom: leads at the front, subagents at desks, the whiteboard behind, the parcels on the table by the door and the observer at the back.
  * Whoever is there when the room first shows stands at their place; a lead or subagent that comes later walks in from the door,
- * and one that goes walks to the door, out of reach of the pointer, and is dropped `LEAVE_MS` after it went.
+ * and one that goes walks to the door, out of reach of the pointer, and is dropped `LEAVE_MS` after it went. Desks stay at their seats; only the figures walk.
  */
 export function Classroom({ house, placed, board, name, onPick, hover, onHover }: ClassroomProps & HoverProps) {
   const room = useMemo(() => roomOf(placed), [placed]);
@@ -112,25 +114,27 @@ export function Classroom({ house, placed, board, name, onPick, hover, onHover }
   const before = useRef<Drawn[]>([]);
   const shown = drawn(before.current, placed, Date.now());
   before.current = shown;
-  const [, redraw] = useState(0);
+  const [tick, redraw] = useState(0);
+  const firstLeft = Math.min(...shown.flatMap((p) => (p.leftAt === undefined ? [] : [p.leftAt])));
   useEffect(() => {
-    const leaving = shown.flatMap((p) => (p.leftAt === undefined ? [] : [p.leftAt + LEAVE_MS - Date.now()]));
-    if (leaving.length === 0) return;
-    const timer = setTimeout(() => redraw((n) => n + 1), Math.max(0, Math.min(...leaving)));
+    if (firstLeft === Infinity) return;
+    const timer = setTimeout(() => redraw((n) => n + 1), Math.max(0, firstLeft + LEAVE_MS - Date.now()));
     return () => clearTimeout(timer);
-  });
+  }, [firstLeft, tick]);
+  // The farthest any lead or subagent has stood from the door in this room: a leaver's speed is set so it gets there in time.
+  const reach = useRef(0);
+  for (const p of placed) if (p.kind === "lead" || p.kind === "hat") reach.current = Math.max(reach.current, Math.hypot(p.at.x - DOOR.x, p.at.z - DOOR.z));
+  const leaveSpeed = Math.max(WALK_SPEED, reach.current / ((LEAVE_MS / 1000) * LEAVE_SHARE));
   const mounted = useRef(false);
   const arriving = mounted.current;
   useEffect(() => {
     mounted.current = true;
   }, []);
 
-  const pick = (p: Drawn, children: ReactNode) =>
-    p.leftAt === undefined ? (
-      <Pick id={keyOf(p)} height={plateHeight(p)} plate={keyOf(p) === hover ? name(p) : null} onPick={() => onPick(p)} onHover={onHover}>{children}</Pick>
-    ) : (
-      children
-    );
+  const pick = (p: Drawn, children: ReactNode) => (
+    <Pick id={keyOf(p)} height={plateHeight(p)} plate={keyOf(p) === hover ? name(p) : null} disabled={p.leftAt !== undefined} onPick={() => onPick(p)} onHover={onHover}>{children}</Pick>
+  );
+  const speedOf = (p: Drawn) => (p.leftAt === undefined ? WALK_SPEED : leaveSpeed);
   const thing = (p: Drawn) => {
     switch (p.kind) {
       case "observer":
@@ -148,11 +152,11 @@ export function Classroom({ house, placed, board, name, onPick, hover, onHover }
           </group>
         );
       case "lead":
-        return <Mover to={p.at} from={arriving ? DOOR : undefined} facing={0}>{pick(p, <group scale={LEAD_SCALE}><Body pose={p.pose} colour={p.colour} hat="cap" /></group>)}</Mover>;
+        return <Mover to={p.at} from={arriving ? DOOR : undefined} speed={speedOf(p)} facing={0}>{pick(p, <group scale={LEAD_SCALE}><Body pose={p.pose} colour={p.colour} hat="cap" /></group>)}</Mover>;
       case "hat":
         return (
-          <Mover to={p.at} from={arriving ? DOOR : undefined} facing={Math.PI}>
-            {pick(p, <><StudentDesk /><Pupil pose={p.pose} colour={p.colour} hat={p.hat} /></>)}
+          <Mover to={p.at} from={arriving ? DOOR : undefined} speed={speedOf(p)} facing={Math.PI}>
+            {pick(p, <Pupil pose={p.pose} colour={p.colour} hat={p.hat} />)}
           </Mover>
         );
     }
@@ -170,6 +174,11 @@ export function Classroom({ house, placed, board, name, onPick, hover, onHover }
       <BoardText board={board} />
       <group position={[FRONT.x, 0, FRONT.z - 0.9]}><TeacherDesk width={Math.max(2.4, leads * 1.5 + 0.8)} /></group>
       <group position={[TABLE.x, 0, TABLE.z - (PARCEL_GAP * (rows - 1)) / 2]}><Table width={TABLE_WIDTH} depth={tableDepth} /></group>
+      {placed.map((p) => p.kind === "hat" && (
+        <group key={`desk:${keyOf(p)}`} position={[p.at.x, 0, p.at.z]} rotation-y={Math.PI}>
+          <Pick id={keyOf(p)} height={0} plate={null} onPick={() => onPick(p)} onHover={onHover}><StudentDesk /></Pick>
+        </group>
+      ))}
       {shown.map((p) => <group key={keyOf(p)}>{thing(p)}</group>)}
     </>
   );
