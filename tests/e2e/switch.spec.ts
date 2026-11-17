@@ -35,7 +35,7 @@ async function recordSwitches(page: Page): Promise<unknown[]> {
 
 async function openPage(page: Page) {
   fake.list([listed(sid, cwd, { name: "alpha" })]);
-  await page.goto("/");
+  await page.goto("/work.html");
   await expect(row(page)).toBeVisible();
 }
 
@@ -81,7 +81,7 @@ test("note_it_can_be_clicked_while_a_wide_panel_is_open", async ({ page }) => {
   const sent = await recordSwitches(page);
   // A background lead's panel is the wide one, spanning most of the width under the header.
   fake.list([listedBg(sid, cwd, { name: "alpha" })]);
-  await page.goto("/");
+  await page.goto("/work.html");
   await row(page).click({ position: { x: 5, y: 5 } });
   await expect(panel(page)).toBeVisible();
   await switchButton(page).click();

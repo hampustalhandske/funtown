@@ -37,7 +37,7 @@ const stubs = (permission: string) => `
 async function open(page: Page, initial: unknown, permission = "granted") {
   await page.addInitScript(stubs(permission));
   const stream = await stubStream(page, initial);
-  await page.goto("/");
+  await page.goto("/work.html");
   await expect(page.locator("section[aria-label]").first()).toBeVisible(); // the first state is in before a test sends the next
   return stream;
 }

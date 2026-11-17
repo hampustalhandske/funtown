@@ -49,7 +49,7 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/letters?lead=st1", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "L1", from: "st1", name: "steward", text: REVIEW, at: 2 }]) }),
   );
-  await page.goto("/");
+  await page.goto("/work.html");
   await expect(house(page)).toBeVisible();
 });
 

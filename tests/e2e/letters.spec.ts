@@ -31,7 +31,7 @@ const letters = (page: Page, name: string) => panel(page, name).getByRole("regio
 /** Lists `alpha` (a terminal lead, or a background one with `bg`), opens the page and waits for its row. */
 async function openWith(page: Page, bg = false) {
   fake.list([bg ? listedBg(sid, cwd, { name: "alpha" }) : listed(sid, cwd, { name: "alpha" })]);
-  await page.goto("/");
+  await page.goto("/work.html");
   await expect(row(page, "alpha")).toBeVisible();
 }
 async function openPanel(page: Page, name = "alpha") {

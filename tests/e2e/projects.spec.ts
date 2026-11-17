@@ -37,14 +37,14 @@ async function addProject(page: Page, path: string) {
 }
 
 test("add_project_shows_the_servers_reason_for_a_relative_path_and_adds_no_house", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/work.html");
   await addProject(page, "relative/dir");
   await expect(page.getByRole("alert").first()).toHaveText(/\S/);
   await expect(page.locator("section[aria-label]").filter({ hasText: "relative" })).toHaveCount(0);
 });
 
 test("an_added_project_is_a_house_with_no_session_and_the_first_time_hint_until_a_session_is_listed", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/work.html");
   await addProject(page, cwd);
   await expect(house(page)).toBeVisible();
   await expect(house(page)).toContainText(/First time here\?.*Shell tab.*trust prompt/s);
@@ -56,7 +56,7 @@ test("an_added_project_is_a_house_with_no_session_and_the_first_time_hint_until_
 
 test("background_run_posts_the_prompt_as_one_argument_for_the_house", async ({ page }) => {
   fake.list([listed("t1", cwd, { name: "alpha" })]);
-  await page.goto("/");
+  await page.goto("/work.html");
   await house(page).getByRole("button", { name: /background run/i }).click();
   await page.getByRole("textbox", { name: "Prompt" }).fill("fix the; bug");
   await page.getByRole("button", { name: "Start run" }).click();
@@ -64,7 +64,7 @@ test("background_run_posts_the_prompt_as_one_argument_for_the_house", async ({ p
 });
 
 test("the_shell_tab_echoes_input_survives_a_reload_replays_its_output_and_close_shell_ends_it", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/work.html");
   await addProject(page, cwd);
   await house(page).getByRole("tab", { name: "Shell" }).click();
   await expect(screen(page)).toContainText(`shell args:-l cwd:${cwd}`, { timeout: 10_000 });
@@ -85,7 +85,7 @@ test("the_shell_tab_echoes_input_survives_a_reload_replays_its_output_and_close_
 test("a_failed_start_shows_the_reason_and_the_setup_hint_in_a_house_that_has_a_session", async ({ page }) => {
   fake.list([listed("t1", cwd, { name: "alpha" })]);
   fake.failBg();
-  await page.goto("/");
+  await page.goto("/work.html");
   await expect(house(page)).toBeVisible();
   await expect(house(page)).not.toContainText("First time here?");
   await house(page).getByRole("button", { name: "New session" }).click();
@@ -95,7 +95,7 @@ test("a_failed_start_shows_the_reason_and_the_setup_hint_in_a_house_that_has_a_s
 
 test("the_setup_hint_shows_only_after_a_500_and_goes_when_the_next_action_starts", async ({ page }) => {
   fake.list([listed("t1", cwd, { name: "alpha" })]);
-  await page.goto("/");
+  await page.goto("/work.html");
   await house(page).getByRole("button", { name: /background run/i }).click();
   await page.getByRole("textbox", { name: "Prompt" }).fill("-not allowed");
   await page.getByRole("button", { name: "Start run" }).click();
