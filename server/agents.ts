@@ -88,3 +88,13 @@ export async function startBackground(claude: string, cwd: string, prompt?: stri
   if (!id) throw new Error(`claude --bg printed no session id: ${out.trim()}`);
   return id;
 }
+
+/** Runs `claude stop` on the background session with this short id; rejects with the reason. */
+export async function stopBackground(claude: string, shortId: string): Promise<void> {
+  try {
+    await run(claude, ["stop", shortId], undefined, 30_000);
+  } catch (err) {
+    const { stderr, message } = err as { stderr?: string; message: string };
+    throw new Error(stderr?.trim() || message, { cause: err });
+  }
+}

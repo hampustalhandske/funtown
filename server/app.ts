@@ -7,7 +7,7 @@ import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { TownState, type HookEvent } from "./town.ts";
 import type { Town } from "./types.ts";
-import { checkVersion, execFileAsync, listAgents, startBackground, type Listed } from "./agents.ts";
+import { checkVersion, execFileAsync, listAgents, startBackground, stopBackground, type Listed } from "./agents.ts";
 import { createTerminals, isSize } from "./terminal.ts";
 import { createHolds } from "./holds.ts";
 import { describe, serverLogger } from "./errors.ts";
@@ -102,8 +102,8 @@ async function readJson(req: IncomingMessage, max = Infinity): Promise<{ value: 
  * Server-Sent Events. `claude --version` is checked once before listening. Everything else is
  * served from `distDir` (default web/dist/); HTML gets the page's token and a CSP. `POST /jump`
  * runs `run` (default: execFile, 60 s timeout) to bring a lead's terminal to the front, `POST
- * /sessions` starts `claude --bg` in a house's folder, and the `/term` WebSocket attaches a
- * background lead; all three need the page's own Origin and token. `/events` refuses any
+ * /sessions` starts `claude --bg` in a house's folder, `POST /sessions/stop` runs `claude stop` on
+ * a background lead, and the `/term` WebSocket attaches a background lead; all four need the page's own Origin and token. `/events` refuses any
  * request with an `Origin` header, so web pages cannot post to it. `POST /hold` (no Origin
  * either) holds a permission, question or plan as a card until `POST /answer` (page Origin
  * and token) answers it or it is released; `answerLog` (a JSONL path) gets one line per
@@ -497,6 +497,28 @@ export async function startServer(opts: {
       } catch (err) {
         logError("start session", err, cwd);
         res.writeHead(500, text).end(`Couldn't start a session: ${(err as Error).message}`);
+      }
+      return;
+    }
+
+    if (req.method === "POST" && path === "/sessions/stop") {
+      const leadId = await pageField(req, res, "lead");
+      if (leadId === null) return;
+      const lead = town.lead(leadId);
+      if (!lead || (lead.shortId !== null && lead.shortId === steward?.shortId())) {
+        res.writeHead(404).end();
+        return;
+      }
+      if (lead.shortId === null) {
+        res.writeHead(409, text).end("Funtown can only close a background session.");
+        return;
+      }
+      try {
+        await stopBackground(claude, lead.shortId);
+        res.writeHead(204).end();
+      } catch (err) {
+        logError("stop session", err, town.cwds().get(lead.id));
+        res.writeHead(500, text).end(`Couldn't close the session: ${(err as Error).message}`);
       }
       return;
     }
