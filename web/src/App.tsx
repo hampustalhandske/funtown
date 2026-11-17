@@ -156,6 +156,12 @@ export async function post(path: string, body: unknown, ok: number[]): Promise<F
   }
 }
 
+/** Asks the user, then removes `house` from Funtown; gives the failure, or null once removed or when the user says no. */
+export async function removeProject(house: House): Promise<Failure | null> {
+  if (!window.confirm(`Remove ${house.project} from Funtown? Its shell ends; sessions keep running.`)) return null;
+  return post("/projects/remove", { cwd: house.cwd }, [204, 404]);
+}
+
 const SETUP_HINT = "First time here? Run `claude` once in its Shell tab and accept the trust prompt.";
 
 /** The "Add project" form: an absolute folder path; shows the server's reason when it refuses. */
@@ -226,11 +232,9 @@ function HouseCard({
     setError((await post("/shells/close", { cwd: house.cwd }, [204, 404]))?.message ?? null);
     setShell(false);
   }
-  async function removeProject() {
-    if (!window.confirm(`Remove ${house.project} from Funtown? Its shell ends; sessions keep running.`)) return;
-    setError(null);
+  async function remove() {
     setFailed(false);
-    setError((await post("/projects/remove", { cwd: house.cwd }, [204, 404]))?.message ?? null);
+    setError((await removeProject(house))?.message ?? null);
   }
   const needsYou = house.leads.some((lead) => lead.stage === "needs_you");
   return (
@@ -263,7 +267,7 @@ function HouseCard({
         Shell
       </button>
       {house.added && (
-        <button type="button" onClick={removeProject}>
+        <button type="button" onClick={remove}>
           Remove project
         </button>
       )}
@@ -373,18 +377,41 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
   );
 }
 
-/** The town page: one house per project, its leads and their subagents, with a list of everyone waiting for you. */
-export function App() {
-  const [town, restarted] = useTown();
+/**
+ * The character whose panel is open, and the Needs you wiring both pages share: the waiting list,
+ * mute, sound and toasts, and ⌥N. A selection whose character leaves the town closes.
+ */
+export function useSelection(town: Town | null) {
   const [selection, setSelection] = useState<{ lead: string; id: string } | null>(null);
   const onClose = useCallback(() => setSelection(null), []);
-  const lead = selection
-    ? town?.houses.flatMap((house) => house.leads).find((l) => l.id === selection.lead)
-    : undefined;
+  const lead = selection ? town?.houses.flatMap((house) => house.leads).find((l) => l.id === selection.lead) : undefined;
   const selected = lead && [lead, ...lead.subagents].find((c) => c.id === selection?.id);
   useEffect(() => {
     if (town && selection && !selected) setSelection(null);
   }, [town, selection, selected]);
+  const openCwd = lead && town?.houses.find((house) => house.leads.includes(lead))?.cwd;
+  const openSession = selected && openCwd ? { id: selected.id, name: selected.name, cwd: openCwd } : null;
+  const waiting = waitingList(town);
+  const [muted, toggleMute] = useMute();
+  const openWaiting = useCallback((w: Waiting) => setSelection({ lead: w.lead, id: w.id }), []);
+  const { toasts, drop } = useAlerts(waiting, town !== null, muted, openWaiting);
+  useNextKey(waiting, selection && `${selection.lead}/${selection.id}`, openWaiting);
+  return { selection, setSelection, onClose, lead, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop };
+}
+
+/** The house `/work.html#<cwd>` names, or "" when the hash isn't a valid encoded folder. */
+function hashedHouse(): string {
+  try {
+    return decodeURIComponent(location.hash.slice(1));
+  } catch {
+    return "";
+  }
+}
+
+/** The town page: one house per project, its leads and their subagents, with a list of everyone waiting for you. */
+export function App() {
+  const [town, restarted] = useTown();
+  const { selection, setSelection, onClose, lead, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop } = useSelection(town);
   // The selection when each New session was clicked; a session opens itself only if that is still it (or nothing is open).
   const selectionNow = useRef(selection);
   selectionNow.current = selection;
@@ -428,15 +455,8 @@ export function App() {
       return { message: "Couldn't reach Funtown.", status: 0 };
     }
   }, []);
-  const openCwd = lead && town?.houses.find((house) => house.leads.includes(lead))?.cwd;
-  const openSession = selected && openCwd ? { id: selected.id, name: selected.name, cwd: openCwd } : null;
-  const waiting = waitingList(town);
-  const [muted, toggleMute] = useMute();
-  const openWaiting = useCallback((w: Waiting) => setSelection({ lead: w.lead, id: w.id }), []);
-  const { toasts, drop } = useAlerts(waiting, town !== null, muted, openWaiting);
-  useNextKey(waiting, selection && `${selection.lead}/${selection.id}`, openWaiting);
   // `/work.html#<cwd>` scrolls to that house once the town has listed it.
-  const hash = decodeURIComponent(location.hash.slice(1));
+  const hash = hashedHouse();
   const hasHouse = town?.houses.some((house) => house.cwd === hash) ?? false;
   useEffect(() => {
     if (!hasHouse) return;

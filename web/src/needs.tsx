@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import type { Town } from "../../server/types.ts";
+import type { Character, Town } from "../../server/types.ts";
 
 /** One character waiting for the user: where it is, what it needs and since when. */
 export type Waiting = { key: string; lead: string; id: string; project: string; cwd: string; name: string; need: string; since: number };
 
 const MUTE_KEY = "funtown-muted";
 const TOAST_MS = 8000;
+
+/** What a needs_you character waits for, in words: "stuck: <reason>", the card kind, or "waiting". */
+export const needOf = (c: Character): string => (c.needs === "stuck" ? `stuck: ${c.reason ?? "error"}` : c.needs) ?? "waiting";
 
 /** Every needs_you character (lead or subagent) of `town`, oldest first. */
 export function waitingList(town: Town | null): Waiting[] {
@@ -14,8 +17,7 @@ export function waitingList(town: Town | null): Waiting[] {
     for (const lead of house.leads) {
       for (const c of [lead, ...lead.subagents]) {
         if (c.stage !== "needs_you") continue;
-        const need = (c.needs === "stuck" ? `stuck: ${c.reason ?? "error"}` : c.needs) ?? "waiting";
-        list.push({ key: `${lead.id}/${c.id}`, lead: lead.id, id: c.id, project: house.project, cwd: house.cwd, name: c.name, need, since: c.since ?? Infinity });
+        list.push({ key: `${lead.id}/${c.id}`, lead: lead.id, id: c.id, project: house.project, cwd: house.cwd, name: c.name, need: needOf(c), since: c.since ?? Infinity });
       }
     }
   }

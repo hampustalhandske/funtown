@@ -45,7 +45,7 @@ function sections(morning: Morning, waiting: Waiting[]): Section[] {
  * per project the newest letter of each lead (Done), who got stuck (Stuck) and who waits now (Next; a click opens its panel).
  * A successful load moves the window's start to the time its request was sent; a failed load leaves it. Nothing opens or takes focus on its own.
  */
-export function MorningButton({ waiting, town, onOpen }: { waiting: Waiting[]; town: Town | null; onOpen: (w: Waiting) => void }) {
+export function MorningButton({ waiting, town, onOpen, "aria-label": label }: { waiting: Waiting[]; town: Town | null; onOpen: (w: Waiting) => void; "aria-label"?: string }) {
   const [view, setView] = useState<{ since: number; morning: Morning | null; error: string } | null>(null);
   async function open() {
     const since = windowStart();
@@ -71,7 +71,7 @@ export function MorningButton({ waiting, town, onOpen }: { waiting: Waiting[]; t
   const shown = view?.morning ? sections(view.morning, waiting) : [];
   return (
     <>
-      <button type="button" onClick={open}>Morning</button>
+      <button type="button" aria-label={label} onClick={open}>Morning</button>
       {view && (
         <aside className="morning" role="dialog" aria-label="Morning">
           <button type="button" className="close" aria-label="Close morning" onClick={close}>✕</button>

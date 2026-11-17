@@ -2,19 +2,22 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import { PerspectiveCamera, Vector3, type DirectionalLight, type Group } from "three";
-import type { Character, Town } from "../../../server/types.ts";
 import { Clay, INK, TONES } from "./kit/clay.tsx";
 import { Hat } from "./kit/hats.tsx";
-import { colourFor, PALETTE, type HatKind } from "./kit/palette.ts";
+import { PALETTE, type HatKind } from "./kit/palette.ts";
 import { Castle, Desk, Figure, HouseModel, Parcel } from "./kit/parts.tsx";
 import { CASTLE, DESK, KING, QUEUE_HEAD, keyOf, poseOf, type Placed, type Pose, type Spot } from "./layout.ts";
+import type { TownIndex } from "./TownPage.tsx";
 
 const GROUND = "#efe6d6";
 const KING_COLOUR = TONES.ribbon;
 const QUEEN_COLOUR = PALETTE[4];
 const FOV = 40;
-// Where the camera looks from: in front of the town, high up, a little to the right.
-const DIRECTION = new Vector3(0.1, 0.62, 1).normalize();
+/**
+ * Where the camera looks from, for a window of the given aspect: in front of the town, high up, a
+ * little to the right; steeper the narrower the window, so a tall window's height fills too.
+ */
+const directionFor = (aspect: number) => new Vector3(0.1, 0.62 + 2 * Math.max(0, 1 - aspect), 1).normalize();
 const WALK_SPEED = 2.4;
 const CASTLE_SCALE = 1.6;
 
@@ -49,10 +52,11 @@ function fit(camera: PerspectiveCamera, b: Bounds, aspect: number): { position: 
     [b.minX, 0, b.minZ], [b.maxX, 0, b.minZ], [b.minX, 0, b.maxZ], [b.maxX, 0, b.maxZ],
     [CASTLE.x - reach, 3.9, CASTLE.z - reach], [CASTLE.x + reach, 3.9, CASTLE.z - reach], [b.minX, 2, b.maxZ], [b.maxX, 2, b.maxZ],
   ].map(([x, y, z]) => new Vector3(x, y, z));
+  const direction = directionFor(aspect);
   let [near, far] = [1, 400];
   for (let i = 0; i < 32; i++) {
     const d = (near + far) / 2;
-    probe.position.copy(DIRECTION).multiplyScalar(d).add(target);
+    probe.position.copy(direction).multiplyScalar(d).add(target);
     probe.lookAt(target);
     probe.updateMatrixWorld();
     const inside = corners.every((c) => {
@@ -62,7 +66,7 @@ function fit(camera: PerspectiveCamera, b: Bounds, aspect: number): { position: 
     if (inside) far = d;
     else near = d;
   }
-  return { position: DIRECTION.clone().multiplyScalar(far).add(target), target };
+  return { position: direction.multiplyScalar(far).add(target), target };
 }
 
 /** Moves the camera, gently, to where the whole town fits the window. */
@@ -193,9 +197,10 @@ function Sitting({ colour, hat }: { colour: string; hat: HatKind }) {
   );
 }
 
-/** A character in `pose`: standing and busy, standing with a slip held up, or sitting stuck. */
+/** A character in `pose`: standing and busy, standing still, standing with a slip held up, or sitting stuck. */
 function Body({ pose, colour, hat }: { pose: Pose; colour: string; hat: HatKind }) {
   if (pose === "stuck") return <Sitting colour={colour} hat={hat} />;
+  if (pose === "idle") return <Figure colour={colour} hat={hat} />;
   return (
     <group>
       <Bob speed={pose === "queue" ? 3 : 2}><Figure colour={colour} hat={hat} /></Bob>
@@ -242,8 +247,14 @@ function Pennant() {
   );
 }
 
-/** Makes its children hoverable and clickable as `p`. */
-function Pick({ p, onPick, onHover, children }: { p: Placed; onPick: (p: Placed) => void; onHover: (key: string | null) => void; children: ReactNode }) {
+/** How high above its spot a thing's name plate floats. */
+const plateHeight = (p: Placed) =>
+  p.kind === "building" ? 2.3 : p.kind === "parcel" ? 0.9 : p.kind === "steward" ? 1.8 : p.pose === "work" && p.kind === "hat" ? 1.4 : p.pose === "queue" ? 2.2 : 1.8;
+
+type PickProps = { p: Placed; plate: string | null; onPick: (p: Placed) => void; onHover: (key: string | null) => void; children: ReactNode };
+
+/** Makes its children hoverable and clickable as `p`; shows `plate`, when given, as a name plate above them that moves with them. */
+function Pick({ p, plate, onPick, onHover, children }: PickProps) {
   const key = keyOf(p);
   const stop = (e: ThreeEvent<PointerEvent | MouseEvent>) => e.stopPropagation();
   return (
@@ -258,16 +269,18 @@ function Pick({ p, onPick, onHover, children }: { p: Placed; onPick: (p: Placed)
       }}
       onPointerOut={() => onHover(null)}>
       {children}
+      {plate !== null && (
+        <Html center portal={plates} zIndexRange={[100, 1]} className="plate" position={[0, plateHeight(p), 0]}>
+          {plate}
+        </Html>
+      )}
     </group>
   );
 }
 
-/** How high above its spot a thing's name plate floats. */
-const plateHeight = (p: Placed, pose?: Pose) =>
-  p.kind === "building" ? 2.3 : p.kind === "parcel" ? 0.9 : p.kind === "hat" && pose === "work" ? 1.4 : pose === "queue" ? 2.2 : 1.8;
-
 type Props = {
-  town: Town | null;
+  /** The town's houses and characters, for the steward's stage and parcels' reviews. */
+  index: TownIndex;
   placed: Placed[];
   /** The words a thing's hover plate shows. */
   name: (p: Placed) => string;
@@ -275,16 +288,18 @@ type Props = {
 };
 
 /** The village: the castle with the king at his desk, a building per house, and everyone placed by `layout`. */
-export function Village({ town, placed, name, onPick }: Props) {
+export function Village({ index, placed, name, onPick }: Props) {
   const [hover, setHover] = useState<string | null>(null);
   const bounds = useMemo(() => boundsOf(placed), [placed]);
-  const colours = new Map(town?.houses.map((h) => [h.cwd, colourFor(h.project)]));
-  const characters = new Map<string, Character>(town?.houses.flatMap((h) => h.leads.flatMap((l) => [l, ...l.subagents].map((c) => [c.id, c]))));
-  const ready = new Set(town?.houses.flatMap((h) => (h.parcels ?? []).filter((p) => p.review?.state === "ready").map((p) => `${h.cwd}#${p.number}`)));
-  const hovered = placed.find((p) => keyOf(p) === hover);
+  const hovered = placed.some((p) => keyOf(p) === hover);
   useEffect(() => {
+    // A hovered thing that leaves the town takes its hover with it, so its plate can't come back on its own.
+    if (hover !== null && !hovered) setHover(null);
     document.body.style.cursor = hovered ? "pointer" : "";
-  }, [hovered]);
+  }, [hover, hovered]);
+  const pick = (p: Placed, children: ReactNode) => (
+    <Pick p={p} plate={keyOf(p) === hover ? name(p) : null} onPick={onPick} onHover={setHover}>{children}</Pick>
+  );
 
   // Hats on racks, one rail per row of pegs (cwd and z).
   const rails = new Map<string, Spot[]>();
@@ -299,38 +314,32 @@ export function Village({ town, placed, name, onPick }: Props) {
       case "building":
         return (
           <group position={[p.at.x, 0, p.at.z]}>
-            <Pick p={p} onPick={onPick} onHover={setHover}><HouseModel colour={p.colour} /></Pick>
+            {pick(p, <HouseModel colour={p.colour} />)}
           </group>
         );
       case "parcel":
         return (
           <group position={[p.at.x, 0, p.at.z]} rotation-y={((p.number % 5) - 2) * 0.12}>
-            <Pick p={p} onPick={onPick} onHover={setHover}>
-              <Parcel />
-              {ready.has(`${p.cwd}#${p.number}`) && <Pennant />}
-            </Pick>
+            {pick(
+              p,
+              <>
+                <Parcel />
+                {index.houses.get(p.cwd)?.parcels?.find((x) => x.number === p.number)?.review?.state === "ready" && <Pennant />}
+              </>,
+            )}
           </group>
         );
       case "steward": {
-        const queen = characters.get(p.id);
-        return (
-          <Mover to={p.at} facing={0}>
-            <Pick p={p} onPick={onPick} onHover={setHover}>
-              <Body pose={queen ? poseOf(queen) : "work"} colour={QUEEN_COLOUR} hat="tiara" />
-            </Pick>
-          </Mover>
-        );
+        const queen = index.characters.get(p.id)?.character;
+        return <Mover to={p.at} facing={0}>{pick(p, <Body pose={queen ? poseOf(queen) : "work"} colour={QUEEN_COLOUR} hat="tiara" />)}</Mover>;
       }
       case "lead":
       case "hat": {
-        const colour = p.kind === "lead" ? p.colour : (colours.get(p.cwd) ?? TONES.white);
-        // Queuers face the desk; the stuck sit turned a little, so their legs read as sitting.
-        const facing = p.pose === "queue" ? Math.atan2(DESK.x - p.at.x, DESK.z - p.at.z) : p.pose === "stuck" ? 0.8 : 0;
+        // Queuers turn halfway to the desk, so their faces and slips still show; the stuck sit turned a little, so their legs read as sitting.
+        const facing = p.pose === "queue" ? Math.atan2(DESK.x - p.at.x, DESK.z - p.at.z) / 2 : p.pose === "stuck" ? 0.8 : 0;
         return (
           <Mover to={p.at} facing={facing}>
-            <Pick p={p} onPick={onPick} onHover={setHover}>
-              {p.kind === "hat" && p.pose === "work" ? <RackHat hat={p.hat} colour={colour} /> : <Body pose={p.pose} colour={colour} hat={p.kind === "hat" ? p.hat : "cap"} />}
-            </Pick>
+            {pick(p, p.kind === "hat" && p.pose === "work" ? <RackHat hat={p.hat} colour={p.colour} /> : <Body pose={p.pose} colour={p.colour} hat={p.kind === "hat" ? p.hat : "cap"} />)}
           </Mover>
         );
       }
@@ -361,17 +370,6 @@ export function Village({ town, placed, name, onPick }: Props) {
       <group position={[KING.x, 0, KING.z]}><Bob speed={1.2}><Figure colour={KING_COLOUR} hat="crown" /></Bob></group>
       {[...rails].map(([rail, pegs]) => <Rail key={rail} pegs={pegs} />)}
       {placed.map((p) => <group key={keyOf(p)}>{thing(p)}</group>)}
-      {hovered && (
-        <Html
-          key={keyOf(hovered)}
-          center
-          portal={plates}
-          zIndexRange={[100, 1]}
-          className="plate"
-          position={[hovered.at.x, plateHeight(hovered, "pose" in hovered ? hovered.pose : undefined), hovered.at.z]}>
-          {name(hovered)}
-        </Html>
-      )}
       <Rig bounds={bounds} />
     </Canvas>
   );

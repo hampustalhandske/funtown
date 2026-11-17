@@ -4,11 +4,11 @@ import { colourFor, hatFor, type HatKind } from "./kit/palette.ts";
 
 /** A point on the ground; +z faces the camera, the castle is at the back (-z). */
 export type Spot = { x: number; z: number };
-export type Pose = "work" | "queue" | "stuck";
+export type Pose = "work" | "idle" | "queue" | "stuck";
 export type Placed =
   | { kind: "building"; cwd: string; colour: string; at: Spot }
   | { kind: "lead"; id: string; lead: string; cwd: string; colour: string; pose: Pose; at: Spot }
-  | { kind: "hat"; id: string; lead: string; cwd: string; hat: HatKind; pose: Pose; at: Spot }
+  | { kind: "hat"; id: string; lead: string; cwd: string; colour: string; hat: HatKind; pose: Pose; at: Spot }
   | { kind: "parcel"; cwd: string; number: number; at: Spot }
   | { kind: "steward"; id: string; at: Spot };
 
@@ -22,31 +22,19 @@ export const KING: Spot = { x: 0, z: -5.8 };
 const QUEEN: Spot = { x: -1.2, z: -5.6 };
 /** Where the steward's subagents keep their rack and sit: a yard left of the castle, laid out like a building's. */
 const CASTLE_YARD: Spot = { x: -4.4, z: -6.4 };
-/** The first place in the queue, just in front of the desk; the queue snakes back and forth behind it. */
-export const QUEUE_HEAD: Spot = { x: 0, z: -4.4 };
-const QUEUE_STEP = 0.75;
-const QUEUE_ROW = 0.85;
-const QUEUE_ROWS = 4;
+/** The first place in the queue, at the desk's front right corner, clear of the king; the queue snakes back and forth to the right of it. */
+export const QUEUE_HEAD: Spot = { x: 1.1, z: -4.7 };
+const QUEUE_STEP = 1;
+const QUEUE_ROW = 1.3;
+const QUEUE_ROWS = 3;
 /** Distance between two buildings' centres on the grid. */
 const LOT = 4.4;
 const FIRST_ROW = 1.6;
+const SEAT = 0.6;
 
-// The steward's folder when the server runs with its default `~/.funtown/steward`.
-const STEWARD_DIR = /[/\\]\.funtown[/\\]steward$/;
-
-/** A character's pose: needs you queues at the desk, stuck sits down, anything else works at its building. */
-export const poseOf = (c: Character): Pose => (c.stage !== "needs_you" ? "work" : c.needs === "stuck" ? "stuck" : "queue");
-
-/**
- * The listed steward's id: the one a parcel's review names, else the lead in the default
- * steward folder; undefined when neither is listed.
- */
-export function stewardOf(town: Town): string | undefined {
-  const leads = town.houses.flatMap((h) => h.leads);
-  const named = town.houses.flatMap((h) => h.parcels ?? []).find((p) => p.review?.steward)?.review?.steward;
-  if (named && leads.some((l) => l.id === named)) return named;
-  return town.houses.find((h) => STEWARD_DIR.test(h.cwd))?.leads[0]?.id;
-}
+/** A character's pose: needs you queues at the desk, stuck sits down, done stands idle, working works at its building. */
+export const poseOf = (c: Character): Pose =>
+  c.stage === "done" ? "idle" : c.stage === "working" ? "work" : c.needs === "stuck" ? "stuck" : "queue";
 
 /** The k-th peg of the hat rack right of the door of a building at `at`: four pegs a rail, each further rail behind the last. */
 function rack(at: Spot, k: number): Spot {
@@ -54,7 +42,7 @@ function rack(at: Spot, k: number): Spot {
   return { x: at.x + (rail === 0 ? 0.6 : 0.95) + 0.45 * (k % 4), z: at.z + 0.95 - 0.55 * rail };
 }
 /** The k-th place in front of a building at `at`: rows of six. */
-const yard = (at: Spot, k: number): Spot => ({ x: at.x - 1.5 + 0.6 * (k % 6), z: at.z + 1.6 + 0.6 * Math.floor(k / 6) });
+const yard = (at: Spot, k: number): Spot => ({ x: at.x - 1.5 + SEAT * (k % 6), z: at.z + 1.6 + SEAT * Math.floor(k / 6) });
 /** The k-th parcel at the door of a building at `at`: three in a row left of the door, the rest piled along its side. */
 const doorstep = (at: Spot, k: number): Spot =>
   k < 3 ? { x: at.x - 0.55 - 0.55 * k, z: at.z + 0.95 } : { x: at.x - 1.15 - 0.55 * ((k - 3) % 2), z: at.z + 0.4 - 0.55 * Math.floor((k - 3) / 2) };
@@ -68,20 +56,21 @@ function queueSpot(i: number, count: number): Spot {
 
 /**
  * Where everything in `town` stands. Buildings follow house order on a grid in front of the
- * castle; working leads stand in front of their building and working subagents are hats on its
- * rack; stuck ones sit there too; everyone who needs you queues at the desk in `waiting` order;
- * open parcels sit at the door; the steward stands by the desk. Done subagents are not placed.
+ * castle; working and done leads stand in front of their building and working subagents are hats
+ * on its rack; stuck ones sit there too; everyone who needs you queues at the desk in `waiting`
+ * order; open parcels sit at the door; the lead marked `steward` stands by the desk. Done
+ * subagents are not placed.
  * Pure: the same Town (and waiting order) always gives the same places.
  */
 export function layout(town: Town, waiting: Waiting[]): Placed[] {
-  const steward = stewardOf(town);
+  const steward = town.houses.flatMap((h) => h.leads).find((l) => l.steward)?.id;
   // The steward's own house gets no building unless the user added it or another lead works there.
   const houses = town.houses.filter((h) => h.added || !h.leads.some((l) => l.id === steward) || h.leads.some((l) => l.id !== steward));
   const placed: Placed[] = [];
   const queue: { key: string; place: (at: Spot) => Placed }[] = [];
 
-  /** Places `leads` (unless `asLeads` is false: the steward keeps its own spot) and their subagents around `at`, or in the queue. */
-  const settle = (house: House, at: Spot, leads: House["leads"], colour: string, asLeads: boolean) => {
+  /** Places `leads` (unless `asLeads` is false: the steward keeps its own spot) and their subagents around `at`, or in the queue; gives the seats used. */
+  const settle = (house: House, at: Spot, leads: House["leads"], colour: string, asLeads: boolean): number => {
     let pegs = 0;
     let seats = 0;
     for (const lead of leads) {
@@ -94,21 +83,29 @@ export function layout(town: Town, waiting: Waiting[]): Placed[] {
       for (const sub of lead.subagents) {
         if (sub.stage === "done") continue;
         const pose = poseOf(sub);
-        const make = (spot: Spot): Placed => ({ kind: "hat", id: sub.id, lead: lead.id, cwd: house.cwd, hat: hatFor(sub.role), pose, at: spot });
+        const make = (spot: Spot): Placed => ({ kind: "hat", id: sub.id, lead: lead.id, cwd: house.cwd, colour, hat: hatFor(sub.role), pose, at: spot });
         if (pose === "queue") queue.push({ key: `${lead.id}/${sub.id}`, place: make });
         else placed.push(make(pose === "work" ? rack(at, pegs++) : yard(at, seats++)));
       }
     }
+    return seats;
   };
 
   const cols = Math.min(houses.length, Math.max(3, Math.ceil(Math.sqrt(houses.length * 3))));
+  // A lot reaches halfway to the next row, so a row of buildings stands behind the row in front by at least twice its deepest yard seat, and a seat more.
+  let rowZ = FIRST_ROW;
+  let deepest = 0;
   houses.forEach((house, i) => {
     const row = Math.floor(i / cols);
+    if (i > 0 && i % cols === 0) {
+      rowZ += Math.max(LOT, 2 * yard({ x: 0, z: 0 }, Math.max(0, deepest - 1)).z + SEAT);
+      deepest = 0;
+    }
     const inRow = Math.min(cols, houses.length - row * cols);
-    const at = { x: ((i % cols) - (inRow - 1) / 2) * LOT, z: FIRST_ROW + row * LOT };
+    const at = { x: ((i % cols) - (inRow - 1) / 2) * LOT, z: rowZ };
     const colour = colourFor(house.project);
     placed.push({ kind: "building", cwd: house.cwd, colour, at });
-    settle(house, at, house.leads.filter((l) => l.id !== steward), colour, true);
+    deepest = Math.max(deepest, settle(house, at, house.leads.filter((l) => l.id !== steward), colour, true));
     (house.parcels ?? []).forEach((parcel, k) => placed.push({ kind: "parcel", cwd: house.cwd, number: parcel.number, at: doorstep(at, k) }));
   });
 

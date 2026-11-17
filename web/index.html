@@ -15,15 +15,16 @@
       .plate { white-space: nowrap; font-size: 0.85rem; font-weight: 650; padding: 0.1rem 0.6rem; background: var(--paper);
         border: 2px solid var(--ink); border-radius: 0.55rem; box-shadow: 0 2px 0 var(--ink); pointer-events: none; }
 
-      /* The town list: one 1 px row per thing, for screen readers and keyboards; a focused row shows as a plate. */
+      /* The town list, for screen readers and keyboards: invisible 2 px rows, since a pointer lands on whole pixels and a
+         1 px row's centre would land on the next row; a focused row shows as a plate. */
       .town-list { position: fixed; top: 0; left: 0; margin: 0; padding: 0; list-style: none; z-index: 1; }
-      .town-list li { height: 1px; }
-      .town-list :is(a, button) { display: block; width: 1px; height: 1px; padding: 0; border: 0; overflow: hidden; white-space: nowrap;
+      .town-list li { height: 2px; }
+      .town-list :is(a, button) { display: block; width: 2px; height: 2px; padding: 0; border: 0; overflow: hidden; white-space: nowrap;
         opacity: 0; font: inherit; color: inherit; background: none; text-decoration: none; }
       .town-list :is(a, button):focus-visible { position: fixed; top: 1rem; left: 1rem; width: auto; height: auto; opacity: 1;
         padding: 0.3rem 0.8rem; background: var(--paper); border: 2px solid var(--ink); border-radius: 0.55rem; box-shadow: 0 2px 0 var(--ink); outline: none; }
 
-      /* Icon buttons: round clay buttons with an ink glyph; Morning and I had to switch keep their own button under the glyph. */
+      /* Icon buttons: round clay buttons with an ink glyph; Morning keeps its own button under the glyph. */
       .hud { position: fixed; top: 1rem; right: 1rem; z-index: 4; display: flex; gap: 0.6rem; }
       .icon, .slot > button { box-sizing: border-box; width: 2.9rem; height: 2.9rem; padding: 0; display: grid; place-items: center;
         border-radius: 50%; border: 2.5px solid var(--ink); background: var(--paper); box-shadow: 0 3px 0 var(--ink); color: var(--ink); cursor: pointer; }
@@ -33,8 +34,6 @@
       .slot { position: relative; width: 2.9rem; height: 2.9rem; }
       .slot > button { font-size: 0; color: transparent; }
       .slot > .glyph { position: absolute; left: 50%; top: 50%; translate: -50% -50%; z-index: 1; pointer-events: none; }
-      .slot > [role="status"] { position: absolute; top: 3.5rem; right: 0; white-space: nowrap; font-size: 0.85rem; padding: 0.1rem 0.6rem;
-        background: var(--paper); border: 2px solid var(--ink); border-radius: 0.55rem; }
       .glyph { width: 1.5rem; height: 1.5rem; fill: none; stroke: var(--ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
       .icon.alert { background: var(--ribbon); animation: pulse 1.2s ease-in-out infinite; }
       .icon.alert .glyph { stroke: #fff; }
@@ -44,14 +43,14 @@
       @keyframes pulse { 50% { box-shadow: 0 3px 0 var(--ink), 0 0 0 7px rgba(201, 79, 79, 0.35); } }
 
       /* Panes and panels: paper cards with an ink edge. */
-      .pane, .panel, .morning, .switch-box { position: fixed; z-index: 5; box-sizing: border-box; background: var(--paper);
+      .pane, .panel, .morning { position: fixed; z-index: 5; box-sizing: border-box; background: var(--paper);
         border: 2.5px solid var(--ink); border-radius: 1rem; box-shadow: 0 5px 0 var(--ink); padding: 0.9rem 1.1rem; }
       .pane, .panel, .morning { max-height: calc(100vh - 6.5rem); overflow: auto; overflow-wrap: anywhere; }
       .panel, .pane { top: 5rem; right: 1rem; width: min(23rem, calc(100vw - 2rem)); }
       .panel.wide { width: min(50rem, calc(100vw - 2rem)); }
       .pane { z-index: 6; }
       .morning { top: 5rem; left: 50%; transform: translateX(-50%); width: min(50rem, calc(100vw - 2rem)); z-index: 7; }
-      .switch-box { top: 5rem; right: 1rem; max-width: 26rem; z-index: 7; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.5rem 0.8rem; }
+      .switch-box { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
       h2 { margin: 0 2.5rem 0.4rem 0; font-size: 1.2rem; font-weight: 800; }
       h3, h4 { margin: 0.5rem 0 0.2rem; font-size: 0.95rem; }
       .pane .close, .panel .close, .morning .close { position: absolute; top: 0.6rem; right: 0.6rem; }
@@ -59,10 +58,10 @@
       .pane .close { width: 2.2rem; height: 2.2rem; box-shadow: 0 2px 0 var(--ink); }
       .pane .close .glyph { width: 1.1rem; height: 1.1rem; }
       button { font: inherit; color: inherit; }
-      :is(.pane, .panel, .morning, .switch-box, .letters) button:not(.icon) { background: var(--stone); border: 2px solid var(--ink); border-radius: 0.6rem;
+      :is(.pane, .panel, .morning, .letters) button:not(.icon) { background: var(--stone); border: 2px solid var(--ink); border-radius: 0.6rem;
         box-shadow: 0 2px 0 var(--ink); padding: 0.2rem 0.7rem; cursor: pointer; }
-      :is(.pane, .panel, .morning, .switch-box) button:not(.icon):active { transform: translateY(1px); box-shadow: 0 1px 0 var(--ink); }
-      :is(.pane, .panel, .morning, .switch-box) button[aria-pressed="true"] { background: #e6dccb; }
+      :is(.pane, .panel, .morning) button:not(.icon):active { transform: translateY(1px); box-shadow: 0 1px 0 var(--ink); }
+      :is(.pane, .panel, .morning) button[aria-pressed="true"] { background: #e6dccb; }
       button:disabled { opacity: 0.5; cursor: default; }
       input, textarea { font: inherit; color: inherit; border: 2px solid var(--ink); border-radius: 0.5rem; padding: 0.3rem 0.5rem; background: #fff; }
       a { color: #5b4a8a; }
