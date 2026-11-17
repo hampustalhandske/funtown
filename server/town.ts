@@ -18,7 +18,6 @@ export type HookEvent = {
   notification_type?: string;
   error?: string;
   last_assistant_message?: string;
-  prompt?: string;
   background_tasks?: { id: string; type: string; status: string }[];
   funtown?: { tty?: string | null; term_program?: string | null; at?: number };
 };

@@ -162,11 +162,14 @@ export function TownPage() {
         const parcel = index.houses.get(p.cwd)?.parcels?.find((x) => x.number === p.number);
         const steward = parcel?.review?.state === "ready" ? parcel.review.steward : undefined;
         if (steward && index.characters.has(steward)) setSelection({ lead: steward, id: steward });
-        else if (parcel?.review?.state === "idle") setAsking({ cwd: p.cwd, parcel });
-        else if (parcel) window.open(parcel.url, "_blank", "noopener,noreferrer");
+        else if (parcel?.review?.state === "idle") {
+          setSettings(false);
+          onClose();
+          setAsking({ cwd: p.cwd, parcel });
+        } else if (parcel) window.open(parcel.url, "_blank", "noopener,noreferrer");
       } else setSelection({ lead: p.kind === "hat" ? p.lead : p.id, id: p.id });
     },
-    [index, setSelection],
+    [index, setSelection, onClose],
   );
 
   return (

@@ -83,7 +83,7 @@ function Overlaps({ overlaps }: { overlaps: Lead["overlaps"] }) {
   ));
 }
 
-const REVIEW_LABEL = { idle: "review not asked", queued: "queued", reviewing: "reviewing", ready: "review ready ✉" } as const;
+const REVIEW_LABEL = { idle: "Ask for review", queued: "queued", reviewing: "reviewing", ready: "review ready ✉" } as const;
 
 /** Asks the steward to review PR `number` of the house in `cwd`; gives the failure, or null once it is queued. */
 export function askReview(cwd: string, number: number): Promise<Failure | null> {
@@ -101,20 +101,14 @@ function ParcelItem({ parcel, cwd, onOpen }: { parcel: Parcel; cwd: string; onOp
     <li className="parcel">
       <a href={parcel.url} target="_blank" rel="noreferrer">#{parcel.number} {parcel.title}</a>
       {parcel.draft && <span className="badge">draft</span>}
-      {review?.state === "idle" ? (
-        <button type="button" className="review" data-state={review.state} onClick={() => void ask()}>
-          Ask for review
-        </button>
-      ) : (
-        review &&
-        (review.steward ? (
-          <button type="button" className="review" data-state={review.state} onClick={() => onOpen(review.steward as string)}>
+      {review &&
+        (review.state === "idle" || review.steward ? (
+          <button type="button" className="review" data-state={review.state} onClick={() => (review.state === "idle" ? void ask() : onOpen(review.steward as string))}>
             {REVIEW_LABEL[review.state]}
           </button>
         ) : (
           <span className="review" data-state={review.state}>{REVIEW_LABEL[review.state]}</span>
-        ))
-      )}
+        ))}
       {error && <span role="alert" className="error">{error}</span>}
     </li>
   );

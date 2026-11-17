@@ -18,16 +18,14 @@ const LISTED_MS = 5 * 60_000;
 const key = (pr: number, head: string) => `${pr}\0${head}`;
 /** The labels a reply must hold to count as a review: the three parts `steward.md` asks for. */
 const REVIEW_LABELS = ["Squash title", "Merge text", "Before merging"];
-/** `text` as the steward's prompt hook reports it: line ends unified, outer whitespace dropped. */
-const normalized = (text: string) => text.replace(/\r\n?/g, "\n").trim();
 /** Whether `lead` is stuck repeating a tool call: its turn still runs, unlike one stuck on an error. */
 const inLoop = (lead: Lead) => lead.needs === "stuck" && lead.reason?.startsWith("loop:") === true;
 
 /**
  * The steward: one background `claude` session in `dir` that pre-reviews the ready PRs in
  * `lists` (open PRs by cwd) the user has asked for with `ask`, once per head commit, pasting
- * `prompt` filled in for it over `claude attach`. `journal` carries the session, the requests and their reviews across
- * restarts; `cards` gives the open cards; a failed start or attach is retried after `retryMs`;
+ * `prompt` filled in for it over `claude attach`. `journal` carries the session, the requests
+ * and their reviews across restarts; `cards` gives the open cards; a failed start or attach is retried after `retryMs`;
  * `readyMs` bounds an attach and `answerMs` a request. `changed` runs when a request has been sent.
  */
 export function createSteward(opts: {
@@ -52,9 +50,7 @@ export function createSteward(opts: {
   // PR number and head commit of each open PR the user asked for -> its place in the order asked, so the oldest goes first
   const asked = new Map<string, number>();
   let askedCount = 0;
-  // the request text last pasted, which the steward's own prompt event is compared with
-  let sentText = "";
-  // whether the user wrote to the steward since the last ask, which stops further requests
+  // whether the user wrote to the steward, outside a request, since the last ask; it stops further requests
   let paused = false;
   let stewardId: string | undefined;
   let startedAt = -Infinity;
@@ -116,7 +112,7 @@ export function createSteward(opts: {
   const send = (steward: Lead, cwd: string, pr: Pr) => {
     busy = true;
     // Control characters are dropped, so a PR title can't end the paste or press keys.
-    const fields = { number: String(pr.number), title: pr.title, url: pr.url, project: basename(cwd), repo: /^https?:\/\/[^/]+\/([^/]+\/[^/]+)/.exec(pr.url)?.[1] ?? "" };
+    const fields = { number: String(pr.number), title: pr.title, url: pr.url, project: basename(cwd), repo: /^https?:\/\/[^/]+\/([^/]+\/[^/]+)/.exec(pr.url)?.[1] ?? pr.url };
     const text = prompt
       .replace(/\{(number|title|url|project|repo)\}/g, (_, name: keyof typeof fields) => fields[name])
       .replace(/\p{Cc}/gu, (c) => (c === "\n" || c === "\t" ? c : ""));
@@ -138,7 +134,6 @@ export function createSteward(opts: {
     attach = { detach, exited: new Promise((resolve) => (onExited = resolve)) };
     const write = () => {
       written = true;
-      sentText = text;
       pty.write(`\x1b[200~${text}\x1b[201~`);
       pty.write("\r");
       const at = Date.now();
@@ -204,8 +199,8 @@ export function createSteward(opts: {
 
     /**
      * Asks for the review of PR `number` in the house `cwd` at its current head: 204 when it is
-     * queued, sent or reviewed already or now queued (this also lifts a pause), 404 for an unknown
-     * house or PR, 409 for a draft.
+     * queued, being reviewed or reviewed already, or now queued (an ask also lifts a pause), 404
+     * for an unknown house or PR, 409 for a draft.
      */
     ask(cwd: string, number: number): 204 | 404 | 409 {
       const pr = lists.get(cwd)?.find((p) => p.number === number);
@@ -222,9 +217,10 @@ export function createSteward(opts: {
 
     /**
      * Notes an applied hook event: the steward's own Stop or StopFailure ends its turn and the
-     * request in flight; a prompt that isn't the request Funtown pasted pauses requests until
-     * the next ask; and a Stop's letter, when it is new since the request and holds all of the
-     * labelled parts, is journaled as its review, while any other reply leaves the PR not asked.
+     * request in flight; a prompt with no request in flight is the user's own and pauses requests
+     * until the next ask; and a Stop's letter, when it is new since the request and holds all of
+     * the labelled parts, is journaled as its review, while any other reply is logged and leaves
+     * the PR not asked.
      */
     event(event: HookEvent): void {
       const steward = lead();
@@ -232,10 +228,7 @@ export function createSteward(opts: {
       const name = event.hook_event_name;
       if (name === "Stop" || name === "StopFailure") turnOver = true;
       else if (name === "UserPromptSubmit" || name === "PreToolUse") turnOver = false;
-      if (name === "UserPromptSubmit") {
-        const submitted = event.prompt;
-        if (typeof submitted !== "string" || normalized(submitted) !== normalized(sentText)) paused = true;
-      }
+      if (name === "UserPromptSubmit" && !inFlight) paused = true;
       if (!inFlight) return;
       if (name === "Stop") {
         const { pr, head, at } = inFlight;
@@ -244,6 +237,7 @@ export function createSteward(opts: {
           reviewed.set(key(pr, head), letter.id);
           journal?.append({ kind: "reviewed", at: Date.now(), pr, head, letter: letter.id });
         } else {
+          logError("steward", `reply to #${pr} lacks ${REVIEW_LABELS.filter((label) => !(letter?.text ?? "").includes(label)).join(", ")}`);
           asked.delete(key(pr, head));
         }
       } else if (name !== "StopFailure") {

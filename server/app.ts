@@ -116,8 +116,8 @@ async function readJson(req: IncomingMessage, max = Infinity): Promise<{ value: 
  * `gh` (default "gh") lists each house's open PRs. With a `stewardDir`, a steward session there
  * pre-reviews each ready PR asked for with `POST /review { cwd, number }` (page Origin and
  * token; 409 for a draft or with reviews off) using the text of `stewardPrompt` (a path, default
- * server/steward.md; an empty file turns reviews off); an attach that isn't ready within `stewardReadyMs` (default
- * 15 s) is given up, and a request with no answer after `stewardAnswerMs` (default 30 min) no
+ * server/steward.md; an empty file turns reviews off); an attach that isn't ready within
+ * `stewardReadyMs` (default 15 s) is given up, and a request with no answer after `stewardAnswerMs` (default 30 min) no
  * longer holds back the next. `projects` (a path) holds the folders added with `POST /projects`,
  * each a house even with no session; without one, adding answers 500. `POST /runs` starts
  * `claude --bg <prompt>` in a house's folder. `/term?shell=<cwd>` connects to that house's one
