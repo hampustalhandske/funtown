@@ -38,9 +38,11 @@ Contracts (source of truth: this list; full text in the local .workflow/history/
   but `CLAUDE_CONFIG_DIR`. Page token in `<meta name="funtown-token">`: with the Origin for
   `/jump`, `/sessions`, `/runs`, `/projects`, `/projects/remove`, `/shells/close`, `/answer`, `/switch`,
   `/term`; alone for `/letters`, `/morning`, `GET /projects`.
-- Projects: `projects.json`, a JSON array of absolute folders; each is a house with or without sessions.
-  Shell: `/term?shell=<house cwd>`, one login shell per project (`$SHELL -l`), kept when its socket
-  closes, last 256 KB replayed; ends on Close shell, `exit`, Remove project or the server's close.
+- Projects: `projects.json`, real paths (symlinks resolved); each is a house with or without sessions;
+  while the file can't be read, add and remove answer 500 and never write it. Houses: added projects,
+  listed sessions' cwds, folders whose shell runs. Shell: `/term?shell=<house cwd>`, one login shell
+  per project (`$SHELL -l`), kept when its socket closes, replay from a line start in the last 256 KB;
+  ends on Close shell, `exit`, Remove project (asks first) or the server's close.
 - Env `FUNTOWN_` + `PORT`, `URL`, `CLAUDE`, `GH`, `STATE`, `ANSWERS`, `JOURNAL`, `LOG`, `RUN`,
   `SWITCHES`, `STEWARD`, `PROJECTS` (paths default to `~/.funtown/`); `startServer` takes the paths as options.
 Commands: `npm start` (reinstalls hooks, serves); `npm run install-hooks`/`uninstall-hooks`; `npm test`.
