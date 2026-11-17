@@ -2,6 +2,7 @@
 
 One line per change, newest first.
 
+- 2026-11-17 19:00 · The work view keeps a session's terminal hidden until you press Show terminal (nothing renders or connects meanwhile), shows no command text on rows or panels, shows status as a coloured dot with its word instead of an emoji, and has a Close session button (`claude stop`: the conversation is kept and `claude attach` resumes it).
 - 2026-11-17 16:08 · The desk queue puts sessions that ask a question or need a permission or plan approval ahead of ones that only finished a turn, in the town, the Needs you list and ⌥N; oldest first within each group.
 - 2026-11-17 15:52 · The steward reviews a pull request only when you ask: a button on the town's parcel panel and on the work view. A reply that isn't a review no longer counts as one, and typing to the steward yourself stops further requests. Each review names its project, repo and PR.
 - 2026-11-17 11:56 · The town shows only projects you added in Settings (and their worktrees) plus the steward: chats in other folders stay out of the town and Morning. PR boxes show only PRs you opened. A session keeps only its newest letter.
