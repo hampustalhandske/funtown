@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_URL } from "../fake-claude.ts";
-import { stubStream } from "./stream.ts";
+import { stubStream, visibleWords } from "./stream.ts";
 
 const claude = { version: "2.1.325", problems: [] };
 const lead = (id: string, name: string, over: Record<string, unknown> = {}, subagents: unknown[] = []) => ({
@@ -180,22 +180,7 @@ test("the_town_page_shows_no_words_outside_panels_and_has_a_full_window_canvas_w
     await expect(page.getByRole("button", { name: label }).or(page.getByRole("link", { name: label })).first()).toBeAttached();
   }
   await expect(page.getByRole("navigation", { name: "Controls" }).locator('button[aria-label="Morning"]')).toHaveCount(1);
-  const words = await page.evaluate(() => {
-    const seen: string[] = [];
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-      const text = n.textContent?.trim();
-      if (!text) continue;
-      let hidden = false;
-      for (let el = n.parentElement; el && !hidden; el = el.parentElement) {
-        const r = el.getBoundingClientRect();
-        const css = getComputedStyle(el);
-        hidden = css.fontSize === "0px" || /, 0\)$/.test(css.color) || r.width <= 2 || r.height <= 2 || css.visibility === "hidden" || css.display === "none" || css.opacity === "0";
-      }
-      if (!hidden && !["SCRIPT", "STYLE", "NOSCRIPT"].includes(n.parentElement!.tagName)) seen.push(text);
-    }
-    return seen;
-  });
+  const words = await visibleWords(page);
   expect(words).toEqual([]);
 });
 
@@ -256,17 +241,24 @@ test("both_pages_use_the_bundled_recursive_font_and_fetch_nothing_from_another_o
   expect(outside).toEqual([]);
 });
 
-test("a_building_links_to_its_house_in_the_work_view_and_the_link_scrolls_to_that_house", async ({ page }) => {
+/** Enters the classroom of the building named `project` through its entry in the hidden list, then leaves for the work view by the classroom's icon. */
+async function viaClassroom(page: Page, project: string, cwd: string) {
+  await page.getByRole("button", { name: `${project}, house` }).click();
+  await expect.poll(() => new URL(page.url()).hash).toBe(`#in=${encodeURIComponent(cwd)}`);
+  const icon = page.getByRole("link", { name: /^work view$/i });
+  await expect(icon).toHaveAttribute("href", `/work.html#${encodeURIComponent(cwd)}`);
+  await icon.click();
+  await expect(page).toHaveURL(/\/work\.html#/);
+}
+
+test("a_building_opens_its_classroom_whose_work_view_icon_reaches_that_house_and_scrolls_to_it", async ({ page }) => {
   const houses = Array.from({ length: 12 }, (_, i) => ({
     project: `proj-${i}`,
     cwd: `/work/proj-${i}`,
     leads: [0, 1, 2].map((j) => lead(`l${i}-${j}`, `lead-${i}-${j}`, {}, [sub(`h${i}-${j}`, `hat-${i}-${j}`, "Plan")])),
   }));
   await openTown(page, state({ houses }));
-  const link = page.getByRole("link", { name: "proj-4, house" });
-  await expect(link).toHaveAttribute("href", `/work.html#${encodeURIComponent("/work/proj-4")}`);
-  await link.click();
-  await expect(page).toHaveURL(/\/work\.html#/);
+  await viaClassroom(page, "proj-4", "/work/proj-4");
   const target = page.locator('section[aria-label="proj-4"]');
   await expect(target).toBeInViewport();
   await expect.poll(() => target.evaluate((el) => el.getBoundingClientRect().top)).toBeLessThan(page.viewportSize()!.height / 4);
@@ -274,7 +266,7 @@ test("a_building_links_to_its_house_in_the_work_view_and_the_link_scrolls_to_tha
   await expect(page.locator('section[aria-label="proj-0"]')).not.toBeInViewport();
 });
 
-test("a_cwd_with_percent_and_hash_links_to_its_own_house_and_the_work_page_does_not_blank", async ({ page }) => {
+test("a_cwd_with_percent_and_hash_reaches_its_own_house_through_the_classroom_and_the_work_page_does_not_blank", async ({ page }) => {
   const names = ["50%off", "a%41", "c#d"];
   const houses = [...names, ...Array.from({ length: 10 }, (_, i) => `fill-${i}`)].map((n) => ({
     project: n,
@@ -285,8 +277,7 @@ test("a_cwd_with_percent_and_hash_links_to_its_own_house_and_the_work_page_does_
   const ordered = [...houses.filter((h) => !names.includes(h.project)), ...houses.filter((h) => names.includes(h.project))];
   for (const n of names) {
     await openTown(page, state({ houses: ordered }));
-    await page.getByRole("link", { name: `${n}, house` }).click();
-    await expect(page).toHaveURL(/\/work\.html#/);
+    await viaClassroom(page, n, `/work/${n}`);
     const target = page.locator(`section[aria-label="${n}"]`);
     await expect(target).toBeVisible();
     await expect(target).toBeInViewport();

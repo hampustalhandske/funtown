@@ -56,6 +56,26 @@ describe("the phase file", () => {
   });
 });
 
+describe("the phase file's steps", () => {
+  it("steps_are_kept_in_order_only_as_a_list_of_strings_and_a_list_over_24_never_passes_whole", async () => {
+    const s = await withProject();
+    const steps = async (value: unknown, phase: string) => {
+      s.phaseFile(JSON.stringify({ phase, steps: value }));
+      return houseAt(await townWhere(s.url, (t) => houseAt(t, s.cwd)?.phase?.phase === phase), s.cwd)!.phase!;
+    };
+    expect((await steps(["plan", "build", "review"], "p1")).steps).toEqual(["plan", "build", "review"]);
+    const full = Array.from({ length: 24 }, (_, i) => `step ${i}`);
+    expect((await steps(full, "p2")).steps).toEqual(full);
+    expect((await steps("plan, build", "p3")).steps).toBeUndefined();
+    expect((await steps(["plan", 3], "p4")).steps).toBeUndefined();
+    const long = Array.from({ length: 30 }, (_, i) => `step ${i}`);
+    expect((await steps(long, "p5")).steps?.length ?? 0).toBeLessThanOrEqual(24);
+    s.phaseFile(JSON.stringify({ phase: "p6" }));
+    const none = await townWhere(s.url, (t) => houseAt(t, s.cwd)?.phase?.phase === "p6");
+    expect(houseAt(none, s.cwd)!.phase).toEqual({ phase: "p6" });
+  });
+});
+
 describe("roles and tags", () => {
   it("a_subagents_role_is_its_subagentstart_agent_type_and_a_lead_or_an_untyped_subagent_has_none", async () => {
     const s = await withProject();
