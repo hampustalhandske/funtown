@@ -31,8 +31,8 @@ export const E2E_PORT = process.env.FUNTOWN_E2E_PORT ?? "4799";
 /** The e2e web server's address. */
 export const E2E_URL = `http://127.0.0.1:${E2E_PORT}`;
 
-/** Where the e2e web server's fake `claude` lives, so the config and the specs share it. */
-export const E2E_FAKE_DIR = join(tmpdir(), "funtown-e2e-claude");
+/** Where the e2e web server's fake `claude` lives, so the config and the specs share it; one per port. */
+export const E2E_FAKE_DIR = join(tmpdir(), `funtown-e2e-claude-${E2E_PORT}`);
 
 const SOURCE = join(import.meta.dirname, "fake-claude.cjs");
 
