@@ -97,7 +97,8 @@ it("projects_without_the_token_or_from_another_origin_gets_403_and_changes_nothi
   const s = await start({ projects: projectsPath() });
   const token = await tokenOf(s.url);
   expect((await fetch(`${s.url}/projects`)).status).toBe(403);
-  for (const headers of [{ origin: s.url }, { "x-funtown-token": token }, { origin: "http://evil.example", "x-funtown-token": token }]) {
+  const refused: Record<string, string>[] = [{ origin: s.url }, { "x-funtown-token": token }, { origin: "http://evil.example", "x-funtown-token": token }];
+  for (const headers of refused) {
     expect((await postPage(s, "/projects", { cwd }, headers)).status).toBe(403);
   }
   await postPage(s, "/projects", { cwd });
