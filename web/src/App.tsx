@@ -13,10 +13,20 @@ const ReplyBox = lazy(() => import("./Letters.tsx").then((m) => ({ default: m.Re
 const SessionTerminal = lazy(() => import("./Terminal.tsx").then((m) => ({ default: m.SessionTerminal })));
 
 const STAGE_LABEL: Record<Stage, string> = {
-  working: "🟢 working",
-  needs_you: "🔴 needs you",
-  done: "⚪ done",
+  working: "working",
+  needs_you: "needs you",
+  done: "done",
 };
+
+/** A coloured dot (CSS) followed by the stage's word; the colour never carries the meaning alone. */
+function StageLabel({ stage }: { stage: Stage }) {
+  return (
+    <>
+      <span className="dot" data-stage={stage} aria-hidden="true" />
+      {STAGE_LABEL[stage]}
+    </>
+  );
+}
 
 const OPENING_TIMEOUT_MS = 30_000;
 
@@ -50,26 +60,25 @@ function CharacterRow({
   avatar: string;
   onSelect: (id: string) => void;
 }) {
-  const { name, stage, activity, needs, letter, role, tags } = character;
+  const { name, stage, needs, letter, role, tags } = character;
   return (
     <button
       type="button"
       className={`character ${stage}`}
       data-stage={stage}
-      aria-label={[name, "kind" in character ? character.kind : null, STAGE_LABEL[stage].replace(/^\S+ /, "")].filter(Boolean).join(", ")}
+      aria-label={[name, "kind" in character ? character.kind : null, STAGE_LABEL[stage]].filter(Boolean).join(", ")}
       onClick={() => onSelect(character.id)}>
       <span className="avatar" aria-hidden="true">{avatar}</span>
       <span className="body">
         <span className="line">
           <span className="name">{name}</span>
           {"kind" in character && <span className="kind">{character.kind === "background" ? "background" : "terminal"}</span>}
-          <span className="stage">{STAGE_LABEL[stage]}</span>
+          <span className="stage"><StageLabel stage={stage} /></span>
           {role && <span className="badge role">{role}</span>}
           {tags?.map((tag) => <span key={tag} className="badge tag">{tag}</span>)}
           {letter !== undefined && <span className="mail" role="img" aria-label="has a letter">✉</span>}
         </span>
         {stage === "needs_you" && needs && <span className="activity">waiting for you: {needs}</span>}
-        {stage === "working" && <span className="activity">{activity ?? "thinking"}</span>}
         <Overlaps overlaps={(character as Partial<Lead>).overlaps} />
       </span>
     </button>
@@ -303,10 +312,11 @@ function HouseCard({
   );
 }
 
-/** Details of one character: stage, step, need, its subagents (for a lead) and a button that focuses its terminal. */
+/** Details of one character: stage, need, its subagents (for a lead) and a button that focuses its terminal. */
 export function Panel({ character, lead, cards, onClose }: { character: Character; lead: Lead; cards: Card[]; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [terminal, setTerminal] = useState(false);
   const reply = useRef<((text: string) => string | null) | null>(null);
   const stamp = [lead, ...lead.subagents].map((c) => c.letter ?? 0).join(",");
   useEffect(() => {
@@ -335,14 +345,24 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
     }
   }
 
+  /** Stops the background session; the panel closes once the server has stopped it. */
+  async function stop() {
+    setError(null);
+    setPending(true);
+    const failed = await post("/sessions/stop", { lead: lead.id }, [204]);
+    setPending(false);
+    if (failed) setError(failed.message);
+    else onClose();
+  }
+
+  const background = character.id === lead.id && lead.kind === "background";
   return (
-    <aside className={`panel${character.id === lead.id && lead.kind === "background" ? " wide" : ""}`} role="dialog" aria-label={`${character.name} details`}>
+    <aside className={`panel${background && terminal ? " wide" : ""}`} role="dialog" aria-label={`${character.name} details`}>
       <button type="button" className="close" aria-label="Close" onClick={onClose}>
         ✕
       </button>
       <h2>{character.name}</h2>
-      <p>{STAGE_LABEL[character.stage]}</p>
-      <p className="activity">Step: {character.step ?? "nothing yet"}</p>
+      <p><StageLabel stage={character.stage} /></p>
       {character.stage === "needs_you" && character.needs && <p>waiting for you: {character.needs}</p>}
       {(character.role || character.tags?.length) && (
         <p>
@@ -356,7 +376,7 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
         <ul aria-label="Subagents">
           {lead.subagents.map((sub) => (
             <li key={sub.id}>
-              {sub.name} {STAGE_LABEL[sub.stage]}
+              {sub.name} <StageLabel stage={sub.stage} />
             </li>
           ))}
         </ul>
@@ -366,7 +386,17 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
           <Letters lead={lead.id} stamp={stamp} names={Object.fromEntries([lead, ...lead.subagents].map((c) => [c.id, c.name]))} only={character.id === lead.id ? undefined : character.id} />
         </Suspense>
       </LazyBoundary>
-      {character.id === lead.id && lead.kind === "background" && (
+      {background && (
+        <>
+          <button type="button" aria-expanded={terminal} onClick={() => setTerminal(!terminal)}>
+            {terminal ? "Hide terminal" : "Show terminal"}
+          </button>
+          <button type="button" onClick={stop} disabled={pending}>
+            Close session
+          </button>
+        </>
+      )}
+      {background && terminal && (
         <LazyBoundary>
           <Suspense fallback={null}>
             <ReplyBox send={(text) => (reply.current ? reply.current(text) : "Not sent: the terminal isn't connected.")} />

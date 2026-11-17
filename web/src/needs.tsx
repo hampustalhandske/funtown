@@ -152,7 +152,7 @@ export function NeedsList({ waiting, onOpen }: { waiting: Waiting[]; onOpen: (w:
   if (waiting.length === 0) return null;
   return (
     <section className="needs-list" aria-label="Needs you">
-      <h2>🔴 Needs you <span className="hint">⌥N opens the next</span></h2>
+      <h2>Needs you <span className="hint">⌥N opens the next</span></h2>
       <ol>
         {waiting.map((w) => (
           <li key={w.key}>
