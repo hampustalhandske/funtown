@@ -105,9 +105,9 @@ async function readJson(req: IncomingMessage, max = Infinity): Promise<{ value: 
  * /sessions` starts `claude --bg` in a house's folder, `POST /sessions/stop` runs `claude stop` on
  * a background lead, and the `/term` WebSocket attaches a background lead; each needs the page's
  * own Origin and token. `/events` refuses any request with an `Origin` header, so web pages
- * cannot post to it. `POST /hold` (no Origin either) holds a permission, question or plan as a card until `POST /answer` (page Origin
- * and token) answers it or it is released; `answerLog` (a JSONL path) gets one line per
- * closed card. `journal` (a JSONL path) gets a line per kept letter and per character that
+ * cannot post to it. `POST /hold` (no Origin either) holds a permission, question or plan as a
+ * card until `POST /answer` (page Origin and token) answers it or it is released; `answerLog` (a
+ * JSONL path) gets one line per closed card. `journal` (a JSONL path) gets a line per kept letter and per character that
  * becomes stuck, and feeds `GET /morning?since=<ms>` (page token). `unlistedMs` (default 10 s)
  * is how long hook data and holds wait for their session to be listed, and holds for a page to
  * be open. `errorLog` (a path) gets one line per server error, besides stderr. `POST /switch` (page
