@@ -103,9 +103,9 @@ async function readJson(req: IncomingMessage, max = Infinity): Promise<{ value: 
  * served from `distDir` (default web/dist/); HTML gets the page's token and a CSP. `POST /jump`
  * runs `run` (default: execFile, 60 s timeout) to bring a lead's terminal to the front, `POST
  * /sessions` starts `claude --bg` in a house's folder, `POST /sessions/stop` runs `claude stop` on
- * a background lead, and the `/term` WebSocket attaches a background lead; all four need the page's own Origin and token. `/events` refuses any
- * request with an `Origin` header, so web pages cannot post to it. `POST /hold` (no Origin
- * either) holds a permission, question or plan as a card until `POST /answer` (page Origin
+ * a background lead, and the `/term` WebSocket attaches a background lead; each needs the page's
+ * own Origin and token. `/events` refuses any request with an `Origin` header, so web pages
+ * cannot post to it. `POST /hold` (no Origin either) holds a permission, question or plan as a card until `POST /answer` (page Origin
  * and token) answers it or it is released; `answerLog` (a JSONL path) gets one line per
  * closed card. `journal` (a JSONL path) gets a line per kept letter and per character that
  * becomes stuck, and feeds `GET /morning?since=<ms>` (page token). `unlistedMs` (default 10 s)
@@ -505,7 +505,7 @@ export async function startServer(opts: {
       const leadId = await pageField(req, res, "lead");
       if (leadId === null) return;
       const lead = town.lead(leadId);
-      if (!lead || (lead.shortId !== null && lead.shortId === steward?.shortId())) {
+      if (!lead) {
         res.writeHead(404).end();
         return;
       }
