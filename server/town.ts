@@ -126,6 +126,8 @@ export class TownState {
   private phases = new Map<string, PhaseFile>();
   // the folders the user added as projects, in the order added
   private projects: readonly string[] = [];
+  // the folders where a shell runs
+  private shells: readonly string[] = [];
   // cwds where a session has been listed since the server started
   private seen = new Set<string>();
   private readonly journal: Journal | undefined;
@@ -342,6 +344,11 @@ export class TownState {
     this.projects = projects;
   }
 
+  /** Sets the folders where a shell runs. */
+  setShells(shells: readonly string[]): void {
+    this.shells = shells;
+  }
+
   /** The listed lead's letters, newest first (at most 20), or undefined when it is not listed. */
   letters(sessionId: string): Letter[] | undefined {
     return this.listed.has(sessionId) ? [...(this.letterLists.get(sessionId) ?? [])] : undefined;
@@ -349,10 +356,11 @@ export class TownState {
 
   /**
    * One house per added project in the order added, even with no session, then one per other
-   * cwd of the listed sessions in list order, with `cards` (open cards of listed leads): while
-   * a card is open, the subagent it names, or else its lead, needs the user for the card's kind
-   * whatever the list or hooks say. Each house has its phase, each character its tags, and each
-   * lead the files it shares with another listed lead.
+   * cwd of the listed sessions in list order, then one per other folder where a shell runs,
+   * with `cards` (open cards of listed leads): while a card is open, the subagent it names, or
+   * else its lead, needs the user for the card's kind whatever the list or hooks say. Each house
+   * has its phase, each character its tags, and each lead the files it shares with another
+   * listed lead.
    */
   snapshot(cards: Card[] = []): Town {
     const houses = new Map<string, House>();
@@ -376,6 +384,7 @@ export class TownState {
       if (overlaps.length > 0) shown.overlaps = overlaps;
       house(cwd).leads.push(withCards(shown, cards));
     }
+    for (const cwd of this.shells) house(cwd);
     return { houses: [...houses.values()], cards, started: this.started, claude: this.claude };
   }
 

@@ -153,8 +153,17 @@ export async function startServer(opts: {
   const journal = opts.journal ? openJournal(opts.journal, logError) : undefined;
   const town = new TownState(version, unlistedMs, journal);
   const holds = createHolds(town, { unlistedMs, answerLog: opts.answerLog, logError, changed: () => broadcast() });
-  const terminals = createTerminals(claude, opts.shell, logError);
-  let projects = opts.projects ? readProjects(opts.projects, logError) : [];
+  const terminals = createTerminals(claude, opts.shell, logError, () => {
+    if (closed) return;
+    town.setShells(terminals.shells());
+    broadcast();
+  });
+  let projects: string[] = [];
+  try {
+    if (opts.projects) projects = readProjects(opts.projects);
+  } catch (err) {
+    logError("projects", err, opts.projects);
+  }
   town.setProjects(projects);
   const gh = opts.gh ?? "gh";
   const prMs = opts.prMs ?? 60_000;
@@ -283,7 +292,7 @@ export async function startServer(opts: {
         town.expire();
       }
       const listed = town.cwds();
-      const cwds = [...new Set(listed.values())];
+      const cwds = houseCwds();
       const phases = new Map<string, PhaseFile>();
       for (const cwd of cwds) {
         const phase = readPhase(cwd);
@@ -305,7 +314,24 @@ export async function startServer(opts: {
     }
   };
 
-  const isHouse = (cwd: string) => town.snapshot().houses.some((h) => h.cwd === cwd);
+  /** The folder of every house: the added projects, the listed sessions' cwds and the folders where a shell runs. */
+  const houseCwds = () => [...new Set([...projects, ...town.cwds().values(), ...terminals.shells()])];
+  /**
+   * The added projects as the projects file holds them now, or null once it has answered 500
+   * because the file can't be read or there is none.
+   */
+  const currentProjects = (res: ServerResponse): string[] | null => {
+    if (!opts.projects) {
+      res.writeHead(500, text).end("Funtown has no projects file set.");
+      return null;
+    }
+    try {
+      return readProjects(opts.projects);
+    } catch (err) {
+      res.writeHead(500, text).end(`Funtown can't read ${opts.projects}: ${(err as Error).message}. Fix or delete it, then try again.`);
+      return null;
+    }
+  };
   /** Makes `list` the added projects, in the projects file and on the Town. */
   const saveProjects = (list: string[]) => {
     if (!opts.projects) throw new Error("no projects file is set");
@@ -428,7 +454,7 @@ export async function startServer(opts: {
     if (req.method === "POST" && path === "/sessions") {
       const cwd = await pageField(req, res, "cwd");
       if (cwd === null) return;
-      if (!isHouse(cwd)) {
+      if (!houseCwds().includes(cwd)) {
         res.writeHead(404).end();
         return;
       }
@@ -458,7 +484,7 @@ export async function startServer(opts: {
         res.writeHead(400, text).end(problem);
         return;
       }
-      if (!isHouse(cwd)) {
+      if (!houseCwds().includes(cwd)) {
         res.writeHead(404).end();
         return;
       }
@@ -475,17 +501,19 @@ export async function startServer(opts: {
     if (req.method === "POST" && path === "/projects") {
       const given = await pageField(req, res, "cwd");
       if (given === null) return;
+      const current = currentProjects(res);
+      if (current === null) return;
       const folder = projectFolder(given);
       if ("reason" in folder) {
         res.writeHead(400, text).end(folder.reason);
         return;
       }
-      if (projects.includes(folder.cwd)) {
+      if (current.includes(folder.cwd)) {
         res.writeHead(200).end();
         return;
       }
       try {
-        saveProjects([...projects, folder.cwd]);
+        saveProjects([...current, folder.cwd]);
         res.writeHead(201).end();
       } catch (err) {
         logError("projects", err, folder.cwd);
@@ -497,12 +525,14 @@ export async function startServer(opts: {
     if (req.method === "POST" && path === "/projects/remove") {
       const cwd = await pageField(req, res, "cwd");
       if (cwd === null) return;
-      if (!projects.includes(cwd)) {
+      const current = currentProjects(res);
+      if (current === null) return;
+      if (!current.includes(cwd)) {
         res.writeHead(404).end();
         return;
       }
       try {
-        saveProjects(projects.filter((p) => p !== cwd));
+        saveProjects(current.filter((p) => p !== cwd));
         terminals.closeShell(cwd);
         res.writeHead(204).end();
       } catch (err) {
@@ -655,7 +685,7 @@ export async function startServer(opts: {
     const rows = Number(url.searchParams.get("rows"));
     const shellCwd = url.searchParams.get("shell");
     if (shellCwd !== null) {
-      if (!isHouse(shellCwd)) return refuse(404);
+      if (!houseCwds().includes(shellCwd)) return refuse(404);
       if (!isSize(cols) || !isSize(rows)) return refuse(400);
       socket.removeListener("error", onError);
       return terminals.shell(req, socket, head, shellCwd, cols, rows);

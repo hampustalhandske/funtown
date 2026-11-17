@@ -20,13 +20,14 @@ export const isSize = (n: unknown): n is number => Number.isInteger(n) && (n as 
  * folder shares: it starts with the first socket, outlives its sockets, and closes them all when
  * it exits. Frames are JSON text of at most 1 MB: `{"t":"in","d"}` and `{"t":"resize","c","r"}`
  * in, `{"t":"out","d"}` out, and `{"t":"shared","n"}` to every socket on a session or shell
- * whenever the number of sockets on it changes.
+ * whenever the number of sockets on it changes. `changed` runs when a shell starts or ends.
  */
-export function createTerminals(claude: string, shell: string | undefined, logError: LogError) {
+export function createTerminals(claude: string, shell: string | undefined, logError: LogError, changed: () => void) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
   const bySession = new Map<string, Set<WebSocket>>();
-  // cwd -> its shell, while it runs
-  const shells = new Map<string, { pty: IPty; out: string; sockets: Set<WebSocket> }>();
+  // cwd -> its shell, while it runs: its latest output as chunks of `size` units in all, and
+  // whether older output was dropped
+  const shells = new Map<string, { pty: IPty; out: string[]; size: number; trimmed: boolean; sockets: Set<WebSocket> }>();
   // every pty still running
   const ptys = new Set<IPty>();
 
@@ -66,19 +67,27 @@ export function createTerminals(claude: string, shell: string | undefined, logEr
   const startShell = (cwd: string, cols: number, rows: number) => {
     if (!shell) throw new Error("no shell is set");
     const pty = spawn(shell, ["-l"], { name: "xterm-256color", cols, rows, cwd, env: claudeEnv() });
-    const sh = { pty, out: "", sockets: new Set<WebSocket>() };
+    const sh = { pty, out: [] as string[], size: 0, trimmed: false, sockets: new Set<WebSocket>() };
     shells.set(cwd, sh);
     ptys.add(pty);
     pty.onData((d) => {
-      sh.out = (sh.out + d).slice(-REPLAY);
+      sh.out.push(d);
+      sh.size += d.length;
+      while (sh.size > REPLAY && sh.out.length > 1) {
+        sh.size -= sh.out.shift()!.length;
+        sh.trimmed = true;
+      }
       const frame = JSON.stringify({ t: "out", d });
       for (const ws of sh.sockets) if (ws.readyState === ws.OPEN) ws.send(frame);
     });
-    pty.onExit(() => {
+    pty.onExit(({ exitCode }) => {
       ptys.delete(pty);
+      if (exitCode !== 0 && sh.out.length === 0) logError("shell", `exited ${exitCode} before any output`, cwd);
       if (shells.get(cwd) === sh) shells.delete(cwd);
       for (const ws of sh.sockets) ws.close();
+      changed();
     });
+    changed();
     return sh;
   };
 
@@ -129,9 +138,18 @@ export function createTerminals(claude: string, shell: string | undefined, logEr
             return;
           }
         }
-        if (sh.out) ws.send(JSON.stringify({ t: "out", d: sh.out }));
+        // Once older output is dropped, the kept text may begin inside an escape sequence, so
+        // the replay starts at its first new line.
+        const kept = sh.out.join("");
+        const replay = sh.trimmed ? kept.slice(kept.indexOf("\n") + 1) : kept;
+        if (replay) ws.send(JSON.stringify({ t: "out", d: replay }));
         join(ws, sh.sockets, sh.pty, cwd, () => {});
       });
+    },
+
+    /** The folders where a shell runs. */
+    shells(): string[] {
+      return [...shells.keys()];
     },
 
     /** Ends the shell in `cwd`; false when none runs there. */
