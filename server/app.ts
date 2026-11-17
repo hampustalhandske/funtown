@@ -202,7 +202,9 @@ export async function startServer(opts: {
 
   const snapshot = () => {
     const state = town.snapshot(holds.cards());
+    const stewardId = steward?.lead()?.id;
     for (const house of state.houses) {
+      for (const lead of house.leads) if (lead.id === stewardId) lead.steward = true;
       const prs = prLists.get(house.cwd);
       if (prs) house.parcels = prs.map((pr) => ({ number: pr.number, title: pr.title, url: pr.url, draft: pr.draft, review: steward?.review(pr) }));
     }
