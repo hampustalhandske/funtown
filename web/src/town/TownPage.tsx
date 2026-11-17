@@ -4,6 +4,7 @@ import { AddProject, askReview, Panel, removeProject, useSelection, useTown } fr
 import { MorningButton } from "../Morning.tsx";
 import { SwitchButton, type OpenSession } from "../Switch.tsx";
 import { needOf, NotifyButton, Toasts } from "../needs.tsx";
+import { boardOf, interior, type Board, type InPlaced } from "./interior.ts";
 import { keyOf, layout, type Placed } from "./layout.ts";
 import { Village } from "./Village.tsx";
 
@@ -28,8 +29,20 @@ function indexOf(town: Town | null) {
   return { houses, characters };
 }
 
+/** The house whose classroom the page hash `#in=<encoded cwd>` names, or null when the hash names none. */
+function hashedClassroom(): string | null {
+  const match = /^#in=(.*)$/.exec(location.hash);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+}
+
 /** What a placed thing is called: `name` for its hover plate; `label` (name, project, role, stage) for the town list. */
-function words(p: Placed, index: TownIndex): { name: string; label: string } {
+function words(p: Placed | InPlaced, index: TownIndex): { name: string; label: string } {
+  if (p.kind === "observer") return { name: "You", label: "you, observer" };
   if (p.kind === "building" || p.kind === "parcel") {
     const house = index.houses.get(p.cwd);
     const project = house?.project ?? p.cwd;
@@ -46,6 +59,14 @@ function words(p: Placed, index: TownIndex): { name: string; label: string } {
   return { name: character.name, label: `${character.name}, ${house.project}, ${role}, ${stageWords(character)}` };
 }
 
+/** The whiteboard's lines as the hidden list shows them: project, phase, note, then each step with its state. */
+const boardLines = (board: Board) => [
+  board.project,
+  ...(board.phase === null ? [] : [`phase: ${board.phase}`]),
+  ...(board.note === null ? [] : [board.note]),
+  ...board.steps.map((step) => `${step.label}, ${step.state}`),
+];
+
 /** A round icon drawn in ink: `children` are the SVG strokes on a 24-unit grid. */
 const Icon = ({ children }: { children: ReactNode }) => (
   <svg className="glyph" viewBox="0 0 24 24" aria-hidden="true">{children}</svg>
@@ -57,6 +78,7 @@ const ICONS = {
   morning: <Icon><path d="M3 18h18M7 18a5 5 0 0 1 10 0M12 7.5v2.5M5.5 10.5l1.6 1.6M18.5 10.5l-1.6 1.6" /></Icon>,
   reload: <Icon><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4.5H15" /></Icon>,
   close: <Icon><path d="M7 7l10 10M17 7L7 17" /></Icon>,
+  back: <Icon><path d="M10 6l-6 6 6 6M4 12h16" /></Icon>,
 };
 
 type SettingsProps = { town: Town | null; muted: boolean; onMute: () => void; open: OpenSession | null; onClose: () => void };
@@ -152,41 +174,88 @@ export function TownPage() {
   const closeSettings = useCallback(() => setSettings(false), []);
   const placed = useMemo(() => (town ? layout(town, waiting) : []), [town]);
   const index = useMemo(() => indexOf(town), [town]);
-  const name = useCallback((p: Placed) => words(p, index).name, [index]);
+  const name = useCallback((p: Placed | InPlaced) => words(p, index).name, [index]);
 
-  /** Opens what `p` stands for: a character's panel, a parcel's review panel, letter or PR, a building's house in the work view. */
-  const pick = useCallback(
-    (p: Placed) => {
-      if (p.kind === "building") location.assign(workLink(p.cwd));
-      else if (p.kind === "parcel") {
-        const parcel = index.houses.get(p.cwd)?.parcels?.find((x) => x.number === p.number);
-        const steward = parcel?.review?.state === "ready" ? parcel.review.steward : undefined;
-        if (steward && index.characters.has(steward)) setSelection({ lead: steward, id: steward });
-        else if (parcel?.review?.state === "idle") {
-          setSettings(false);
-          onClose();
-          setAsking({ cwd: p.cwd, parcel });
-        } else if (parcel) window.open(parcel.url, "_blank", "noopener,noreferrer");
-      } else setSelection({ lead: p.kind === "hat" ? p.lead : p.id, id: p.id });
+  // The classroom being shown: the cwd in the page hash, kept in step with Back, reload and pasted links.
+  const [inCwd, setInCwd] = useState(hashedClassroom);
+  useEffect(() => {
+    const onHash = () => setInCwd(hashedClassroom());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+  /** Shows the classroom of `cwd`, or the town for null; `replace` swaps the history entry instead of adding one. */
+  const go = useCallback((cwd: string | null, replace = false) => {
+    const url = cwd === null ? location.pathname + location.search : `#in=${encodeURIComponent(cwd)}`;
+    if (replace) history.replaceState(null, "", url);
+    else history.pushState(null, "", url);
+    setInCwd(cwd);
+  }, []);
+  const classroom = inCwd === null ? undefined : index.houses.get(inCwd);
+  useEffect(() => {
+    if (town && inCwd !== null && !classroom) go(null, true);
+  }, [town, inCwd, classroom, go]);
+  const showing = classroom !== undefined;
+  const shown = lead && selected;
+  useEffect(() => {
+    // Only when nothing above the classroom is open: those panes close on their own Escape first.
+    if (!showing || settings || asking || shown) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !(event.target instanceof Element && event.target.closest(".terminal"))) go(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showing, settings, asking, shown, go]);
+
+  /** Opens the review panel, letter or PR of parcel `number` in `cwd`. */
+  const openParcel = useCallback(
+    (cwd: string, number: number) => {
+      const parcel = index.houses.get(cwd)?.parcels?.find((x) => x.number === number);
+      const steward = parcel?.review?.state === "ready" ? parcel.review.steward : undefined;
+      if (steward && index.characters.has(steward)) setSelection({ lead: steward, id: steward });
+      else if (parcel?.review?.state === "idle") {
+        setSettings(false);
+        onClose();
+        setAsking({ cwd, parcel });
+      } else if (parcel) window.open(parcel.url, "_blank", "noopener,noreferrer");
     },
     [index, setSelection, onClose],
+  );
+
+  /** Opens what `p` stands for: a character's panel, a parcel's review panel, letter or PR, a building's classroom. */
+  const pick = useCallback(
+    (p: Placed | InPlaced) => {
+      if (p.kind === "building") go(p.cwd);
+      else if (p.kind === "parcel") openParcel(p.cwd, p.number);
+      else if (p.kind !== "observer") setSelection({ lead: p.kind === "hat" ? p.lead : p.id, id: p.id });
+    },
+    [go, openParcel, setSelection],
+  );
+
+  const inside = useMemo(
+    () => (classroom ? { house: classroom, placed: interior(classroom), board: boardOf(classroom), name, onPick: pick } : undefined),
+    [classroom, name, pick],
   );
 
   return (
     <>
       <div className="village" aria-hidden="true">
-        <Village index={index} placed={placed} name={name} onPick={pick} />
+        <Village index={index} placed={placed} name={name} onPick={pick} inside={inside} />
       </div>
       <ul className="town-list" aria-label="Town">
-        {placed.map((p) => (
-          <li key={keyOf(p)}>
-            {p.kind === "building" ? (
-              <a href={workLink(p.cwd)}>{words(p, index).label}</a>
-            ) : (
-              <button type="button" onClick={() => pick(p)}>{words(p, index).label}</button>
-            )}
-          </li>
-        ))}
+        {inside
+          ? [
+              ...inside.placed.map((p) => (
+                <li key={keyOf(p)}>
+                  {p.kind === "observer" ? <span>{words(p, index).label}</span> : <button type="button" onClick={() => pick(p)}>{words(p, index).label}</button>}
+                </li>
+              )),
+              ...boardLines(inside.board).map((line, i) => <li key={`board:${i}`}><span>{line}</span></li>),
+            ]
+          : placed.map((p) => (
+              <li key={keyOf(p)}>
+                <button type="button" onClick={() => pick(p)}>{words(p, index).label}</button>
+              </li>
+            ))}
       </ul>
       <nav className="hud" aria-label="Controls">
         {restarted && (
@@ -195,7 +264,8 @@ export function TownPage() {
           </button>
         )}
         <span className="slot" title="Morning">{ICONS.morning}<MorningButton aria-label="Morning" waiting={waiting} town={town} onOpen={openWaiting} /></span>
-        <a className="icon" href="/work.html" aria-label="Work view" title="Work view">{ICONS.work}</a>
+        {classroom && <button type="button" className="icon" aria-label="Back to town" title="Back to town" onClick={() => go(null)}>{ICONS.back}</button>}
+        <a className="icon" href={classroom ? workLink(classroom.cwd) : "/work.html"} aria-label="Work view" title="Work view">{ICONS.work}</a>
         <button
           type="button"
           className={`icon${town && town.claude.problems.length > 0 ? " flagged" : ""}`}
@@ -208,7 +278,7 @@ export function TownPage() {
       </nav>
       {settings && <Settings town={town} muted={muted} onMute={toggleMute} open={openSession} onClose={closeSettings} />}
       {asking && <AskPanel key={`${asking.cwd}/${asking.parcel.number}`} target={asking} onClose={closeAsking} />}
-      {lead && selected && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} cards={town?.cards ?? []} onClose={onClose} />}
+      {shown && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} cards={town?.cards ?? []} onClose={onClose} />}
       <Toasts
         toasts={toasts}
         onOpen={(w) => {

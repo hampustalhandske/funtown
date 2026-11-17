@@ -43,3 +43,23 @@ export const removeProjectFolder = (cwd: string) => pagePost("/projects/remove",
 
 /** Presses "Show terminal" in a background lead's panel, which is what mounts its live terminal and reply box. */
 export const showTerminal = (panel: Locator) => panel.getByRole("button", { name: /show terminal/i }).click();
+
+/** The text a viewer can see on the page: text nodes of at least 3 px that are not clipped, transparent or hidden. */
+export function visibleWords(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const seen: string[] = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const text = n.textContent?.trim();
+      if (!text) continue;
+      let hidden = false;
+      for (let el = n.parentElement; el && !hidden; el = el.parentElement) {
+        const r = el.getBoundingClientRect();
+        const css = getComputedStyle(el);
+        hidden = css.fontSize === "0px" || /, 0\)$/.test(css.color) || r.width <= 2 || r.height <= 2 || css.visibility === "hidden" || css.display === "none" || css.opacity === "0";
+      }
+      if (!hidden && !["SCRIPT", "STYLE", "NOSCRIPT"].includes(n.parentElement!.tagName)) seen.push(text);
+    }
+    return seen;
+  });
+}

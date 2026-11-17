@@ -1,6 +1,7 @@
 import type { Character, House, Town } from "../../../server/types.ts";
 import type { Waiting } from "../needs.tsx";
 import { colourFor, hatFor, type HatKind } from "./kit/palette.ts";
+import type { InPlaced } from "./interior.ts";
 
 /** A point on the ground; +z faces the camera, the castle is at the back (-z). */
 export type Spot = { x: number; z: number };
@@ -12,9 +13,9 @@ export type Placed =
   | { kind: "parcel"; cwd: string; number: number; at: Spot }
   | { kind: "steward"; id: string; at: Spot };
 
-/** A key that names the same thing across state frames; a subagent keeps its key when it leaves the rack to queue. */
-export const keyOf = (p: Placed): string =>
-  p.kind === "building" ? `building:${p.cwd}` : p.kind === "parcel" ? `parcel:${p.cwd}#${p.number}` : `character:${p.id}`;
+/** A key that names the same thing across state frames; a subagent keeps its key when it leaves the rack to queue or sits at a desk. */
+export const keyOf = (p: Placed | InPlaced): string =>
+  p.kind === "building" ? `building:${p.cwd}` : p.kind === "parcel" ? `parcel:${p.cwd}#${p.number}` : p.kind === "observer" ? "observer" : `character:${p.id}`;
 
 export const CASTLE: Spot = { x: 0, z: -9 };
 export const DESK: Spot = { x: 0, z: -5.2 };

@@ -83,7 +83,7 @@ export type House = {
   cwd: string;
   leads: Lead[];
   /** From .claude/phase.json; absent when there is none or it is unreadable. */
-  phase?: { phase: string; note?: string };
+  phase?: { phase: string; note?: string; steps?: string[] };
   /** Open PRs, newest number first; absent until the first gh list succeeds. */
   parcels?: Parcel[];
   /** True when the user added this folder in the app (it stays with no sessions). */

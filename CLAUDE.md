@@ -17,7 +17,9 @@ on it.
   `workflow.ts` phase file, `gh pr list`; `steward.ts` the steward; `projects.ts` added projects;
   `main.ts` run file, signals.
 - `web/` (React, Vite): `/` is the town (`index.html`, `src/town/`: `layout.ts` pure places, `Village.tsx`
-  the 3D scene, `TownPage.tsx` icons, Settings, hidden list; `kit/` the clay parts; no visible words).
+  the 3D scene, `TownPage.tsx` icons, Settings, hidden list; `kit/` the clay parts; no visible words on the
+  town). A building opens its classroom at `#in=<cwd>`: `interior.ts` pure places and the whiteboard model,
+  `Classroom.tsx` the room, the lead at the front, you the crowned observer at the back; words only on the board.
   `/work.html` the work view (`App.tsx`: list, panels; a background lead's terminal mounts only after Show terminal; no command text on rows; `AnswerCard`, `Letters`, `Morning`,
   `Switch`, `needs.tsx`: `waitingList`, the desk order, card kinds first then oldest). Font Recursive (OFL, bundled, licence emitted next to it).
   `tests/`: Vitest; Playwright in `tests/e2e/`, one spec at a time; the fake `claude` is also `gh`.
@@ -33,7 +35,8 @@ Contracts (source of truth: this list; full text in the local .workflow/history/
 - Holds: `/hold` 200 with the hook output, 204 when released (no page or listing for `unlistedMs`);
   `/answer { card, decision, answers?, feedback? }`; log `by` funtown, elsewhere or dropped.
 - Logs: `<ISO> <hook|hold|server> <step>: <message>`; a dead run-file pid: `server unclean-exit`.
-- Workflow: `<cwd>/.claude/phase.json` `{ phase, note?, tags?: { roleOrName: [] } }`; role = a
+- Workflow: `<cwd>/.claude/phase.json` `{ phase, note?, steps?: string[], tags?: { roleOrName: [] } }` (`steps` = the
+  workflow's ordered phases, at most 24, the classroom whiteboard marks done/now/next/later); role = a
   subagent's `agent_type`; parcels from `gh pr list --author @me` every 60 s; overlaps: files two runs edit. One
   steward in `~/.funtown/steward`: one request per asked PR head, only after `POST /review` (`server/steward.md`; overridden by
   `~/.funtown/steward.md`, empty = off), pasted only with no card and not working; a reply counts as a review only with its three labelled parts; the user's own prompt to it pauses requests until the next ask; `Parcel.review.state` is idle until asked.
