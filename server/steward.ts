@@ -1,4 +1,5 @@
 import { mkdirSync } from "node:fs";
+import { basename } from "node:path";
 import { spawn, type IPty } from "node-pty";
 import { claudeEnv, startBackground } from "./agents.ts";
 import type { LogError } from "./errors.ts";
@@ -15,13 +16,17 @@ const LINGER_MS = 1_000;
 const LISTED_MS = 5 * 60_000;
 
 const key = (pr: number, head: string) => `${pr}\0${head}`;
+/** The labels a reply must hold to count as a review: the three parts `steward.md` asks for. */
+const REVIEW_LABELS = ["Squash title", "Merge text", "Before merging"];
+/** `text` as the steward's prompt hook reports it: line ends unified, outer whitespace dropped. */
+const normalized = (text: string) => text.replace(/\r\n?/g, "\n").trim();
 /** Whether `lead` is stuck repeating a tool call: its turn still runs, unlike one stuck on an error. */
 const inLoop = (lead: Lead) => lead.needs === "stuck" && lead.reason?.startsWith("loop:") === true;
 
 /**
- * The steward: one background `claude` session in `dir` that pre-reviews each ready PR in
- * `lists` (open PRs by cwd) once per head commit, pasting `prompt` filled in for it over
- * `claude attach`. `journal` carries the session, the requests and their reviews across
+ * The steward: one background `claude` session in `dir` that pre-reviews the ready PRs in
+ * `lists` (open PRs by cwd) the user has asked for with `ask`, once per head commit, pasting
+ * `prompt` filled in for it over `claude attach`. `journal` carries the session, the requests and their reviews across
  * restarts; `cards` gives the open cards; a failed start or attach is retried after `retryMs`;
  * `readyMs` bounds an attach and `answerMs` a request. `changed` runs when a request has been sent.
  */
@@ -40,13 +45,17 @@ export function createSteward(opts: {
   changed: () => void;
 }) {
   const { claude, dir, prompt, town, lists, cards, journal, logError, retryMs, readyMs, answerMs, changed } = opts;
-  // PR number and head commit -> when its request was sent
+  // PR number and head commit -> when its request was sent; a re-ask forgets it
   const sent = new Map<string, number>();
-  // PR number and head commit -> the id of the steward's letter that answered its request
+  // PR number and head commit -> the id of the steward's letter that answered its request with a review
   const reviewed = new Map<string, string>();
-  // PR number and head commit of each open PR due -> its place in the order first seen, so the oldest goes first
-  const seen = new Map<string, number>();
-  let seenCount = 0;
+  // PR number and head commit of each open PR the user asked for -> its place in the order asked, so the oldest goes first
+  const asked = new Map<string, number>();
+  let askedCount = 0;
+  // the request text last pasted, which the steward's own prompt event is compared with
+  let sentText = "";
+  // whether the user wrote to the steward since the last ask, which stops further requests
+  let paused = false;
   let stewardId: string | undefined;
   let startedAt = -Infinity;
   for (const e of journal?.kept ?? []) {
@@ -76,19 +85,15 @@ export function createSteward(opts: {
   };
   const lead = () => (stewardId ? town.byShortId(stewardId) : undefined);
 
-  /** The ready PRs with no request sent for their head commit, oldest first; forgets the order of the rest. */
+  /** The asked ready PRs with no request sent for their head commit, oldest asked first; forgets the asks of PRs no longer open and ready. */
   const due = () => {
-    const found = new Map<string, { cwd: string; pr: Pr }>();
-    for (const [cwd, prs] of lists) {
-      for (const pr of [...prs].reverse()) {
-        const k = key(pr.number, pr.head);
-        if (pr.draft || sent.has(k) || found.has(k)) continue;
-        if (!seen.has(k)) seen.set(k, seenCount++);
-        found.set(k, { cwd, pr });
-      }
-    }
-    for (const k of seen.keys()) if (!found.has(k)) seen.delete(k);
-    return [...found].sort(([a], [b]) => seen.get(a)! - seen.get(b)!).map(([, item]) => item);
+    const open = new Map<string, { cwd: string; pr: Pr }>();
+    for (const [cwd, prs] of lists) for (const pr of prs) if (!pr.draft) open.set(key(pr.number, pr.head), { cwd, pr });
+    for (const k of asked.keys()) if (!open.has(k)) asked.delete(k);
+    return [...asked]
+      .filter(([k]) => !sent.has(k))
+      .sort(([, a], [, b]) => a - b)
+      .map(([k]) => open.get(k)!);
   };
 
   const start = async () => {
@@ -111,8 +116,9 @@ export function createSteward(opts: {
   const send = (steward: Lead, cwd: string, pr: Pr) => {
     busy = true;
     // Control characters are dropped, so a PR title can't end the paste or press keys.
+    const fields = { number: String(pr.number), title: pr.title, url: pr.url, project: basename(cwd), repo: /^https?:\/\/[^/]+\/([^/]+\/[^/]+)/.exec(pr.url)?.[1] ?? "" };
     const text = prompt
-      .replace(/\{(number|title|url)\}/g, (_, name: "number" | "title" | "url") => String(pr[name]))
+      .replace(/\{(number|title|url|project|repo)\}/g, (_, name: keyof typeof fields) => fields[name])
       .replace(/\p{Cc}/gu, (c) => (c === "\n" || c === "\t" ? c : ""));
     let pty: IPty;
     try {
@@ -132,6 +138,7 @@ export function createSteward(opts: {
     attach = { detach, exited: new Promise((resolve) => (onExited = resolve)) };
     const write = () => {
       written = true;
+      sentText = text;
       pty.write(`\x1b[200~${text}\x1b[201~`);
       pty.write("\r");
       const at = Date.now();
@@ -182,7 +189,7 @@ export function createSteward(opts: {
         logError("steward", `no answer to #${inFlight.pr} after ${limit}`);
         inFlight = undefined;
       }
-      if (busy || Date.now() < retryAt) return;
+      if (paused || busy || Date.now() < retryAt) return;
       const next = due()[0];
       const steward = lead();
       if (steward) wasListed = true;
@@ -196,9 +203,28 @@ export function createSteward(opts: {
     },
 
     /**
+     * Asks for the review of PR `number` in the house `cwd` at its current head: 204 when it is
+     * queued, sent or reviewed already or now queued (this also lifts a pause), 404 for an unknown
+     * house or PR, 409 for a draft.
+     */
+    ask(cwd: string, number: number): 204 | 404 | 409 {
+      const pr = lists.get(cwd)?.find((p) => p.number === number);
+      if (!pr) return 404;
+      if (pr.draft) return 409;
+      paused = false;
+      const k = key(pr.number, pr.head);
+      const requested = inFlight !== undefined && key(inFlight.pr, inFlight.head) === k;
+      if (reviewed.has(k) || (asked.has(k) && (!sent.has(k) || requested))) return 204;
+      sent.delete(k);
+      asked.set(k, askedCount++);
+      return 204;
+    },
+
+    /**
      * Notes an applied hook event: the steward's own Stop or StopFailure ends its turn and the
-     * request in flight, and a Stop's letter, when it is new since the request, is journaled as
-     * its review.
+     * request in flight; a prompt that isn't the request Funtown pasted pauses requests until
+     * the next ask; and a Stop's letter, when it is new since the request and holds all of the
+     * labelled parts, is journaled as its review, while any other reply leaves the PR not asked.
      */
     event(event: HookEvent): void {
       const steward = lead();
@@ -206,13 +232,19 @@ export function createSteward(opts: {
       const name = event.hook_event_name;
       if (name === "Stop" || name === "StopFailure") turnOver = true;
       else if (name === "UserPromptSubmit" || name === "PreToolUse") turnOver = false;
+      if (name === "UserPromptSubmit") {
+        const { prompt: submitted } = event as HookEvent & { prompt?: unknown };
+        if (typeof submitted !== "string" || normalized(submitted) !== normalized(sentText)) paused = true;
+      }
       if (!inFlight) return;
       if (name === "Stop") {
         const { pr, head, at } = inFlight;
         const letter = town.letters(steward.id)?.find((l) => l.from === steward.id);
-        if (letter && letter.at >= at) {
+        if (letter && letter.at >= at && REVIEW_LABELS.every((label) => letter.text.includes(label))) {
           reviewed.set(key(pr, head), letter.id);
           journal?.append({ kind: "reviewed", at: Date.now(), pr, head, letter: letter.id });
+        } else {
+          asked.delete(key(pr, head));
         }
       } else if (name !== "StopFailure") {
         return;
@@ -220,7 +252,7 @@ export function createSteward(opts: {
       inFlight = undefined;
     },
 
-    /** The review of `pr` for its parcel; undefined for a draft. */
+    /** The review of `pr` for its parcel: idle until asked for; undefined for a draft. */
     review(pr: Pr): Parcel["review"] {
       if (pr.draft) return undefined;
       const steward = lead();
@@ -228,6 +260,7 @@ export function createSteward(opts: {
       const base = steward ? { steward: steward.id } : {};
       const letter = reviewed.get(k);
       if (letter !== undefined) return { state: "ready", ...base, letter };
+      if (!asked.has(k)) return { state: "idle", ...base };
       return { state: sent.has(k) ? "reviewing" : "queued", ...base };
     },
 

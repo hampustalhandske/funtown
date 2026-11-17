@@ -1,6 +1,9 @@
 Pre-review pull request #{number}, "{title}": {url}
+Project: {project}. Repo: {repo}.
 
 This is a read-only review. Read the PR with `gh pr view {url}` and `gh pr diff {url}`. Don't edit files, commit, push, or post anything to GitHub: no comments, reviews, approvals or merges.
+
+Open your reply with one line naming the project, the repo and the PR number, such as `{project} · {repo} · #{number}`.
 
 End your reply with these three parts:
 
