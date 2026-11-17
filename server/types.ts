@@ -116,4 +116,6 @@ export type Town = {
   started: number;
   /** The installed Claude Code's version, and one line per feature that won't work with it. */
   claude: { version: string | null; problems: string[] };
+  /** The id of the avatar the user chose for the king; absent when none is chosen. */
+  avatar?: string;
 };
