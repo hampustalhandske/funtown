@@ -71,11 +71,15 @@ export async function listAgents(claude: string): Promise<Listed[]> {
   return list;
 }
 
-/** Starts `claude --bg` in `cwd` with no worktree and gives the short id it prints; rejects with the reason. */
-export async function startBackground(claude: string, cwd: string): Promise<string> {
+/**
+ * Starts `claude --bg` in `cwd` and gives the short id it prints; rejects with the reason.
+ * Without a `prompt` it is an empty session with no worktree; with one, a run of that prompt
+ * (one argument) in its own worktree, Claude Code's default isolation.
+ */
+export async function startBackground(claude: string, cwd: string, prompt?: string): Promise<string> {
   let out: string;
   try {
-    out = await run(claude, ["--bg", "--settings", BG_SETTINGS], cwd, 120_000);
+    out = await run(claude, prompt === undefined ? ["--bg", "--settings", BG_SETTINGS] : ["--bg", prompt], cwd, 120_000);
   } catch (err) {
     const { stderr, message } = err as { stderr?: string; message: string };
     throw new Error(stderr?.trim() || message, { cause: err });

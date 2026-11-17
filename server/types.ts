@@ -84,6 +84,10 @@ export type House = {
   phase?: { phase: string; note?: string };
   /** Open PRs, newest number first; absent until the first gh list succeeds. */
   parcels?: Parcel[];
+  /** True when the user added this folder in the app (it stays with no sessions). */
+  added?: boolean;
+  /** True once a session has been listed here since the server started. */
+  seen?: boolean;
 };
 /** A held request waiting for the user's answer. */
 export type Card = {
