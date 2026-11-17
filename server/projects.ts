@@ -4,8 +4,8 @@ import type { LogError } from "./errors.ts";
 
 /**
  * The folders the user added, from the projects file at `path` (a JSON array of absolute
- * paths, in the order added); none, with the reason logged, when the file is missing or is not
- * such an array.
+ * paths, in the order added); none when the file is missing, and none with the reason logged
+ * when it is not such an array.
  */
 export function readProjects(path: string, logError: LogError): string[] {
   try {
@@ -15,6 +15,7 @@ export function readProjects(path: string, logError: LogError): string[] {
     }
     return list;
   } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     logError("projects", err, path);
     return [];
   }

@@ -121,7 +121,7 @@ async function readJson(req: IncomingMessage, max = Infinity): Promise<{ value: 
  * each a house even with no session; without one, adding answers 500. `POST /runs` starts
  * `claude --bg <prompt>` in a house's folder. `/term?shell=<cwd>` connects to that house's one
  * login shell, `shell` (an executable) started there on first connect; `POST /shells/close`
- * ends it.
+ * or removing the project ends it.
  */
 export async function startServer(opts: {
   port: number;
@@ -503,6 +503,7 @@ export async function startServer(opts: {
       }
       try {
         saveProjects(projects.filter((p) => p !== cwd));
+        terminals.closeShell(cwd);
         res.writeHead(204).end();
       } catch (err) {
         logError("projects", err, cwd);
