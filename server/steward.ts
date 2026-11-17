@@ -233,7 +233,7 @@ export function createSteward(opts: {
       if (name === "Stop" || name === "StopFailure") turnOver = true;
       else if (name === "UserPromptSubmit" || name === "PreToolUse") turnOver = false;
       if (name === "UserPromptSubmit") {
-        const { prompt: submitted } = event as HookEvent & { prompt?: unknown };
+        const submitted = event.prompt;
         if (typeof submitted !== "string" || normalized(submitted) !== normalized(sentText)) paused = true;
       }
       if (!inFlight) return;
