@@ -25,8 +25,8 @@ const inLoop = (lead: Lead) => lead.needs === "stuck" && lead.reason?.startsWith
  * The steward: one background `claude` session in `dir` that pre-reviews the ready PRs in
  * `lists` (open PRs by cwd) the user has asked for with `ask`, once per head commit, pasting
  * `prompt` filled in for it over `claude attach`. `journal` carries the session, the requests
- * and their reviews across restarts; `cards` gives the open cards; a failed start or attach is retried after `retryMs`;
- * `readyMs` bounds an attach and `answerMs` a request. `changed` runs when a request has been sent.
+ * and their reviews across restarts; `cards` gives the open cards; a failed start or attach is
+ * retried after `retryMs`; `readyMs` bounds an attach and `answerMs` a request. `changed` runs when a request has been sent.
  */
 export function createSteward(opts: {
   claude: string;

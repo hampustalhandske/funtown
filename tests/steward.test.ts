@@ -305,7 +305,7 @@ describe("the steward", () => {
     expect(await post(s.url, ev("UserPromptSubmit", { cwd: p.stewardDir, prompt: filled(pr(7)) }, SID))).toBe(204);
     await stewardStop(s.url, p, SID, "Sorry, I was reviewing PR 7.");
     await until(() => fake.attachPids(SHORT).every(gone), 5000);
-    await sleep(600); // several polls with #9 asked and the steward idle
+    await sleep(1500); // longer than the quiet wait before a paste, so #9 would be pasted by now
     expect(pastes(fake.attachInput(SHORT))).toEqual([filled(pr(7))]);
 
     await ask(s, p, 11);
