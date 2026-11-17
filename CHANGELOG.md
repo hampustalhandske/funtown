@@ -2,6 +2,7 @@
 
 One line per change, newest first.
 
+- 2026-11-17 20:22 · Click a building to step into its classroom: you stand at the back as an observer, the project's leads stand at the front, their subagents sit at desks in their hats (a raised slip when one needs you, askew when stuck), open PRs sit on a table by the door, and a whiteboard shows the project's phase, its note and the workflow's steps (done, now, next, later) from `.claude/phase.json`'s new `steps` list. Escape or the back icon returns to the town; the work view is one icon away.
 - 2026-11-17 19:00 · The work view keeps a session's terminal hidden until you press Show terminal (nothing renders or connects meanwhile), shows no command text on rows or panels, shows status as a coloured dot with its word instead of an emoji, and has a Close session button (`claude stop`: the conversation is kept and `claude attach` resumes it).
 - 2026-11-17 16:08 · The desk queue puts sessions that ask a question or need a permission or plan approval ahead of ones that only finished a turn, in the town, the Needs you list and ⌥N; oldest first within each group.
 - 2026-11-17 15:52 · The steward reviews a pull request only when you ask: a button on the town's parcel panel and on the work view. A reply that isn't a review no longer counts as one, and typing to the steward yourself stops further requests. Each review names its project, repo and PR.
