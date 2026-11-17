@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import { PerspectiveCamera, Vector3, type DirectionalLight, type Group } from "three";
+import { Classroom, roomOf, type ClassroomProps } from "./Classroom.tsx";
+import { SIDE_WALL_HEIGHT, WALL_HEIGHT } from "./kit/classroom.tsx";
 import { Clay, INK, TONES } from "./kit/clay.tsx";
 import { Hat } from "./kit/hats.tsx";
 import { PALETTE, type HatKind } from "./kit/palette.ts";
@@ -22,10 +24,12 @@ const WALK_SPEED = 2.4;
 const CASTLE_SCALE = 1.6;
 
 // Plates go in their own element beside the React root: drei's default target changes once the canvas connects.
-const plates = { current: document.getElementById("plates")! };
+export const plates = { current: document.getElementById("plates")! };
 
-/** The town's extent on the ground, with a key that changes only when the extent does. */
-type Bounds = { minX: number; maxX: number; minZ: number; maxZ: number; key: string };
+/** A scene's extent on the ground, with the points above it that must stay in view and a key that changes only when the extent does. */
+type Bounds = { minX: number; maxX: number; minZ: number; maxZ: number; tops: [number, number, number][]; key: string };
+
+const CASTLE_REACH = 1.6 * CASTLE_SCALE;
 
 /** The ground everything in `placed` needs, the castle and the plaza included. */
 function boundsOf(placed: Placed[]): Bounds {
@@ -37,7 +41,18 @@ function boundsOf(placed: Placed[]): Bounds {
     minZ = Math.min(minZ, p.at.z - back);
     maxZ = Math.max(maxZ, p.at.z + front);
   }
-  return { minX, maxX, minZ, maxZ, key: [minX, maxX, minZ, maxZ].join() };
+  // The tops of the castle's towers at the back, and a house's height at the front.
+  const tops: Bounds["tops"] = [
+    [CASTLE.x - CASTLE_REACH, 3.9, CASTLE.z - CASTLE_REACH], [CASTLE.x + CASTLE_REACH, 3.9, CASTLE.z - CASTLE_REACH], [minX, 2, maxZ], [maxX, 2, maxZ],
+  ];
+  return { minX, maxX, minZ, maxZ, tops, key: [minX, maxX, minZ, maxZ].join() };
+}
+
+/** The classroom's extent: the floor, the tall front wall behind the whiteboard and the low side walls. */
+function roomBounds(placed: ClassroomProps["placed"]): Bounds {
+  const { minX, maxX, minZ, maxZ } = roomOf(placed);
+  const tops: Bounds["tops"] = [[minX, WALL_HEIGHT, minZ], [maxX, WALL_HEIGHT, minZ], [minX, SIDE_WALL_HEIGHT, maxZ], [maxX, SIDE_WALL_HEIGHT, maxZ]];
+  return { minX, maxX, minZ, maxZ, tops, key: ["room", minX, maxX, minZ, maxZ].join() };
 }
 
 /** The camera position and look-at point that fit `b` in a window of the given aspect, with a margin. */
@@ -46,11 +61,9 @@ function fit(camera: PerspectiveCamera, b: Bounds, aspect: number): { position: 
   probe.aspect = aspect;
   probe.updateProjectionMatrix();
   const target = new Vector3((b.minX + b.maxX) / 2, 0.6, (b.minZ + b.maxZ) / 2);
-  // The ground's corners, the tops of the castle's towers at the back, and a house's height at the front.
-  const reach = 1.6 * CASTLE_SCALE;
+  // The ground's corners and the points above it.
   const corners = [
-    [b.minX, 0, b.minZ], [b.maxX, 0, b.minZ], [b.minX, 0, b.maxZ], [b.maxX, 0, b.maxZ],
-    [CASTLE.x - reach, 3.9, CASTLE.z - reach], [CASTLE.x + reach, 3.9, CASTLE.z - reach], [b.minX, 2, b.maxZ], [b.maxX, 2, b.maxZ],
+    [b.minX, 0, b.minZ], [b.maxX, 0, b.minZ], [b.minX, 0, b.maxZ], [b.maxX, 0, b.maxZ], ...b.tops,
   ].map(([x, y, z]) => new Vector3(x, y, z));
   const direction = directionFor(aspect);
   let [near, far] = [1, 400];
@@ -69,7 +82,7 @@ function fit(camera: PerspectiveCamera, b: Bounds, aspect: number): { position: 
   return { position: direction.multiplyScalar(far).add(target), target };
 }
 
-/** Moves the camera, gently, to where the whole town fits the window. */
+/** Moves the camera, gently, to where the whole scene fits the window. */
 function Rig({ bounds }: { bounds: Bounds }) {
   const camera = useThree((s) => s.camera) as PerspectiveCamera;
   const size = useThree((s) => s.size);
@@ -107,7 +120,7 @@ function Sun({ bounds }: { bounds: Bounds }) {
 const turn = (from: number, to: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 
 /** Walks its children to `to`, facing the way it goes, then turns to `facing`; it appears at its first spot. */
-function Mover({ to, facing, children }: { to: Spot; facing: number; children: ReactNode }) {
+export function Mover({ to, facing, children }: { to: Spot; facing: number; children: ReactNode }) {
   const ref = useRef<Group>(null);
   const [start] = useState({ ...to, facing });
   useFrame(({ clock }, delta) => {
@@ -128,7 +141,7 @@ function Mover({ to, facing, children }: { to: Spot; facing: number; children: R
 }
 
 /** A gentle up-and-down at its own pace, so a crowd doesn't move in step. */
-function Bob({ speed = 2, height = 0.03, children }: { speed?: number; height?: number; children: ReactNode }) {
+export function Bob({ speed = 2, height = 0.03, children }: { speed?: number; height?: number; children: ReactNode }) {
   const ref = useRef<Group>(null);
   const [phase] = useState(() => Math.random() * Math.PI * 2);
   useFrame(({ clock }) => {
@@ -138,7 +151,7 @@ function Bob({ speed = 2, height = 0.03, children }: { speed?: number; height?: 
 }
 
 /** A paper slip on a stick, held up and waved: someone asking for you. */
-function Slip() {
+export function Slip() {
   const ref = useRef<Group>(null);
   const [phase] = useState(() => Math.random() * Math.PI * 2);
   useFrame(({ clock }) => {
@@ -156,7 +169,7 @@ function Slip() {
 }
 
 /** Three little stars circling over a stuck head. */
-function Dizzy() {
+export function Dizzy() {
   const ref = useRef<Group>(null);
   useFrame(({ clock }) => {
     ref.current!.rotation.y = clock.elapsedTime * 1.8;
@@ -198,7 +211,7 @@ function Sitting({ colour, hat }: { colour: string; hat: HatKind }) {
 }
 
 /** A character in `pose`: standing and busy, standing still, standing with a slip held up, or sitting stuck. */
-function Body({ pose, colour, hat }: { pose: Pose; colour: string; hat: HatKind }) {
+export function Body({ pose, colour, hat }: { pose: Pose; colour: string; hat: HatKind }) {
   if (pose === "stuck") return <Sitting colour={colour} hat={hat} />;
   if (pose === "idle") return <Figure colour={colour} hat={hat} />;
   return (
@@ -238,7 +251,7 @@ function Rail({ pegs }: { pegs: Spot[] }) {
 }
 
 /** A little ribbon flag on a parcel whose review is ready. */
-function Pennant() {
+export function Pennant() {
   return (
     <group position={[0.15, 0.4, 0]}>
       <Clay colour={TONES.wood} position={[0, 0.25, 0]}><cylinderGeometry args={[0.02, 0.02, 0.5, 8]} /></Clay>
@@ -251,26 +264,25 @@ function Pennant() {
 const plateHeight = (p: Placed) =>
   p.kind === "building" ? 2.3 : p.kind === "parcel" ? 0.9 : p.kind === "steward" ? 1.8 : p.pose === "work" && p.kind === "hat" ? 1.4 : p.pose === "queue" ? 2.2 : 1.8;
 
-type PickProps = { p: Placed; plate: string | null; onPick: (p: Placed) => void; onHover: (key: string | null) => void; children: ReactNode };
+type PickProps = { id: string; height: number; plate: string | null; onPick: () => void; onHover: (id: string | null) => void; children: ReactNode };
 
-/** Makes its children hoverable and clickable as `p`; shows `plate`, when given, as a name plate above them that moves with them. */
-function Pick({ p, plate, onPick, onHover, children }: PickProps) {
-  const key = keyOf(p);
+/** Makes its children hoverable and clickable as `id`; shows `plate`, when given, as a name plate `height` above them that moves with them. */
+export function Pick({ id, height, plate, onPick, onHover, children }: PickProps) {
   const stop = (e: ThreeEvent<PointerEvent | MouseEvent>) => e.stopPropagation();
   return (
     <group
       onClick={(e) => {
         stop(e);
-        onPick(p);
+        onPick();
       }}
       onPointerOver={(e) => {
         stop(e);
-        onHover(key);
+        onHover(id);
       }}
       onPointerOut={() => onHover(null)}>
       {children}
       {plate !== null && (
-        <Html center portal={plates} zIndexRange={[100, 1]} className="plate" position={[0, plateHeight(p), 0]}>
+        <Html center portal={plates} zIndexRange={[100, 1]} className="plate" position={[0, height, 0]}>
           {plate}
         </Html>
       )}
@@ -285,20 +297,22 @@ type Props = {
   /** The words a thing's hover plate shows. */
   name: (p: Placed) => string;
   onPick: (p: Placed) => void;
+  /** When set, the canvas shows this house's classroom in place of the town. */
+  inside?: ClassroomProps;
 };
 
 /** The village: the castle with the king at his desk, a building per house, and everyone placed by `layout`. */
-export function Village({ index, placed, name, onPick }: Props) {
+export function Village({ index, placed, name, onPick, inside }: Props) {
   const [hover, setHover] = useState<string | null>(null);
-  const bounds = useMemo(() => boundsOf(placed), [placed]);
-  const hovered = placed.some((p) => keyOf(p) === hover);
+  const bounds = useMemo(() => (inside ? roomBounds(inside.placed) : boundsOf(placed)), [inside?.placed, placed]);
+  const hovered = !inside && placed.some((p) => keyOf(p) === hover);
   useEffect(() => {
     // A hovered thing that leaves the town takes its hover with it, so its plate can't come back on its own.
     if (hover !== null && !hovered) setHover(null);
     document.body.style.cursor = hovered ? "pointer" : "";
   }, [hover, hovered]);
   const pick = (p: Placed, children: ReactNode) => (
-    <Pick p={p} plate={keyOf(p) === hover ? name(p) : null} onPick={onPick} onHover={setHover}>{children}</Pick>
+    <Pick id={keyOf(p)} height={plateHeight(p)} plate={keyOf(p) === hover ? name(p) : null} onPick={() => onPick(p)} onHover={setHover}>{children}</Pick>
   );
 
   // Hats on racks, one rail per row of pegs (cwd and z).
@@ -357,19 +371,25 @@ export function Village({ index, placed, name, onPick }: Props) {
         <planeGeometry args={[400, 400]} />
         <meshLambertMaterial color={GROUND} />
       </mesh>
-      {/* The board the town stands on: grass on soil, catching shadows but casting none. */}
-      <group position={[(bounds.minX + bounds.maxX) / 2, 0, (bounds.minZ + bounds.maxZ) / 2]}>
-        <Clay colour={TONES.soil} castShadow={false} position={[0, -0.15, 0]}><boxGeometry args={[width, 0.2, depth]} /></Clay>
-        <Clay colour={TONES.grass} castShadow={false} position={[0, -0.025, 0]}><boxGeometry args={[width, 0.05, depth]} /></Clay>
-      </group>
-      <group position={[CASTLE.x, 0, CASTLE.z]} scale={CASTLE_SCALE}><Castle /></group>
-      <group position={[DESK.x, 0, DESK.z]}>
-        <Desk />
-        <Clay colour={TONES.paper} position={[0.3, 0.64, 0]} rotation-y={0.2}><boxGeometry args={[0.32, 0.06, 0.24]} /></Clay>
-      </group>
-      <group position={[KING.x, 0, KING.z]}><Bob speed={1.2}><Figure colour={KING_COLOUR} hat="crown" /></Bob></group>
-      {[...rails].map(([rail, pegs]) => <Rail key={rail} pegs={pegs} />)}
-      {placed.map((p) => <group key={keyOf(p)}>{thing(p)}</group>)}
+      {inside ? (
+        <Classroom {...inside} />
+      ) : (
+        <>
+          {/* The board the town stands on: grass on soil, catching shadows but casting none. */}
+          <group position={[(bounds.minX + bounds.maxX) / 2, 0, (bounds.minZ + bounds.maxZ) / 2]}>
+            <Clay colour={TONES.soil} castShadow={false} position={[0, -0.15, 0]}><boxGeometry args={[width, 0.2, depth]} /></Clay>
+            <Clay colour={TONES.grass} castShadow={false} position={[0, -0.025, 0]}><boxGeometry args={[width, 0.05, depth]} /></Clay>
+          </group>
+          <group position={[CASTLE.x, 0, CASTLE.z]} scale={CASTLE_SCALE}><Castle /></group>
+          <group position={[DESK.x, 0, DESK.z]}>
+            <Desk />
+            <Clay colour={TONES.paper} position={[0.3, 0.64, 0]} rotation-y={0.2}><boxGeometry args={[0.32, 0.06, 0.24]} /></Clay>
+          </group>
+          <group position={[KING.x, 0, KING.z]}><Bob speed={1.2}><Figure colour={KING_COLOUR} hat="crown" /></Bob></group>
+          {[...rails].map(([rail, pegs]) => <Rail key={rail} pegs={pegs} />)}
+          {placed.map((p) => <group key={keyOf(p)}>{thing(p)}</group>)}
+        </>
+      )}
       <Rig bounds={bounds} />
     </Canvas>
   );
