@@ -6,11 +6,12 @@ export type Waiting = { key: string; lead: string; id: string; project: string; 
 
 const MUTE_KEY = "funtown-muted";
 const TOAST_MS = 8000;
+const CARD_KINDS = ["permission", "question", "plan"];
 
 /** What a needs_you character waits for, in words: "stuck: <reason>", the card kind, or "waiting". */
 export const needOf = (c: Character): string => (c.needs === "stuck" ? `stuck: ${c.reason ?? "error"}` : c.needs) ?? "waiting";
 
-/** Every needs_you character (lead or subagent) of `town`, oldest first. */
+/** Every needs_you character (lead or subagent) of `town`: cards (permission, question, plan) first, then the rest; oldest first within each. */
 export function waitingList(town: Town | null): Waiting[] {
   const list: Waiting[] = [];
   for (const house of town?.houses ?? []) {
@@ -21,7 +22,8 @@ export function waitingList(town: Town | null): Waiting[] {
       }
     }
   }
-  return list.sort((a, b) => a.since - b.since);
+  const card = (w: Waiting) => (CARD_KINDS.includes(w.need) ? 0 : 1);
+  return list.sort((a, b) => card(a) - card(b) || a.since - b.since);
 }
 
 /** "3m" style wait text for a character waiting since `since`. */
