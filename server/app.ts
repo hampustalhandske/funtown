@@ -7,7 +7,7 @@ import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { TownState, type HookEvent } from "./town.ts";
 import type { Town } from "./types.ts";
-import { checkVersion, execFileAsync, listAgents, startBackground } from "./agents.ts";
+import { checkVersion, execFileAsync, listAgents, startBackground, type Listed } from "./agents.ts";
 import { createTerminals, isSize } from "./terminal.ts";
 import { createHolds } from "./holds.ts";
 import { describe, serverLogger } from "./errors.ts";
@@ -288,7 +288,7 @@ export async function startServer(opts: {
     try {
       if (list) {
         lastReason = "";
-        town.sync(list, askedAt);
+        town.sync(list.filter(seen), askedAt);
         holds.refresh();
       } else {
         town.expire();
@@ -315,6 +315,15 @@ export async function startServer(opts: {
       pollTimer = setTimeout(() => (polling = poll()), pollMs);
     }
   };
+
+  /**
+   * True when Funtown shows the listed session `s`: with a projects file, only a session in an
+   * added project or a folder inside one (such as a run's worktree), and the steward; without
+   * one, every session.
+   */
+  const seen = (s: Listed) => (s.id !== undefined && s.id === steward?.shortId()) || inProject(s.cwd);
+  /** True when `cwd` is an added project or a folder inside one, or when there is no projects file. */
+  const inProject = (cwd: string) => !opts.projects || projects.some((p) => cwd === p || cwd.startsWith(`${p}/`));
 
   /** The folder of every house: the added projects, the listed sessions' cwds and the folders where a shell runs. */
   const houseCwds = () => [...new Set([...projects, ...town.cwds().values(), ...terminals.shells()])];
@@ -620,7 +629,7 @@ export async function startServer(opts: {
         res.writeHead(500).end();
         return;
       }
-      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(morning(entries, since)));
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(morning(entries.filter((e) => !("cwd" in e) || inProject(e.cwd)), since)));
       return;
     }
 

@@ -24,12 +24,12 @@ export function parsePhase(text: string): PhaseFile {
 }
 
 /**
- * The open PRs of the repository in `cwd`, newest number first, from `gh pr list` (run as `gh`,
- * never through a shell, with `cwd` as its working folder). Rejects with gh's error output, or
+ * The open PRs the user opened (`--author @me`) in the repository in `cwd`, newest number first,
+ * from `gh pr list` (run as `gh`, never through a shell, with `cwd` as its working folder). Rejects with gh's error output, or
  * when its output isn't a list of PRs; `signal` kills gh, and the promise settles once it has exited.
  */
 export async function listPrs(gh: string, cwd: string, signal: AbortSignal): Promise<Pr[]> {
-  const args = ["pr", "list", "--state", "open", "--json", "number,title,url,isDraft,headRefOid", "--limit", "50"];
+  const args = ["pr", "list", "--state", "open", "--json", "number,title,url,isDraft,headRefOid", "--limit", "50", "--author", "@me"];
   let out: string;
   try {
     out = (await execFileAsync(gh, args, { cwd, timeout: 30_000, signal })).stdout;

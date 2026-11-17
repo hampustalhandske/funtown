@@ -28,13 +28,13 @@ Contracts (source of truth: this list; full text in the local .workflow/history/
   `since`; stuck has `needs` "stuck" and `reason`; `letter` = newest letter's `at`; a Stop with
   running `background_tasks` stays working.
 - Letters: Stop `last_assistant_message`; a subagent's handback report, else its SubagentStop message;
-  as written, never parsed; 20 per lead, 65,536 chars, ids unique across restarts; `GET /letters?lead=`;
+  as written, never parsed; the newest only per lead, 65,536 chars, ids unique across restarts; `GET /letters?lead=`;
   reply: bracketed paste, `\r` over `/term`. Journal: JSONL, 7 days (steward kept), `/morning?since=`.
 - Holds: `/hold` 200 with the hook output, 204 when released (no page or listing for `unlistedMs`);
   `/answer { card, decision, answers?, feedback? }`; log `by` funtown, elsewhere or dropped.
 - Logs: `<ISO> <hook|hold|server> <step>: <message>`; a dead run-file pid: `server unclean-exit`.
 - Workflow: `<cwd>/.claude/phase.json` `{ phase, note?, tags?: { roleOrName: [] } }`; role = a
-  subagent's `agent_type`; parcels from `gh pr list` every 60 s; overlaps: files two runs edit. One
+  subagent's `agent_type`; parcels from `gh pr list --author @me` every 60 s; overlaps: files two runs edit. One
   steward in `~/.funtown/steward`: one request per ready PR head (`server/steward.md`; overridden by
   `~/.funtown/steward.md`, empty = off), pasted only with no card and not working; next letter = review.
 - `claude`: `--version` (min 2.1.325), `agents --json` (failed: keep the last list), `--bg`
@@ -43,8 +43,9 @@ Contracts (source of truth: this list; full text in the local .workflow/history/
   `/jump`, `/sessions`, `/runs`, `/projects`, `/projects/remove`, `/shells/close`, `/answer`, `/switch`,
   `/term`; alone for `/letters`, `/morning`, `GET /projects`.
 - Projects: `projects.json`, real paths (symlinks resolved); each is a house with or without sessions;
-  while the file can't be read, add and remove answer 500 and never write it. Houses: added projects,
-  listed sessions' cwds, folders whose shell runs. Shell: `/term?shell=<house cwd>`, one login shell
+  while the file can't be read, add and remove answer 500 and never write it. Only sessions in an
+  added project or a folder inside one (a run's worktree), and the steward, are seen; Morning too.
+  Houses: added projects, those sessions' cwds, folders whose shell runs. Shell: `/term?shell=<house cwd>`, one login shell
   per project (`$SHELL -l`), kept when its socket closes, replay from a line start in the last 256 KB;
   ends on Close shell, `exit`, Remove project (asks first) or the server's close.
 - Env `FUNTOWN_` + `PORT`, `URL`, `CLAUDE`, `GH`, `STATE`, `ANSWERS`, `JOURNAL`, `LOG`, `RUN`,

@@ -23,3 +23,20 @@ export async function hook(sid: string, cwd: string, name: string, extra: Record
   });
   expect(res.status).toBe(204);
 }
+
+/** Runs a page-authenticated POST (the page's token and Origin) against the e2e server. */
+async function pagePost(path: string, body: unknown) {
+  const html = await (await fetch(`${E2E_URL}/work.html`)).text();
+  const token = html.match(/<meta name="funtown-token" content="([^"]+)"/)![1];
+  const res = await fetch(`${E2E_URL}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: E2E_URL, "x-funtown-token": token },
+    body: JSON.stringify(body),
+  });
+  expect(res.ok).toBe(true);
+}
+
+/** Adds `cwd` as a project, so the e2e server sees the sessions that run in it. */
+export const addProjectFolder = (cwd: string) => pagePost("/projects", { cwd });
+/** Takes `cwd` off the project list again. */
+export const removeProjectFolder = (cwd: string) => pagePost("/projects/remove", { cwd });

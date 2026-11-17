@@ -39,29 +39,25 @@ it("a_project_survives_a_server_restart", async () => {
   expect((await getProjects(second)).list).toEqual([cwd]);
 });
 
-it("a_project_with_no_session_is_a_house_before_session_only_houses_and_remove_keeps_sessions", async () => {
-  const [withSession, added, addedWithSession] = [realDir(), realDir(), realDir()];
+it("a_project_with_no_session_is_a_house_a_session_shows_only_once_its_folder_is_added_and_leaves_when_it_is_removed", async () => {
+  const [added, addedWithSession] = [realDir(), realDir()];
   const s = await start({ projects: projectsPath() });
-  s.fake.list([listed("s1", withSession), listed("s2", addedWithSession)]);
-  await townWhere(s.url, (t) => leadsOf(t).length === 2);
+  s.fake.list([listed("s2", addedWithSession)]);
+  await sleep(300); // a few polls: a session in a folder that isn't added stays hidden
+  expect(leadsOf(await townWhere(s.url, () => true))).toEqual([]);
   await postPage(s, "/projects", { cwd: added });
   await postPage(s, "/projects", { cwd: addedWithSession });
 
-  const town = await townWhere(s.url, (t) => houseAt(t, added) !== undefined);
+  const town = await townWhere(s.url, (t) => houseAt(t, addedWithSession)?.leads.length === 1);
   expect(houseAt(town, added)).toMatchObject({ leads: [], added: true });
   expect(houseAt(town, addedWithSession)).toMatchObject({ added: true });
-  expect(houseAt(town, addedWithSession)!.leads).toHaveLength(1);
-  expect(houseAt(town, withSession)!.added).toBeFalsy();
-  const order = town.houses.map((h) => h.cwd);
-  expect(order.indexOf(added)).toBeLessThan(order.indexOf(withSession));
-  expect(order.indexOf(addedWithSession)).toBeLessThan(order.indexOf(withSession));
+  expect(town.houses.map((h) => h.cwd)).toEqual([added, addedWithSession]);
 
   expect((await postPage(s, "/projects/remove", { cwd: added })).status).toBe(204);
   expect((await postPage(s, "/projects/remove", { cwd: addedWithSession })).status).toBe(204);
   expect((await postPage(s, "/projects/remove", { cwd: added })).status).toBe(404);
-  const after = await townWhere(s.url, (t) => houseAt(t, added) === undefined);
-  expect(houseAt(after, addedWithSession)!.leads.map((l) => l.id)).toEqual(["s2"]);
-  expect(houseAt(after, addedWithSession)!.added).toBeFalsy();
+  const after = await townWhere(s.url, (t) => t.houses.length === 0);
+  expect(leadsOf(after)).toEqual([]);
   expect((await getProjects(s)).list).toEqual([]);
 });
 
@@ -162,4 +158,19 @@ it("an_added_project_with_no_session_shows_its_phase_and_its_pull_requests", asy
   expect(houseAt(town, cwd)!.leads).toEqual([]);
   expect(houseAt(town, cwd)!.phase).toEqual({ phase: "build" });
   expect(houseAt(town, cwd)!.parcels!.map((p) => p.number)).toEqual([7]);
+});
+
+it("with_a_projects_file_only_sessions_in_an_added_project_or_a_folder_inside_it_show_and_only_their_folders_get_a_pr_check", async () => {
+  const [added, elsewhere] = [realDir(), realDir()];
+  const worktree = join(added, ".claude", "worktrees", "run1");
+  const path = projectsPath();
+  writeFileSync(path, JSON.stringify([added]));
+  const fake = fakeClaude().list([listed("s1", added), listed("s2", worktree), listed("s3", elsewhere), listed("s4", `${added}-other`)]);
+  const s = await start({ fake, projects: path, prMs: 100 });
+  const t = await townWhere(s.url, (x) => leadsOf(x).length === 2);
+  await sleep(300); // a few more polls, so a session from elsewhere would have shown up
+  const after = await townWhere(s.url, () => true);
+  expect(leadsOf(after).map((l) => l.id).sort()).toEqual(["s1", "s2"]);
+  expect(t.houses.map((h) => h.cwd)).toEqual([added, worktree]);
+  expect(fake.prCalls().map((c) => c.cwd)).not.toContain(elsewhere);
 });

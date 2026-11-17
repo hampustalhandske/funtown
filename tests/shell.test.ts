@@ -1,12 +1,18 @@
 import { expect, it } from "vitest";
 import { alive, connect as open, errorLines, houseAt, listed, postPage, projectsPath, realDir, start, tokenOf, townWhere, until } from "./helpers.ts";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 const SLOW = 8000; // the first run of a new executable can take a second on macOS
 
-/** A server with one house (a listed session) and one added project with no session. */
+/**
+ * A server with one added project with no session, and one house of a listed session in a
+ * folder inside that project (as a run's worktree is), which isn't added itself.
+ */
 async function withHouses() {
-  const [house, project] = [realDir(), realDir()];
+  const project = realDir();
+  const house = join(project, "run");
+  mkdirSync(house);
   const s = await start({ projects: projectsPath() });
   s.fake.list([listed("s1", house)]);
   await postPage(s, "/projects", { cwd: project });

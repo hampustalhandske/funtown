@@ -1,8 +1,9 @@
 # Funtown
 
-A local web page for running your Claude Code work. It lists every Claude Code session on
-your Mac, grouped by project, opens a background session's live terminal in the page, and
-lets you answer permission requests, questions and plans from cards.
+A local web page for running your Claude Code work. It shows the Claude Code sessions in
+the projects you add in Settings as a small town (`/`), with a work view (`/work.html`) that
+opens a background session's live terminal in the page and lets you answer permission
+requests, questions and plans from cards.
 
 Early and in progress.
 
@@ -27,7 +28,7 @@ leaving your own hooks as they were.
 Funtown listens on 127.0.0.1 only and sends nothing off your machine itself; a planned
 opt-in "Suggest" button will show the exact text before sending it. It runs `gh pr list`
 in each project every minute, so GitHub sees those requests, and it starts one steward
-session in `~/.funtown/steward` to review ready pull requests (an empty
+session in `~/.funtown/steward` to review your ready pull requests (an empty
 `~/.funtown/steward.md` turns that off). Sessions come from
 `claude agents --json`, terminals from `claude attach`; the server never reads Claude
 Code's own files. The only Claude Code file Funtown touches is `settings.json`, where the

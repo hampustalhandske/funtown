@@ -122,7 +122,7 @@ describe("the journal", () => {
     expect(readFileSync(path, "utf8")).toBe(content);
   });
 
-  it("after_a_restart_the_leads_journaled_letters_return_in_its_panel_and_new_letter_ids_never_repeat_them", async () => {
+  it("after_a_restart_the_leads_newest_journaled_letter_returns_in_its_panel_and_new_letter_ids_never_repeat_old_ones", async () => {
     const path = journalPath();
     const first = await listedServer(path);
     await first.send(
@@ -135,14 +135,15 @@ describe("the journal", () => {
 
     const second = await listedServer(path);
     const restored = await second.letters();
-    expect(restored.map((l) => l.text)).toEqual(["own letter", "from the subagent"]);
+    expect(restored.map((l) => l.text)).toEqual(["own letter"]);
     const town = await townWhere(second.url, (t) => leadsOf(t)[0]?.letter !== undefined);
     expect(leadsOf(town)[0].letter).toBe(restored[0].at);
 
     await second.send(ev("Stop", { last_assistant_message: "after restart" }));
-    const all = await second.letters();
-    expect(all).toHaveLength(3);
-    expect(new Set(all.map((l) => l.id)).size).toBe(3);
+    const [after] = await second.letters();
+    expect(after.text).toBe("after restart");
+    const before = entries(path).filter((e) => e.kind === "letter" && e.letter.text !== "after restart");
+    expect(before.map((e) => (e as Extract<JournalEntry, { kind: "letter" }>).letter.id)).not.toContain(after.id);
   });
 });
 
@@ -230,6 +231,18 @@ describe("GET /morning", () => {
     expect(alpha.stuck).toMatchObject([{ at: day - 200, lead: "s1", who: "s1", reason: "rate limit" }]);
     expect(delta.done.map((l) => l.text)).toEqual(["D1"]);
     expect(delta.stuck).toEqual([]);
+  });
+
+  it("with_a_projects_file_morning_shows_only_added_projects_and_folders_inside_them", async () => {
+    const path = journalPath();
+    const inside = [letter(`${A}/.claude/worktrees/run1`, "s3", "s3", "from a run", 50)];
+    writeFileSync(path, [...seed, ...inside].map((e) => JSON.stringify(e)).join("\n") + "\n");
+    const projects = join(realDir(), "projects.json");
+    writeFileSync(projects, JSON.stringify([A]));
+    const s = await start({ journal: path, projects });
+    const res = await fetch(`${s.url}/morning?since=${day - 2000}`, { headers: { "x-funtown-token": await tokenOf(s.url) } });
+    const m = (await res.json()) as Morning;
+    expect(m.projects.map((p) => p.cwd).sort()).toEqual([A, `${A}/.claude/worktrees/run1`]);
   });
 
   it("morning_leaves_out_entries_before_since", async () => {

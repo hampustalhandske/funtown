@@ -23,7 +23,7 @@ export type HookEvent = {
 };
 
 /** Letters kept per lead, and the longest letter text. */
-const MAX_LETTERS = 20;
+const MAX_LETTERS = 1;
 const MAX_LETTER_TEXT = 65_536;
 
 /** How many of a hook event's `background_tasks` are subagents still running or pending, leaving out `except`. */
@@ -349,7 +349,7 @@ export class TownState {
     this.shells = shells;
   }
 
-  /** The listed lead's letters, newest first (at most 20), or undefined when it is not listed. */
+  /** The listed lead's newest letter (its own or a subagent's) as a list, or undefined when it is not listed. */
   letters(sessionId: string): Letter[] | undefined {
     return this.listed.has(sessionId) ? [...(this.letterLists.get(sessionId) ?? [])] : undefined;
   }
