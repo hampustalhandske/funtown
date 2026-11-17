@@ -193,7 +193,7 @@ test("a_building_links_to_its_house_in_the_work_view_and_the_link_scrolls_to_tha
   }));
   await openTown(page, state({ houses }));
   const link = page.getByRole("link", { name: "proj-4, house" });
-  await expect(link).toHaveAttribute("href", "/work.html#/work/proj-4");
+  await expect(link).toHaveAttribute("href", `/work.html#${encodeURIComponent("/work/proj-4")}`);
   await link.click();
   await expect(page).toHaveURL(/\/work\.html#/);
   const target = page.locator('section[aria-label="proj-4"]');
