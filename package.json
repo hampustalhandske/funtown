@@ -11,7 +11,7 @@
     "start": "vite build && node hooks/install.ts install && node server/main.ts",
     "install-hooks": "node hooks/install.ts install",
     "uninstall-hooks": "node hooks/install.ts uninstall",
-    "test": "eslint . && vitest run && playwright test",
+    "test": "eslint . && vite build && vitest run && playwright test",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper"
   },
   "dependencies": {
