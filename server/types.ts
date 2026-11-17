@@ -69,9 +69,9 @@ export type Parcel = {
   title: string;
   url: string;
   draft: boolean;
-  /** The steward's review of the current head commit; absent for a draft or with reviews off. */
+  /** The steward's review of the current head commit; absent for a draft or with reviews off. "idle": not asked for. */
   review?: {
-    state: "queued" | "reviewing" | "ready";
+    state: "idle" | "queued" | "reviewing" | "ready";
     /** The steward's session id once it is listed. */
     steward?: string;
     /** The review letter's id, when ready. */

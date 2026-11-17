@@ -83,23 +83,33 @@ function Overlaps({ overlaps }: { overlaps: Lead["overlaps"] }) {
   ));
 }
 
-const REVIEW_LABEL = { queued: "queued", reviewing: "reviewing", ready: "review ready ✉" } as const;
+const REVIEW_LABEL = { idle: "Ask for review", queued: "queued", reviewing: "reviewing", ready: "review ready ✉" } as const;
 
-/** An open PR: number, title, draft mark, a link, and (for a ready PR) its review, which opens the steward's panel. */
-function ParcelItem({ parcel, onOpen }: { parcel: Parcel; onOpen: (steward: string) => void }) {
+/** Asks the steward to review PR `number` of the house in `cwd`; gives the failure, or null once it is queued. */
+export function askReview(cwd: string, number: number): Promise<Failure | null> {
+  return post("/review", { cwd, number }, [204]);
+}
+
+/** An open PR: number, title, draft mark, a link, and its review: a button to ask for one, or (when ready) the steward's panel. */
+function ParcelItem({ parcel, cwd, onOpen }: { parcel: Parcel; cwd: string; onOpen: (steward: string) => void }) {
   const { review } = parcel;
+  const [error, setError] = useState<string | null>(null);
+  async function ask() {
+    setError((await askReview(cwd, parcel.number))?.message ?? null);
+  }
   return (
     <li className="parcel">
       <a href={parcel.url} target="_blank" rel="noreferrer">#{parcel.number} {parcel.title}</a>
       {parcel.draft && <span className="badge">draft</span>}
       {review &&
-        (review.steward ? (
-          <button type="button" className="review" data-state={review.state} onClick={() => onOpen(review.steward as string)}>
+        (review.state === "idle" || review.steward ? (
+          <button type="button" className="review" data-state={review.state} onClick={() => (review.state === "idle" ? void ask() : onOpen(review.steward as string))}>
             {REVIEW_LABEL[review.state]}
           </button>
         ) : (
           <span className="review" data-state={review.state}>{REVIEW_LABEL[review.state]}</span>
         ))}
+      {error && <span role="alert" className="error">{error}</span>}
     </li>
   );
 }
@@ -252,7 +262,7 @@ function HouseCard({
       {house.parcels && house.parcels.length > 0 && (
         <ul className="parcels" aria-label={`${house.project} pull requests`}>
           {house.parcels.map((parcel) => (
-            <ParcelItem key={parcel.number} parcel={parcel} onOpen={(id) => onSelect(id, id)} />
+            <ParcelItem key={parcel.number} parcel={parcel} cwd={house.cwd} onOpen={(id) => onSelect(id, id)} />
           ))}
         </ul>
       )}

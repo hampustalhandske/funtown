@@ -35,12 +35,12 @@ Contracts (source of truth: this list; full text in the local .workflow/history/
 - Logs: `<ISO> <hook|hold|server> <step>: <message>`; a dead run-file pid: `server unclean-exit`.
 - Workflow: `<cwd>/.claude/phase.json` `{ phase, note?, tags?: { roleOrName: [] } }`; role = a
   subagent's `agent_type`; parcels from `gh pr list --author @me` every 60 s; overlaps: files two runs edit. One
-  steward in `~/.funtown/steward`: one request per ready PR head (`server/steward.md`; overridden by
-  `~/.funtown/steward.md`, empty = off), pasted only with no card and not working; next letter = review.
+  steward in `~/.funtown/steward`: one request per asked PR head, only after `POST /review` (`server/steward.md`; overridden by
+  `~/.funtown/steward.md`, empty = off), pasted only with no card and not working; a reply counts as a review only with its three labelled parts; the user's own prompt to it pauses requests until the next ask; `Parcel.review.state` is idle until asked.
 - `claude`: `--version` (min 2.1.325), `agents --json` (failed: keep the last list), `--bg`
   (`bgIsolation: "none"`), `--bg <prompt>` (a run, own worktree), `attach`; `gh` only `pr list`; env drops `CLAUDE*`/`AI_AGENT`
   but `CLAUDE_CONFIG_DIR`. Page token in `<meta name="funtown-token">`: with the Origin for
-  `/jump`, `/sessions`, `/runs`, `/projects`, `/projects/remove`, `/shells/close`, `/answer`, `/switch`,
+  `/jump`, `/sessions`, `/runs`, `/projects`, `/projects/remove`, `/shells/close`, `/answer`, `/review`, `/switch`,
   `/term`; alone for `/letters`, `/morning`, `GET /projects`.
 - Projects: `projects.json`, real paths (symlinks resolved); each is a house with or without sessions;
   while the file can't be read, add and remove answer 500 and never write it. Only sessions in an

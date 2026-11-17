@@ -114,10 +114,11 @@ async function readJson(req: IncomingMessage, max = Infinity): Promise<{ value: 
  * Origin and token) appends `{ at, reason?, open? }` to `switchLog` (a JSONL path); without one it
  * answers 500. Each poll reads every house's `.claude/phase.json`; every `prMs` (default 60 s)
  * `gh` (default "gh") lists each house's open PRs. With a `stewardDir`, a steward session there
- * pre-reviews each ready PR with the text of `stewardPrompt` (a path, default server/steward.md;
- * an empty file turns reviews off); an attach that isn't ready within `stewardReadyMs` (default
- * 15 s) is given up, and a request with no answer after `stewardAnswerMs` (default 30 min) no
- * longer holds back the next. `projects` (a path) holds the folders added with `POST /projects`,
+ * pre-reviews each ready PR asked for with `POST /review { cwd, number }` (page Origin and
+ * token; 409 for a draft or with reviews off) using the text of `stewardPrompt` (a path, default
+ * server/steward.md; an empty file turns reviews off); an attach that isn't ready within
+ * `stewardReadyMs` (default 15 s) is given up, and a request with no answer after
+ * `stewardAnswerMs` (default 30 min) no longer holds back the next. `projects` (a path) holds the folders added with `POST /projects`,
  * each a house even with no session; without one, adding answers 500. `POST /runs` starts
  * `claude --bg <prompt>` in a house's folder. `/term?shell=<cwd>` connects to that house's one
  * login shell, `shell` (an executable) started there on first connect; `POST /shells/close`
@@ -459,6 +460,27 @@ export async function startServer(opts: {
       const body = await pageBody(req, res);
       if (body === null) return;
       res.writeHead(await holds.answer(body)).end();
+      return;
+    }
+
+    if (req.method === "POST" && path === "/review") {
+      const body = await pageBody(req, res);
+      if (body === null) return;
+      const { cwd, number } = body;
+      if (typeof cwd !== "string" || typeof number !== "number") {
+        res.writeHead(400).end();
+        return;
+      }
+      if (!steward) {
+        res.writeHead(409, text).end("Funtown's reviews are off.");
+        return;
+      }
+      const status = steward.ask(cwd, number);
+      if (status === 204) {
+        steward.pump();
+        broadcast();
+      }
+      res.writeHead(status).end();
       return;
     }
 
