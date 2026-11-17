@@ -1,8 +1,10 @@
 import { describe, expect, test } from "vitest";
 import { TONES } from "../../web/src/town/kit/clay.tsx";
+import { ROLE_HATS } from "../../web/src/town/kit/palette.ts";
 
 const load = () => import("../../web/src/town/kit/avatars.ts");
-const KIT_HATS = ["crown", "wizard", "toque", "pith", "straw", "beret", "tophat", "hardhat"];
+/** Every hat a subagent, a reviewer or the steward wears, so no preset looks like an agent. */
+const AGENT_HATS = [...Object.values(ROLE_HATS), "tophat", "cap", "tiara"];
 
 describe("AVATARS", () => {
   test("there_are_eight_presets_each_with_its_own_id_label_and_look", async () => {
@@ -13,7 +15,7 @@ describe("AVATARS", () => {
     for (const a of AVATARS) {
       expect(a.id).toMatch(/^[a-z0-9-]{1,32}$/);
       expect(a.label.trim()).not.toBe("");
-      expect(KIT_HATS).toContain(a.hat);
+      expect(AGENT_HATS, `${a.id} wears an agent hat`).not.toContain(a.hat);
     }
   });
 

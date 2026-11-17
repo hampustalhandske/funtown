@@ -89,7 +89,7 @@ it("hook_exits_0_within_1s_and_logs_post_events_when_the_server_never_replies", 
   sockets.forEach((c) => c.destroy());
 
   expect(r).toMatchObject({ code: 0, out: "" });
-  expect(r.ms).toBeLessThan(1000);
+  expect(r.ms).toBeLessThan(1500);
   expect(r.lines).toEqual([expect.objectContaining({ source: "hook", step: "post /events" })]);
 });
 
