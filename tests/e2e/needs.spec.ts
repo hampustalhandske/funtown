@@ -58,24 +58,25 @@ const three = () =>
     ]),
   ]);
 
-test("the_needs_you_list_has_every_waiting_character_oldest_first_and_replaces_the_banner", async ({ page }) => {
+test("the_needs_you_list_has_every_waiting_character_cards_first_then_oldest_first_and_replaces_the_banner", async ({ page }) => {
   await open(page, three());
   await expect(rows(page)).toHaveCount(3);
   const text = await rows(page).allInnerTexts();
-  expect(text[0]).toMatch(/alpha/);
-  expect(text[0]).toMatch(/lead-2/);
-  expect(text[0]).toMatch(/rate limit/);
-  expect(text[0]).toMatch(/5\s?m/);
-  expect(text[1]).toMatch(/Explore-1/);
-  expect(text[1]).toMatch(/question/);
-  expect(text[2]).toMatch(/zeta.*lead-1.*permission/s);
+  // Cards first, oldest first: the question (2m) then the permission (1m); the 5m stuck one comes after them.
+  expect(text[0]).toMatch(/Explore-1/);
+  expect(text[0]).toMatch(/question/);
+  expect(text[1]).toMatch(/zeta.*lead-1.*permission/s);
+  expect(text[2]).toMatch(/alpha/);
+  expect(text[2]).toMatch(/lead-2/);
+  expect(text[2]).toMatch(/rate limit/);
+  expect(text[2]).toMatch(/5\s?m/);
   await expect(page.getByText(/sessions? need you/i)).toHaveCount(0);
 
-  await rows(page).nth(1).click();
+  await rows(page).nth(0).click();
   await expect(panel(page, "Explore-1")).toBeVisible();
 });
 
-test("option_n_opens_the_oldest_then_the_next_and_wraps_and_does_nothing_with_nothing_waiting", async ({ page }) => {
+test("option_n_opens_the_first_in_the_list_then_the_next_and_wraps_and_does_nothing_with_nothing_waiting", async ({ page }) => {
   const stream = await open(page, town([house("alpha", [lead({})])]));
   await page.keyboard.press("Alt+KeyN");
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -87,13 +88,13 @@ test("option_n_opens_the_oldest_then_the_next_and_wraps_and_does_nothing_with_no
   await page.keyboard.press("n");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.keyboard.press("Alt+KeyN");
-  await expect(panel(page, "lead-2")).toBeVisible();
-  await page.keyboard.press("Alt+KeyN");
   await expect(panel(page, "Explore-1")).toBeVisible();
   await page.keyboard.press("Alt+KeyN");
   await expect(panel(page, "lead-1")).toBeVisible();
   await page.keyboard.press("Alt+KeyN");
   await expect(panel(page, "lead-2")).toBeVisible();
+  await page.keyboard.press("Alt+KeyN");
+  await expect(panel(page, "Explore-1")).toBeVisible();
 });
 
 test("option_n_in_a_card_text_box_opens_nothing_and_n_is_text_and_a_new_card_or_waiting_character_leaves_focus_and_text_alone", async ({ page }) => {
