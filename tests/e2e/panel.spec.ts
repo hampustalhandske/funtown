@@ -38,7 +38,7 @@ async function open(
     if (jumpReply.delayMs) await new Promise((done) => setTimeout(done, jumpReply.delayMs));
     return r.fulfill({ status: jumpReply.status, contentType: "text/plain", body: jumpReply.body ?? "" });
   });
-  await page.goto("/");
+  await page.goto("/work.html");
   /** Sets the state the stream sends on its next (quick) reconnect. */
   return { jumps, send: stream.send };
 }

@@ -33,7 +33,7 @@ test("needs_you_lead_is_flagged_and_its_subagent_is_shown_with_its_command", asy
       body: `event: state\ndata: ${JSON.stringify(town)}\n\n`,
     }),
   );
-  await page.goto("/");
+  await page.goto("/work.html");
 
   const demo = page.locator('section[aria-label="demo-app"]');
   const other = page.locator('section[aria-label="other-app"]');
@@ -68,7 +68,7 @@ test("loading_the_page_logs_no_failed_requests_such_as_a_favicon_404", async ({ 
       body: `event: state\ndata: ${JSON.stringify({ claude: { version: "2.1.325", problems: [] }, houses: [], cards: [] })}\n\n`,
     }),
   );
-  await page.goto("/");
+  await page.goto("/work.html");
   await page.waitForLoadState("networkidle");
   // Headless Chromium never requests /favicon.ico, so check that the page declares its own icon.
   await expect(page.locator('link[rel="icon"]')).toHaveCount(1);

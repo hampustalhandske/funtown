@@ -60,6 +60,8 @@ export type Lead = Character & {
   shortId: string | null;
   /** Files this run and another listed run both touched; absent when none. */
   overlaps?: { file: string; with: string; withName: string }[];
+  /** True on the listed session the steward module tracks as the steward; absent on every other lead. */
+  steward?: true;
 };
 /** An open pull request of a house's project. */
 export type Parcel = {

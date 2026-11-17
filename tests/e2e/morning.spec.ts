@@ -30,7 +30,7 @@ const openButton = (page: Page) => page.getByRole("button", { name: "Morning", e
 
 async function openPage(page: Page) {
   fake.list([listed(sidA, cwd, { name: "alpha" }), listed(sidB, cwd, { name: "beta" })]);
-  await page.goto("/");
+  await page.goto("/work.html");
   await expect(page.locator(`section[aria-label="${project}"] .character`).filter({ hasText: "alpha" }).first()).toBeVisible();
 }
 /** Closes the open view with its close button. */
@@ -145,7 +145,7 @@ test("a_waiting_character_shows_under_its_own_project_only_when_two_projects_sha
   mkdirSync(x, { recursive: true });
   mkdirSync(y, { recursive: true });
   fake.list([listed(sidA, x, { name: "alpha" }), listed(sidB, y, { name: "beta" })]);
-  await page.goto("/");
+  await page.goto("/work.html");
   await expect(page.locator(".character").filter({ hasText: "alpha" }).first()).toBeVisible();
   await postHook(sidA, x, "Stop", { last_assistant_message: "Done in x." });
   await postHook(sidB, y, "Stop", { last_assistant_message: "Done in y." });

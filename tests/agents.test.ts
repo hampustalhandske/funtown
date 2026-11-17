@@ -85,7 +85,13 @@ it("start_prints_every_problem_line_the_page_shows_and_main_reads_FUNTOWN_CLAUDE
     expect(town.claude.version).toBe("2.1.300");
     for (const line of town.claude.problems) expect(output).toContain(line);
   } finally {
-    child.kill();
+    // Wait for the server to exit, so its fake `claude` and `gh` no longer write into the fake's
+    // folder when the test's cleanup removes it.
+    if (child.exitCode === null && child.signalCode === null) {
+      const exited = new Promise((r) => child.once("exit", r));
+      child.kill();
+      await exited;
+    }
   }
 });
 

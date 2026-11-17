@@ -16,13 +16,17 @@ on it.
   events; `journal.ts`; `holds.ts` cards; `terminal.ts` `claude attach` and shells; `errors.ts` the error log;
   `workflow.ts` phase file, `gh pr list`; `steward.ts` the steward; `projects.ts` added projects;
   `main.ts` run file, signals.
-- `web/` (React, Vite): `AnswerCard`, `Letters`, `Morning`, `Switch`, `needs.tsx` (Needs you).
+- `web/` (React, Vite): `/` is the town (`index.html`, `src/town/`: `layout.ts` pure places, `Village.tsx`
+  the 3D scene, `TownPage.tsx` icons, Settings, hidden list; `kit/` the clay parts; no visible words).
+  `/work.html` the work view (`App.tsx`: list, panels, terminals; `AnswerCard`, `Letters`, `Morning`,
+  `Switch`, `needs.tsx`). Font Recursive (OFL, bundled, licence emitted next to it).
   `tests/`: Vitest; Playwright in `tests/e2e/`, one spec at a time; the fake `claude` is also `gh`.
 Contracts (source of truth: this list; full text in the local .workflow/history/m<N>-MILESTONE.md)
 - Event: POST `/events`, hook JSON + `funtown: { tty, term_program, at }`; stale ones ignored.
-- State (`server/types.ts`, SSE `state`): leads only while listed; `cards` oldest first, a carded
-  character is needs_you with `needs` = card kind; waiting has `since`; stuck has `needs` "stuck"
-  and `reason`; `letter` = newest letter's `at`; a Stop with running `background_tasks` stays working.
+- State (`server/types.ts`, SSE `state`): leads only while listed; the steward's lead has `steward:
+  true`; `cards` oldest first, a carded character is needs_you with `needs` = card kind; waiting has
+  `since`; stuck has `needs` "stuck" and `reason`; `letter` = newest letter's `at`; a Stop with
+  running `background_tasks` stays working.
 - Letters: Stop `last_assistant_message`; a subagent's handback report, else its SubagentStop message;
   as written, never parsed; 20 per lead, 65,536 chars, ids unique across restarts; `GET /letters?lead=`;
   reply: bracketed paste, `\r` over `/term`. Journal: JSONL, 7 days (steward kept), `/morning?since=`.
