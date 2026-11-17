@@ -110,26 +110,22 @@ describe("the steward", () => {
     await until(() => s.fake.attachPids(st.short).every(gone), 5000);
   });
 
-  it("a_ready_pr_nobody_asked_about_stays_idle_and_no_steward_is_started", async () => {
-    const p = paths();
-    const s = await startSteward(p, fakeWith(p, [pr(7)]));
-    await townWhere(s.url, (t) => reviewOf(t, p, 7) !== undefined);
+  it("a_ready_pr_nobody_asked_about_stays_idle_and_no_steward_is_started_or_pasted_to", async () => {
+    const none = paths();
+    const first = await startSteward(none, fakeWith(none, [pr(7)]));
+    const listedOne = paths();
+    const { fake } = reused(listedOne, [pr(7)]);
+    const second = await startSteward(listedOne, fake);
+    await townWhere(first.url, (t) => reviewOf(t, none, 7) !== undefined);
+    await townWhere(second.url, (t) => reviewOf(t, listedOne, 7) !== undefined);
     await sleep(600); // several polls with the PR ready and unasked
-    expect(reviewOf(await townWhere(s.url, () => true), p, 7)?.state).toBe("idle");
-    expect(s.fake.started()).toEqual([]);
+    expect(reviewOf(await townWhere(first.url, () => true), none, 7)?.state).toBe("idle");
+    expect(first.fake.started()).toEqual([]); // no steward listed: none is started
+    expect(reviewOf(await townWhere(second.url, () => true), listedOne, 7)?.state).toBe("idle");
+    expect(fake.attachInput(SHORT)).toBe(""); // a listed idle steward gets nothing
   });
 
-  it("a_ready_pr_nobody_asked_about_is_not_pasted_to_a_listed_idle_steward", async () => {
-    const p = paths();
-    const { fake } = reused(p, [pr(7)]);
-    const s = await startSteward(p, fake);
-    await townWhere(s.url, (t) => reviewOf(t, p, 7) !== undefined);
-    await sleep(600); // several polls with the steward listed idle and the PR unasked
-    expect(fake.attachInput(SHORT)).toBe("");
-    expect(reviewOf(await townWhere(s.url, () => true), p, 7)?.state).toBe("idle");
-  });
-
-  it("asking_twice_for_one_head_pastes_once_and_a_new_head_is_idle_until_asked_again", async () => {
+  it("asking_twice_for_one_head_pastes_once", async () => {
     const p = paths();
     const s = await startSteward(p, fakeWith(p, [pr(7)]));
     await ask(s, p, 7);
@@ -138,8 +134,18 @@ describe("the steward", () => {
     await until(() => pastes(s.fake.attachInput(st.short)).length === 1, 8000);
     await ask(s, p, 7); // sent, not yet answered: still 204
     await stewardStop(s.url, p, st.sid, REVIEW);
+    await ask(s, p, 7); // reviewed: still 204
     await sleep(600); // about six PR polls with the same head commit
     expect(pastes(s.fake.attachInput(st.short))).toEqual([filled(pr(7))]);
+  });
+
+  it("a_new_head_commit_is_idle_until_asked_again_and_is_then_pasted_to_the_same_steward", async () => {
+    const p = paths();
+    const s = await startSteward(p, fakeWith(p, [pr(7)]));
+    await ask(s, p, 7);
+    const st = await stewardStarted(s.fake, p);
+    await until(() => pastes(s.fake.attachInput(st.short)).length === 1, 8000);
+    await stewardStop(s.url, p, st.sid, REVIEW);
 
     s.fake.prs(p.project, [pr(7, { headRefOid: "head-7b" })]);
     expect(reviewOf(await townWhere(s.url, (t) => parcelOf(t, p, 7) !== undefined && reviewOf(t, p, 7)?.state !== "ready"), p, 7)?.state).toBe("idle");
@@ -270,34 +276,53 @@ describe("the steward", () => {
     expect(reviewOf(await townWhere(s.url, (t) => reviewOf(t, p, 7)?.state === "ready"), p, 7)?.state).toBe("ready");
   }, 20_000);
 
-  it("the_users_own_message_to_the_steward_stops_requests_and_a_new_request_resumes_them", async () => {
+  it("a_reply_that_is_not_a_review_writes_one_steward_log_line_naming_the_pr_and_the_missing_labels", async () => {
+    const p = paths();
+    const { fake } = reused(p, [pr(7)]);
+    const s = await startSteward(p, fake);
+    await ask(s, p, 7);
+    await until(() => pastes(fake.attachInput(SHORT)).length === 1, 8000);
+    await stewardStop(s.url, p, SID, "I can't review this PR: the diff is too large for me.");
+    await until(() => stewardLines(p).length > 0);
+    expect(stewardLines(p).map((l) => l.message)).toEqual(["reply to #7 lacks Squash title, Merge text, Before merging"]);
+
+    await ask(s, p, 7);
+    await until(() => pastes(fake.attachInput(SHORT)).length === 2, 8000);
+    await stewardStop(s.url, p, SID, "Squash title: fix(parser): handle empty input\nMerge text: Handles empty input.");
+    await until(() => stewardLines(p).length === 2);
+    expect(stewardLines(p)[1].message).toBe("reply to #7 lacks Before merging");
+  });
+
+  it("the_users_own_message_to_the_steward_with_no_request_in_flight_stops_requests_even_if_its_text_matches_the_last_request_and_a_new_request_resumes_them", async () => {
     const p = paths();
     const { fake } = reused(p, [pr(7), pr(9), pr(11)]);
     const s = await startSteward(p, fake);
     await ask(s, p, 7);
     await until(() => pastes(fake.attachInput(SHORT)).length === 1, 8000);
-    await ask(s, p, 9);
-    expect(await post(s.url, ev("UserPromptSubmit", { cwd: p.stewardDir, prompt: "Hold on, what are you doing?" }, SID))).toBe(204);
+    await ask(s, p, 9); // waits: the attach that wrote #7 is still open
+    await stewardStop(s.url, p, SID, REVIEW); // the request is over
+    // The user writes to the steward; no request of ours is in flight, whatever the text.
+    expect(await post(s.url, ev("UserPromptSubmit", { cwd: p.stewardDir, prompt: filled(pr(7)) }, SID))).toBe(204);
     await stewardStop(s.url, p, SID, "Sorry, I was reviewing PR 7.");
+    await until(() => fake.attachPids(SHORT).every(gone), 5000);
     await sleep(600); // several polls with #9 asked and the steward idle
     expect(pastes(fake.attachInput(SHORT))).toEqual([filled(pr(7))]);
 
     await ask(s, p, 11);
     await until(() => pastes(fake.attachInput(SHORT)).length === 2, 8000);
-    expect(pastes(fake.attachInput(SHORT))).toEqual([filled(pr(7)), filled(pr(9))]);
     await stewardStop(s.url, p, SID, REVIEW);
     await until(() => pastes(fake.attachInput(SHORT)).length === 3, 8000);
     expect(pastes(fake.attachInput(SHORT))).toEqual([filled(pr(7)), filled(pr(9)), filled(pr(11))]);
   }, 20_000);
 
-  it("funtowns_own_request_arriving_as_the_stewards_prompt_does_not_pause_requests", async () => {
+  it("the_stewards_prompt_event_while_a_request_is_in_flight_does_not_pause_requests", async () => {
     const p = paths();
     const { fake } = reused(p, [pr(7), pr(9)]);
     const s = await startSteward(p, fake);
     await ask(s, p, 7);
     await until(() => pastes(fake.attachInput(SHORT)).length === 1, 8000);
     await ask(s, p, 9);
-    // The steward's own hook reports the pasted request as its prompt.
+    // The steward's own hook reports the pasted request as a prompt submit.
     expect(await post(s.url, ev("UserPromptSubmit", { cwd: p.stewardDir, prompt: filled(pr(7)) }, SID))).toBe(204);
     await stewardStop(s.url, p, SID, REVIEW);
     await until(() => pastes(fake.attachInput(SHORT)).length === 2, 8000);
@@ -315,6 +340,16 @@ describe("the steward", () => {
     expect(pastes(s.fake.attachInput(st.short))[0]).toMatch(/^P=app;R=(example\/)?repo;N=7;T=A \{repo\} title$/);
   });
 
+  it("the_repo_placeholder_is_the_pr_url_when_the_url_does_not_parse", async () => {
+    const p = paths();
+    writeFileSync(p.promptFile, "R={repo}");
+    const s = await startSteward(p, fakeWith(p, [pr(7, { url: "pull-request-7" })]));
+    await ask(s, p, 7);
+    const st = await stewardStarted(s.fake, p);
+    await until(() => pastes(s.fake.attachInput(st.short)).length === 1, 8000);
+    expect(pastes(s.fake.attachInput(st.short))).toEqual(["R=pull-request-7"]);
+  });
+
   it("the_default_prompt_names_the_project_and_number_and_asks_for_the_three_labelled_parts", async () => {
     const p = paths("zebra-shop");
     const s = await startSteward(p, fakeWith(p, [pr(7)]), { stewardPrompt: undefined });
@@ -322,9 +357,8 @@ describe("the steward", () => {
     const st = await stewardStarted(s.fake, p);
     await until(() => pastes(s.fake.attachInput(st.short)).length === 1, 8000);
     const [text] = pastes(s.fake.attachInput(st.short));
-    expect(text).toContain("zebra-shop");
-    expect(text).toContain("7");
-    expect(text).toContain("repo");
+    expect(text).toContain('Pre-review pull request #7, "PR 7": https://github.com/example/repo/pull/7\nProject: zebra-shop. Repo: example/repo.\n');
+    expect(text).toContain("`zebra-shop · example/repo · #7`");
     expect(text).not.toMatch(/\{(number|title|url|project|repo)\}/);
     for (const label of ["Squash title", "Merge text", "Before merging"]) expect(text).toContain(label);
   });
@@ -367,13 +401,31 @@ describe("the steward", () => {
     expect(pastes(fake.attachInput(st.short))).toEqual([filled(pr(7))]);
   });
 
-  it("a_review_request_journaled_over_seven_days_ago_is_not_sent_again_after_a_restart", async () => {
+  it("a_review_journaled_over_seven_days_ago_still_reads_ready_after_a_restart_and_is_not_sent_again_while_an_old_unanswered_request_is_idle_until_asked", async () => {
     const p = paths();
-    const { fake } = reused(p, [pr(7)], [{ kind: "review", at: Date.now() - 8 * DAY, cwd: p.project, pr: 7, head: "head-7" }]);
+    const old = Date.now() - 8 * DAY;
+    const recent = Date.now() - DAY;
+    const { fake } = reused(p, [pr(7), pr(9), pr(11)], [
+      { kind: "review", at: old, cwd: p.project, pr: 7, head: "head-7" },
+      { kind: "reviewed", at: old, pr: 7, head: "head-7", letter: "L7" },
+      { kind: "review", at: recent, cwd: p.project, pr: 9, head: "head-9" },
+      { kind: "reviewed", at: recent, pr: 9, head: "head-9", letter: "L9" },
+      { kind: "review", at: old, cwd: p.project, pr: 11, head: "head-11" },
+    ]);
     const s = await startSteward(p, fake);
-    await townWhere(s.url, (t) => reviewOf(t, p, 7) !== undefined);
+    const t = await townWhere(s.url, (x) => parcelOf(x, p, 11) !== undefined);
+    expect(reviewOf(t, p, 7)).toEqual({ state: "ready", steward: SID, letter: "L7" });
+    expect(reviewOf(t, p, 9)).toEqual({ state: "ready", steward: SID, letter: "L9" });
+    expect(reviewOf(t, p, 11)).toEqual({ state: "idle", steward: SID });
+
+    await ask(s, p, 7); // reviewed already: nothing is queued
+    await ask(s, p, 9);
     await sleep(600); // several polls with the steward listed idle
     expect(fake.attachInput(SHORT)).toBe("");
+
+    await ask(s, p, 11); // a request with no review is sent again when asked
+    await until(() => pastes(fake.attachInput(SHORT)).length === 1, 8000);
+    expect(pastes(fake.attachInput(SHORT))).toEqual([filled(pr(11))]);
   });
 
   it("a_stop_failure_ends_the_request_in_flight_so_the_next_goes_once_the_steward_is_unstuck", async () => {

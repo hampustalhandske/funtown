@@ -279,3 +279,14 @@ test("one_escape_closes_only_the_top_pane_when_settings_and_a_panel_are_both_ope
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(1);
 });
+
+test("picking_an_idle_parcel_with_settings_open_closes_settings_and_shows_only_its_panel_which_one_escape_closes", async ({ page }) => {
+  await openTown(page);
+  await page.getByRole("button", { name: /^settings$/i }).click();
+  await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
+  await item(page, /4217/).click();
+  await expect(page.getByRole("dialog", { name: "Pull request 4217" })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
