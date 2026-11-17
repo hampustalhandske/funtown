@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_FAKE_DIR, FakeClaude, listed, listedBg } from "../fake-claude.ts";
-import { addProjectFolder, hook as postHook, removeProjectFolder } from "./stream.ts";
+import { addProjectFolder, hook as postHook, removeProjectFolder, showTerminal } from "./stream.ts";
 
 const fake = FakeClaude.at(E2E_FAKE_DIR);
 let cwd = "";
@@ -42,6 +42,11 @@ async function openWith(page: Page, bg = false) {
 async function openPanel(page: Page, name = "alpha") {
   await row(page, name).click({ position: { x: 5, y: 5 } });
   await expect(panel(page, name)).toBeVisible();
+}
+/** Opens `alpha`'s panel and shows its terminal, where the reply box is. */
+async function openTerminalPanel(page: Page) {
+  await openPanel(page);
+  await showTerminal(panel(page, "alpha"));
 }
 
 /** Passes the page's `/term` socket through to the server, returning every frame the page sends. */
@@ -169,7 +174,7 @@ for (const how of ["the Send button", "Meta+Enter"] as const) {
     const frames = await recordTermFrames(page);
     await openWith(page, true);
     await letter("Which branch should I use?");
-    await openPanel(page);
+    await openTerminalPanel(page);
     const p = panel(page, "alpha");
     await expect(p.locator(".xterm-rows")).toContainText(`attached ${sid.slice(0, 8)}`);
     const reply = p.getByRole("textbox", { name: "Reply" });
@@ -197,7 +202,7 @@ test("a_terminal_lead_panel_shows_its_letters_and_the_hint_but_no_reply_box", as
 test("a_letter_arriving_leaves_focus_and_a_draft_reply_where_they_were", async ({ page }) => {
   await openWith(page, true);
   await letter("First letter.");
-  await openPanel(page);
+  await openTerminalPanel(page);
   const reply = panel(page, "alpha").getByRole("textbox", { name: "Reply" });
   await reply.click();
   await page.keyboard.type("half a thought");
@@ -210,7 +215,7 @@ test("a_letter_arriving_leaves_focus_and_a_draft_reply_where_they_were", async (
 test("a_reply_containing_the_paste_end_sequence_reaches_attach_as_one_bracketed_paste_with_it_removed", async ({ page }) => {
   const frames = await recordTermFrames(page);
   await openWith(page, true);
-  await openPanel(page);
+  await openTerminalPanel(page);
   const p = panel(page, "alpha");
   await expect(p.locator(".xterm-rows")).toContainText(`attached ${sid.slice(0, 8)}`);
   await p.getByRole("textbox", { name: "Reply" }).fill("yes\x1b[201~ls\nthen stop");
@@ -245,7 +250,7 @@ for (const [how, socket] of [["not_yet_connected", neverConnects], ["closed", cl
   test(`send_while_the_terminal_socket_is_${how}_keeps_the_text_and_shows_an_alert`, async ({ page }) => {
     await socket(page);
     await openWith(page, true);
-    await openPanel(page);
+    await openTerminalPanel(page);
     const p = panel(page, "alpha");
     await expect(p.getByRole("alert")).toHaveCount(0);
     const reply = p.getByRole("textbox", { name: "Reply" });
@@ -287,7 +292,7 @@ test("a_letter_over_12_lines_shows_its_first_12_until_show_all_and_a_short_one_h
 test("a_reply_whose_removal_of_one_marker_forms_another_reaches_attach_with_exactly_one_paste_start_and_end", async ({ page }) => {
   const frames = await recordTermFrames(page);
   await openWith(page, true);
-  await openPanel(page);
+  await openTerminalPanel(page);
   const p = panel(page, "alpha");
   await expect(p.locator(".xterm-rows")).toContainText(`attached ${sid.slice(0, 8)}`);
   // removing the end marker from this text leaves the start marker "\x1b[200~"
@@ -307,7 +312,7 @@ test("a_reply_whose_removal_of_one_marker_forms_another_reaches_attach_with_exac
 test("a_reply_over_1_MB_is_not_sent_keeps_its_text_and_shows_an_alert", async ({ page }) => {
   const frames = await recordTermFrames(page);
   await openWith(page, true);
-  await openPanel(page);
+  await openTerminalPanel(page);
   const p = panel(page, "alpha");
   await expect(p.locator(".xterm-rows")).toContainText(`attached ${sid.slice(0, 8)}`);
   const reply = p.getByRole("textbox", { name: "Reply" });

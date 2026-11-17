@@ -18,7 +18,7 @@ on it.
   `main.ts` run file, signals.
 - `web/` (React, Vite): `/` is the town (`index.html`, `src/town/`: `layout.ts` pure places, `Village.tsx`
   the 3D scene, `TownPage.tsx` icons, Settings, hidden list; `kit/` the clay parts; no visible words).
-  `/work.html` the work view (`App.tsx`: list, panels, terminals; `AnswerCard`, `Letters`, `Morning`,
+  `/work.html` the work view (`App.tsx`: list, panels; a background lead's terminal mounts only after Show terminal; no command text on rows; `AnswerCard`, `Letters`, `Morning`,
   `Switch`, `needs.tsx`: `waitingList`, the desk order, card kinds first then oldest). Font Recursive (OFL, bundled, licence emitted next to it).
   `tests/`: Vitest; Playwright in `tests/e2e/`, one spec at a time; the fake `claude` is also `gh`.
 Contracts (source of truth: this list; full text in the local .workflow/history/m<N>-MILESTONE.md)
@@ -38,9 +38,9 @@ Contracts (source of truth: this list; full text in the local .workflow/history/
   steward in `~/.funtown/steward`: one request per asked PR head, only after `POST /review` (`server/steward.md`; overridden by
   `~/.funtown/steward.md`, empty = off), pasted only with no card and not working; a reply counts as a review only with its three labelled parts; the user's own prompt to it pauses requests until the next ask; `Parcel.review.state` is idle until asked.
 - `claude`: `--version` (min 2.1.325), `agents --json` (failed: keep the last list), `--bg`
-  (`bgIsolation: "none"`), `--bg <prompt>` (a run, own worktree), `attach`; `gh` only `pr list`; env drops `CLAUDE*`/`AI_AGENT`
+  (`bgIsolation: "none"`), `--bg <prompt>` (a run, own worktree), `attach`, `stop <id>` (Close session; the conversation is kept); `gh` only `pr list`; env drops `CLAUDE*`/`AI_AGENT`
   but `CLAUDE_CONFIG_DIR`. Page token in `<meta name="funtown-token">`: with the Origin for
-  `/jump`, `/sessions`, `/runs`, `/projects`, `/projects/remove`, `/shells/close`, `/answer`, `/review`, `/switch`,
+  `/jump`, `/sessions`, `/runs`, `/projects`, `/projects/remove`, `/sessions/stop`, `/shells/close`, `/answer`, `/review`, `/switch`,
   `/term`; alone for `/letters`, `/morning`, `GET /projects`.
 - Projects: `projects.json`, real paths (symlinks resolved); each is a house with or without sessions;
   while the file can't be read, add and remove answer 500 and never write it. Only sessions in an

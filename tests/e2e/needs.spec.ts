@@ -195,8 +195,8 @@ test("the_pop_up_button_asks_for_permission_only_when_clicked_and_nothing_is_sho
 test("a_state_from_a_restarted_server_shows_a_reload_banner_and_the_same_server_does_not", async ({ page }) => {
   // Catches a page left with a stale token after a restart, whose terminals and answers fail without a word.
   const stream = await open(page, { ...town([house("alpha", [lead({})])]), started: 1 });
-  stream.send({ ...town([house("alpha", [lead({ activity: "Bash: ls" })])]), started: 1 });
-  await expect(page.getByText("Bash: ls")).toBeVisible();
+  stream.send({ ...town([house("alpha", [waiting("s1", "lead-1", NOW)])]), started: 1 });
+  await expect(rows(page)).toHaveCount(1);
   await expect(page.getByText(/Funtown restarted/)).toHaveCount(0);
 
   stream.send({ ...town([house("alpha", [lead({})])]), started: 2 });

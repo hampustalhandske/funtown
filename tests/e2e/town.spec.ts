@@ -25,7 +25,7 @@ const town = {
   ],
 };
 
-test("needs_you_lead_is_flagged_and_its_subagent_is_shown_with_its_command", async ({ page }) => {
+test("needs_you_lead_is_flagged_and_its_subagent_is_shown_working_without_its_command", async ({ page }) => {
   await page.route("**/stream", (route) =>
     route.fulfill({
       status: 200,
@@ -45,11 +45,11 @@ test("needs_you_lead_is_flagged_and_its_subagent_is_shown_with_its_command", asy
   await expect(lead1).toHaveCount(1);
   await expect(lead1).toContainText(/needs you/i);
 
-  // Explore-1 sits in lead-1's subagent list, working, with its command.
+  // Explore-1 sits in lead-1's subagent list, working; its command is not shown.
   const sub = demo.locator('ul[aria-label="lead-1 subagents"] .character[data-stage="working"]');
   await expect(sub).toHaveCount(1);
   await expect(sub).toContainText("Explore-1");
-  await expect(sub).toContainText("Bash: npm test");
+  await expect(sub).not.toContainText("npm test");
 
   // lead-2 is in the other house, working, and Explore-1 is not there.
   await expect(other.locator('.character[data-stage="working"]').filter({ hasText: "lead-2" })).toHaveCount(1);

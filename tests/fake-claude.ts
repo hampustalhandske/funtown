@@ -100,9 +100,9 @@ export class FakeClaude {
     if (on) writeFileSync(join(this.dir, name), "");
     else rmSync(join(this.dir, name), { force: true });
   }
-  /** Empties the list and the `--bg` record and clears every failure switch. */
+  /** Empties the list and the `--bg` and `stop` records and clears every failure switch. */
   reset(): this {
-    for (const n of ["started.json", "prs.json", "pr-calls.jsonl", "list-fail", "version-fail", "bg-fail", "bg-unlisted", "attach-chatty", "attach-sticky", "list-delay", "list-asks", "agents.pids", "shell-starts.jsonl"]) rmSync(join(this.dir, n), { force: true });
+    for (const n of ["started.json", "prs.json", "pr-calls.jsonl", "list-fail", "version-fail", "bg-fail", "bg-unlisted", "stop-fail", "stop-calls.jsonl", "attach-chatty", "attach-sticky", "list-delay", "list-asks", "agents.pids", "shell-starts.jsonl"]) rmSync(join(this.dir, n), { force: true });
     return this.list([]);
   }
   /** Sets what `agents --json` prints. */
@@ -144,6 +144,16 @@ export class FakeClaude {
   failBg(on = true): this {
     this.flag("bg-fail", on);
     return this;
+  }
+  /** Makes `stop` fail without removing anything. */
+  failStop(on = true): this {
+    this.flag("stop-fail", on);
+    return this;
+  }
+  /** The `stop` calls so far, each as its argv after the program name. */
+  stopCalls(): string[][] {
+    const f = join(this.dir, "stop-calls.jsonl");
+    return existsSync(f) ? readFileSync(f, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
   }
   /** Makes `--bg` start sessions that `agents --json` never lists. */
   unlistedBg(on = true): this {

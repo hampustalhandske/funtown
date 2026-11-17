@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { E2E_FAKE_DIR, FakeClaude, listedBg } from "../fake-claude.ts";
-import { addProjectFolder, removeProjectFolder } from "./stream.ts";
+import { addProjectFolder, removeProjectFolder, showTerminal } from "./stream.ts";
 
 const fake = FakeClaude.at(E2E_FAKE_DIR);
 
@@ -16,6 +16,7 @@ test("escape_typed_in_a_terminal_does_not_close_the_towns_settings_pane", async 
   await expect(page.locator("canvas")).toHaveCount(1);
   await page.getByRole("button", { name: /^beta,/ }).click();
   const panel = page.getByRole("dialog", { name: "beta details" });
+  await showTerminal(panel);
   await expect(panel.locator(".xterm-rows")).toContainText("attached abcd1234");
   await page.getByRole("button", { name: /^settings$/i }).click();
   const settings = page.getByRole("dialog", { name: "Settings" });

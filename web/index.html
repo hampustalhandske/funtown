@@ -48,6 +48,10 @@
       .pane, .panel, .morning { max-height: calc(100vh - 6.5rem); overflow: auto; overflow-wrap: anywhere; }
       .panel, .pane { top: 5rem; right: 1rem; width: min(23rem, calc(100vw - 2rem)); }
       .panel.wide { width: min(50rem, calc(100vw - 2rem)); }
+      .dot { display: inline-block; width: 0.65rem; height: 0.65rem; margin-right: 0.35rem; border-radius: 50%; background: #bbb; }
+      .dot[data-stage="working"] { background: #2e7d32; }
+      .dot[data-stage="needs_you"] { background: #d32f2f; }
+      .dot[data-stage="done"] { background: #fff; border: 2px solid var(--ink); box-sizing: border-box; }
       .pane { z-index: 6; }
       .morning { top: 5rem; left: 50%; transform: translateX(-50%); width: min(50rem, calc(100vw - 2rem)); z-index: 7; }
       .switch-box { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }

@@ -33,6 +33,12 @@ export function claudeEnv(): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(process.env).filter(([k]) => k === "CLAUDE_CONFIG_DIR" || !/^(CLAUDE|AI_AGENT)/.test(k)));
 }
 
+/** Why a failed `claude` run failed: its stderr when it printed any, else the error's message. */
+const reasonOf = (err: unknown): string => {
+  const { stderr, message } = err as { stderr?: string; message: string };
+  return stderr?.trim() || message;
+};
+
 /** Runs `claude` with `args` (never through a shell) and gives its stdout; kills it after `timeout` ms. */
 async function run(claude: string, args: string[], cwd?: string, timeout = 30_000): Promise<string> {
   return (await execFileAsync(claude, args, { env: claudeEnv(), cwd, timeout })).stdout;
@@ -57,8 +63,7 @@ export async function checkVersion(claude: string): Promise<Town["claude"]> {
     if (version && !older(version, MIN_VERSION)) return { version, problems: [] };
     reason = version ? `Claude Code ${version} is older than ${MIN_VERSION}` : "`claude --version` printed no version";
   } catch (err) {
-    const { stderr, message } = err as { stderr?: string; message: string };
-    reason = `\`claude --version\` failed: ${(stderr?.trim() || message).replace(/\s*\n\s*/g, " ")}`;
+    reason = `\`claude --version\` failed: ${reasonOf(err).replace(/\s*\n\s*/g, " ")}`;
   }
   return { version, problems: FEATURES.map((f) => `${f} won't work: ${reason}.`) };
 }
@@ -81,10 +86,18 @@ export async function startBackground(claude: string, cwd: string, prompt?: stri
   try {
     out = await run(claude, prompt === undefined ? ["--bg", "--settings", BG_SETTINGS] : ["--bg", prompt], cwd, 120_000);
   } catch (err) {
-    const { stderr, message } = err as { stderr?: string; message: string };
-    throw new Error(stderr?.trim() || message, { cause: err });
+    throw new Error(reasonOf(err), { cause: err });
   }
   const id = /\b[0-9a-f]{8}\b/.exec(out)?.[0];
   if (!id) throw new Error(`claude --bg printed no session id: ${out.trim()}`);
   return id;
+}
+
+/** Runs `claude stop` on the background session with this short id; rejects with the reason. */
+export async function stopBackground(claude: string, shortId: string): Promise<void> {
+  try {
+    await run(claude, ["stop", shortId], undefined, 30_000);
+  } catch (err) {
+    throw new Error(reasonOf(err), { cause: err });
+  }
 }

@@ -46,6 +46,10 @@
       @keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(211, 47, 47, 0.35); } }
       .name { font-weight: 600; }
       .stage { margin-left: 0.4rem; font-size: 0.9rem; }
+      .dot { display: inline-block; width: 0.65rem; height: 0.65rem; margin-right: 0.35rem; border-radius: 50%; background: #bbb; }
+      .dot[data-stage="working"] { background: #2e7d32; }
+      .dot[data-stage="needs_you"] { background: #d32f2f; }
+      .dot[data-stage="done"] { background: #fff; border: 2px solid #888; box-sizing: border-box; }
       .character .body, .character .line, .character .activity { display: block; }
       .activity { font-family: ui-monospace, monospace; font-size: 0.85rem; color: #444; }
       .panel { position: fixed; top: 1rem; right: 1rem; width: 20rem; background: #fff; border: 2px solid #c8a97e;

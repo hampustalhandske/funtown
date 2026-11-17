@@ -85,6 +85,37 @@ test("clicking_a_lead_or_a_hat_opens_that_characters_panel", async ({ page }) =>
   await expect(page.getByRole("dialog", { name: "Explore-1 details" })).toBeVisible();
 });
 
+test("a_town_panels_status_dot_has_a_size_and_a_colour_for_each_of_working_needs_you_and_done", async ({ page }) => {
+  await openTown(page, {
+    claude,
+    cards: [],
+    houses: [
+      {
+        project: "demo-app",
+        cwd: "/work/demo-app",
+        added: true,
+        leads: [
+          lead("w", "worker"),
+          lead("n", "asker", { stage: "needs_you", needs: "turn ended", since: 5 }),
+          lead("d", "finisher", { stage: "done" }),
+        ],
+      },
+    ],
+  });
+  const colours: string[] = [];
+  for (const [name, stage] of [["worker", "working"], ["asker", "needs_you"], ["finisher", "done"]]) {
+    await item(page, new RegExp(name)).click();
+    const dot = page.getByRole("dialog", { name: `${name} details` }).locator(`.dot[data-stage="${stage}"]`);
+    await expect(dot).toHaveCount(1);
+    const box = await dot.boundingBox();
+    expect(box?.width, `${stage} width`).toBeGreaterThan(0);
+    expect(box?.height, `${stage} height`).toBeGreaterThan(0);
+    colours.push(await dot.evaluate((el) => getComputedStyle(el).backgroundColor));
+    await page.keyboard.press("Escape");
+  }
+  expect(new Set(colours).size, `one colour per stage: ${colours}`).toBe(3);
+});
+
 test("a_ready_parcel_opens_the_stewards_panel_and_an_unasked_one_a_panel_that_asks_only_on_its_button", async ({ page }) => {
   await openTown(page);
   const requested: string[] = [];
