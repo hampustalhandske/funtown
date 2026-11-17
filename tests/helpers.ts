@@ -46,7 +46,7 @@ function minimalPage(): string {
  */
 export async function start(opts: StartOptions & { fake?: FakeClaude } = {}): Promise<Server> {
   const { fake = fakeClaude(), ...rest } = opts;
-  const s = await startServer({ port: 0, pollMs: 100, distDir: minimalPage(), gh: fake.path, ...rest, claude: fake.path });
+  const s = await startServer({ port: 0, pollMs: 100, distDir: minimalPage(), gh: fake.path, shell: fake.shell, ...rest, claude: fake.path });
   const server = { ...s, fake };
   open.push(server);
   return server;
@@ -249,4 +249,19 @@ export async function refusedUrl(): Promise<string> {
   const port = (s.address() as { port: number }).port;
   await new Promise((r) => s.close(r));
   return `http://127.0.0.1:${port}`;
+}
+
+/** POSTs JSON to `path` as the page would: its Origin and token, unless `headers` replaces them. */
+export async function postPage(s: { url: string }, path: string, body: unknown, headers?: Record<string, string>): Promise<Response> {
+  const h = headers ?? { origin: s.url, "x-funtown-token": await tokenOf(s.url) };
+  return fetch(`${s.url}${path}`, { method: "POST", headers: { "content-type": "application/json", ...h }, body: JSON.stringify(body) });
+}
+
+/** A path for a projects file in a fresh temp folder; the file itself does not exist yet. */
+export const projectsPath = () => join(realDir(), "projects.json");
+
+/** GET /projects with the page token: the status and the parsed list. */
+export async function getProjects(s: { url: string }): Promise<{ status: number; list: string[] }> {
+  const res = await fetch(`${s.url}/projects`, { headers: { "x-funtown-token": await tokenOf(s.url) } });
+  return { status: res.status, list: res.status === 200 ? ((await res.json()) as string[]) : [] };
 }
