@@ -7,6 +7,6 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
-    rolldownOptions: { input: { main: "web/index.html", kit: "web/kit.html" } },
+    rolldownOptions: { input: { main: "web/index.html", work: "web/work.html", kit: "web/kit.html" } },
   },
 });

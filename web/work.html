@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Funtown work</title>
+    <style>
+      body { margin: 0; font-family: "Recursive Variable", system-ui, sans-serif; background: #eef5e9; color: #222; }
+      header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 1rem; padding: 1rem 1.5rem; }
+      .switch-box { position: fixed; top: 4rem; left: 1rem; right: 1rem; max-width: 30rem; box-sizing: border-box; z-index: 20;
+        display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.3rem 0.6rem; background: #fff; border: 2px solid #c8a97e; border-radius: 0.5rem; }
+      h1 { margin: 0; font-size: 1.6rem; }
+      .alert { margin: 0 1.5rem 1rem; padding: 0.75rem 1rem; border-radius: 0.5rem;
+        background: #d32f2f; color: #fff; font-weight: 700; font-size: 1.1rem; }
+      .needs-list { margin: 0 1.5rem 1rem; padding: 0.5rem 1rem; border-radius: 0.5rem; background: #fff; border: 2px solid #d32f2f; }
+      .needs-list h2 { margin: 0 0 0.25rem; font-size: 1.1rem; color: #d32f2f; }
+      .needs-list ol { list-style: none; margin: 0; padding: 0; }
+      .needs-list button { font: inherit; background: none; border: 0; cursor: pointer; text-align: left; padding: 0.2rem 0; width: 100%;
+        display: flex; flex-wrap: wrap; gap: 0 0.5rem; }
+      .needs-list .project { color: #666; }
+      .needs-list .need { font-family: ui-monospace, monospace; color: #d32f2f; }
+      .needs-list .waited { order: -1; min-width: 3.5rem; color: #666; }
+      .toasts { position: fixed; bottom: 1rem; left: 1rem; display: flex; flex-direction: column; gap: 0.5rem; z-index: 10; }
+      .toast { display: flex; flex-direction: column; text-align: left; font: inherit; cursor: pointer; padding: 0.6rem 0.9rem;
+        background: #fff; border: 2px solid #d32f2f; border-radius: 0.5rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25); }
+      @media (max-width: 600px) { .toasts { position: static; margin: 0 1.5rem 1rem; } }
+      .empty { margin: 0 1.5rem; color: #555; }
+      .town { display: flex; flex-wrap: wrap; gap: 1rem; padding: 0 1.5rem 1.5rem; align-items: flex-start; }
+      .house { background: #fffaf0; border: 2px solid #c8a97e; border-radius: 0.75rem; padding: 0.75rem 1rem;
+        min-width: 16rem; }
+      .house h2 { margin: 0 0 0.5rem; font-size: 1.15rem; }
+      .house.needs_you { border-color: #d32f2f; box-shadow: 0 0 0 3px #f8b4b4; }
+      ul { list-style: none; margin: 0; padding: 0; }
+      .subagents { margin: 0.25rem 0 0.25rem 1.75rem; padding-left: 0.75rem; border-left: 2px dashed #c8a97e; }
+      .character { display: flex; width: 100%; font: inherit; color: inherit; text-align: left; border: 0;
+        background: none; cursor: pointer; align-items: center; gap: 0.6rem; padding: 0.35rem 0.5rem; border-radius: 0.5rem; }
+      .avatar { font-size: 1.6rem; width: 2.4rem; height: 2.4rem; display: flex; align-items: center;
+        justify-content: center; border-radius: 50%; border: 3px solid #bbb; background: #fff; }
+      .character.working .avatar { border-color: #2e7d32; }
+      .character.done .avatar { border-color: #bbb; }
+      .gone { opacity: 0.45; }
+      .needs_you.character { background: #ffebee; outline: 2px solid #d32f2f; }
+      .character.needs_you .avatar { border-color: #d32f2f; animation: pulse 1.2s ease-in-out infinite; }
+      .character.needs_you .stage { color: #d32f2f; font-weight: 700; }
+      @keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(211, 47, 47, 0.35); } }
+      .name { font-weight: 600; }
+      .stage { margin-left: 0.4rem; font-size: 0.9rem; }
+      .character .body, .character .line, .character .activity { display: block; }
+      .activity { font-family: ui-monospace, monospace; font-size: 0.85rem; color: #444; }
+      .panel { position: fixed; top: 1rem; right: 1rem; width: 20rem; background: #fff; border: 2px solid #c8a97e;
+        border-radius: 0.75rem; padding: 0.75rem 1rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); }
+      .kind { margin-left: 0.4rem; font-size: 0.8rem; color: #666; }
+      .panel.wide { width: min(50rem, calc(100vw - 4rem)); }
+      .terminal { height: 24rem; background: #000; margin-top: 0.5rem; }
+      .hint { font-weight: 600; }
+      .panel h2 { margin: 0; font-size: 1.15rem; }
+      .panel .close { position: absolute; top: 0.5rem; right: 0.5rem; cursor: pointer; }
+      .answer-card { margin-top: 0.5rem; padding: 0.5rem; border: 2px solid #d32f2f; border-radius: 6px; background: #fff8f6; }
+      .answer-card pre { margin: 0.25rem 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 14rem; overflow: auto; }
+      .answer-card .folder { margin: 0; font-size: 0.85rem; color: #666; }
+      .answer-card .actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+      .answer-card .option { display: block; }
+      .answer-card textarea { width: 100%; box-sizing: border-box; }
+      .badge { margin-left: 0.4rem; padding: 0 0.4rem; border-radius: 0.6rem; font-size: 0.75rem; background: #e6e6ef; color: #333; }
+      .badge.phase { background: #dbe7ff; }
+      .phase-note { margin-left: 0.5rem; font-size: 0.8rem; font-weight: normal; color: #666; }
+      .overlap { display: block; font-size: 0.8rem; color: #8a5a00; }
+      .parcels { list-style: none; padding: 0; margin: 0.5rem 0; font-size: 0.85rem; }
+      .parcel .review { margin-left: 0.5rem; font-size: 0.75rem; }
+      /* Long titles, notes and file paths wrap instead of widening the page. */
+      .phase-note, .overlap, .parcels { overflow-wrap: anywhere; }
+      .mail { margin-left: 0.4rem; }
+      .morning { position: fixed; top: 1rem; left: 50%; transform: translateX(-50%); width: min(50rem, calc(100vw - 4rem));
+        max-height: calc(100vh - 2rem); overflow: auto; background: #fff; border: 2px solid #c8a97e; border-radius: 8px; padding: 1rem; z-index: 5; }
+      .morning h2 { margin: 0; font-size: 1.15rem; }
+      .morning h4 { margin: 0.5rem 0 0; }
+      .morning .close { position: absolute; top: 0.5rem; right: 0.5rem; cursor: pointer; }
+      .letters { margin-top: 0.5rem; max-height: 22rem; overflow: auto; }
+      .letter { border-top: 1px solid #c8a97e; padding: 0.25rem 0; overflow-wrap: anywhere; }
+      .letter h3 { margin: 0; font-size: 0.85rem; color: #666; }
+      .letter table { border-collapse: collapse; }
+      .letter th, .letter td { border: 1px solid #c8a97e; padding: 0.15rem 0.4rem; }
+      .letter pre { overflow: auto; }
+      .reply { display: flex; gap: 0.5rem; align-items: flex-end; margin-top: 0.5rem; }
+      .reply textarea { flex: 1; box-sizing: border-box; }
+      .add-project, .run { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-end; margin: 0 1.5rem 1rem; }
+      .add-project input { flex: 1; min-width: 0; box-sizing: border-box; }
+      .add-project .error { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
+      .run { margin: 0.5rem 0; }
+      .run textarea { flex: 1; min-width: 0; box-sizing: border-box; }
+      .house { max-width: 100%; box-sizing: border-box; }
+      .house [role="tabpanel"] { margin-top: 0.5rem; max-width: 100%; }
+      .house [role="tab"][aria-selected="true"] { background: #e6e6ef; }
+      .error { color: #d32f2f; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/work.tsx"></script>
+  </body>
+</html>

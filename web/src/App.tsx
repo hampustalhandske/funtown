@@ -24,7 +24,7 @@ const OPENING_TIMEOUT_MS = 30_000;
  * Subscribes to the server's Town stream; gives the latest Town (null before the first) and
  * whether the server has restarted since the page loaded, which leaves the page's token stale.
  */
-function useTown(): [Town | null, boolean] {
+export function useTown(): [Town | null, boolean] {
   const [town, setTown] = useState<Town | null>(null);
   const [restarted, setRestarted] = useState(false);
   useEffect(() => {
@@ -141,7 +141,7 @@ function LeadItem({ lead, cards, onSelect }: { lead: Lead; cards: Card[]; onSele
 type Failure = { message: string; status: number };
 
 /** POSTs JSON with the page token; gives null on one of `ok`, else the failure. */
-async function post(path: string, body: object, ok: number[]): Promise<Failure | null> {
+export async function post(path: string, body: unknown, ok: number[]): Promise<Failure | null> {
   try {
     const reply = await fetch(path, {
       method: "POST",
@@ -159,7 +159,7 @@ async function post(path: string, body: object, ok: number[]): Promise<Failure |
 const SETUP_HINT = "First time here? Run `claude` once in its Shell tab and accept the trust prompt.";
 
 /** The "Add project" form: an absolute folder path; shows the server's reason when it refuses. */
-function AddProject() {
+export function AddProject() {
   const [cwd, setCwd] = useState("");
   const [error, setError] = useState<string | null>(null);
   async function add(event: FormEvent) {
@@ -290,7 +290,7 @@ function HouseCard({
 }
 
 /** Details of one character: stage, step, need, its subagents (for a lead) and a button that focuses its terminal. */
-function Panel({ character, lead, cards, onClose }: { character: Character; lead: Lead; cards: Card[]; onClose: () => void }) {
+export function Panel({ character, lead, cards, onClose }: { character: Character; lead: Lead; cards: Card[]; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const reply = useRef<((text: string) => string | null) | null>(null);
@@ -435,10 +435,18 @@ export function App() {
   const openWaiting = useCallback((w: Waiting) => setSelection({ lead: w.lead, id: w.id }), []);
   const { toasts, drop } = useAlerts(waiting, town !== null, muted, openWaiting);
   useNextKey(waiting, selection && `${selection.lead}/${selection.id}`, openWaiting);
+  // `/work.html#<cwd>` scrolls to that house once the town has listed it.
+  const hash = decodeURIComponent(location.hash.slice(1));
+  const hasHouse = town?.houses.some((house) => house.cwd === hash) ?? false;
+  useEffect(() => {
+    if (!hasHouse) return;
+    [...document.querySelectorAll<HTMLElement>("section.house")].find((el) => el.title === hash)?.scrollIntoView();
+  }, [hasHouse, hash]);
   return (
     <>
       <header>
         <h1>Funtown</h1>
+        <a href="/" aria-label="Town" title="Town">🏘️</a>
         <button type="button" aria-pressed={muted} onClick={toggleMute}>
           {muted ? "Unmute" : "Mute"}
         </button>
