@@ -2,7 +2,7 @@ import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { E2E_FAKE_DIR, FakeClaude, listed, listedBg } from "../fake-claude.ts";
+import { E2E_FAKE_DIR, E2E_URL, FakeClaude, listed, listedBg } from "../fake-claude.ts";
 
 const fake = FakeClaude.at(E2E_FAKE_DIR);
 const sid = "abcd1234-0000-4000-8000-000000000000";
@@ -94,7 +94,7 @@ test("a_failed_version_check_shows_every_problem_line_in_a_banner", async ({ pag
 test("a_subagent_of_a_background_lead_has_no_go_to_terminal_button", async ({ page }) => {
   fake.list([bg()]);
   const hook = (extra: object) =>
-    fetch("http://127.0.0.1:4799/events", {
+    fetch(`${E2E_URL}/events`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ hook_event_name: "SubagentStart", session_id: sid, cwd, funtown: { tty: null, term_program: null, at: 1 }, ...extra }),

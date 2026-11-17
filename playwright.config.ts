@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 // First, so the run's temp folder is set before fake-claude.ts reads os.tmpdir().
 import "./tests/run-temp-e2e.ts";
 import { join } from "node:path";
-import { E2E_FAKE_DIR, FakeClaude } from "./tests/fake-claude.ts";
+import { E2E_FAKE_DIR, E2E_PORT, E2E_URL, FakeClaude } from "./tests/fake-claude.ts";
 
 // The web server runs this fake `claude`; the specs steer it through files in its folder.
 const fake = FakeClaude.install(E2E_FAKE_DIR);
@@ -13,13 +13,13 @@ export default defineConfig({
   workers: 1,
   // On CI a committed `test.only` fails the run instead of skipping every other test.
   forbidOnly: !!process.env.CI,
-  use: { baseURL: "http://127.0.0.1:4799" },
+  use: { baseURL: E2E_URL },
   webServer: {
     command: "vite build && node server/main.ts",
-    url: "http://127.0.0.1:4799",
+    url: E2E_URL,
     // Every file the server writes goes to the run's temp folder, never the home folder.
     env: {
-      FUNTOWN_PORT: "4799",
+      FUNTOWN_PORT: E2E_PORT,
       FUNTOWN_CLAUDE: fake.path,
       FUNTOWN_JOURNAL: join(E2E_FAKE_DIR, "journal.jsonl"),
       FUNTOWN_ANSWERS: join(E2E_FAKE_DIR, "answers.jsonl"),
