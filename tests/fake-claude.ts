@@ -1,6 +1,6 @@
 import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 /** One entry of `claude agents --json`. */
 export type Listed = {
@@ -35,25 +35,37 @@ export const E2E_URL = `http://127.0.0.1:${E2E_PORT}`;
 export const E2E_FAKE_DIR = join(tmpdir(), `funtown-e2e-claude-${E2E_PORT}`);
 
 const SOURCE = join(import.meta.dirname, "fake-claude.cjs");
+const SHELL_SOURCE = join(import.meta.dirname, "fake-shell.cjs");
 
-const SOURCE_TEXT = readFileSync(SOURCE, "utf8");
-
-/** True when `path` holds the current fake script. */
-const isCurrent = (path: string) => existsSync(path) && readFileSync(path, "utf8") === SOURCE_TEXT;
+const texts = new Map<string, string>();
+/** True when `path` holds the current text of the fake script `source`. */
+const isCurrent = (path: string, source = SOURCE) => {
+  if (!texts.has(source)) texts.set(source, readFileSync(source, "utf8"));
+  return existsSync(path) && readFileSync(path, "utf8") === texts.get(source);
+};
 
 /**
- * The one executable copy of the fake in this temp folder. Every installed fake is a hard link
- * to it: macOS checks each new executable file the first time it runs, which takes about a
- * second (more under load), and a link to an already checked file skips that check.
+ * The one executable copy of the fake script `source` in this temp folder. Every installed fake
+ * is a hard link to it: macOS checks each new executable file the first time it runs, which
+ * takes about a second (more under load), and a link to an already checked file skips that check.
  */
-function master(): string {
-  const path = join(tmpdir(), "funtown-fake-claude.cjs");
-  if (isCurrent(path)) return path;
+function master(source = SOURCE): string {
+  const path = join(tmpdir(), `funtown-${basename(source)}`);
+  if (isCurrent(path, source)) return path;
   const tmp = `${path}.${process.pid}.tmp`; // unique per process, so parallel workers do not clash
-  copyFileSync(SOURCE, tmp);
+  copyFileSync(source, tmp);
   chmodSync(tmp, 0o755);
   renameSync(tmp, path);
   return path;
+}
+
+/** Puts a hard link to `source`'s one copy at `path`, unless `path` already holds the current script. */
+function link(source: string, path: string): void {
+  if (isCurrent(path, source)) return;
+  const tmp = `${path}.${process.pid}.tmp`; // unique per process, so parallel installs do not clash
+  rmSync(tmp, { force: true });
+  linkSync(master(source), tmp);
+  renameSync(tmp, path);
 }
 
 /** A fake `claude` executable in a folder; the tests steer it through files in that folder. */
@@ -73,11 +85,7 @@ export class FakeClaude {
   static install(dir: string): FakeClaude {
     mkdirSync(dir, { recursive: true });
     const f = new FakeClaude(dir);
-    if (isCurrent(f.path)) return f;
-    const tmp = `${f.path}.${process.pid}.tmp`; // unique per process, so parallel installs do not clash
-    rmSync(tmp, { force: true });
-    linkSync(master(), tmp);
-    renameSync(tmp, f.path);
+    link(SOURCE, f.path);
     return f;
   }
   /** Points at a fake already installed in `dir`. */
@@ -183,13 +191,10 @@ export class FakeClaude {
     const f = join(this.dir, `attach-${id}.pids`);
     return existsSync(f) ? readFileSync(f, "utf8").split("\n").filter(Boolean).map(Number) : [];
   }
-  /** Path of a fake login shell in this folder (see fake-shell.cjs), made on first use. */
+  /** Path of a fake login shell in this folder (see fake-shell.cjs), linked on first use. */
   get shell(): string {
     const path = join(this.dir, "shell");
-    if (!existsSync(path)) {
-      copyFileSync(join(import.meta.dirname, "fake-shell.cjs"), path);
-      chmodSync(path, 0o755);
-    }
+    link(SHELL_SOURCE, path);
     return path;
   }
   /** Every shell the fake shell has started so far: its pid and the folder it ran in. */
