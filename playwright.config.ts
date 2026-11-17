@@ -32,6 +32,7 @@ export default defineConfig({
       // The Shell tab runs this fake login shell, never the user's own, and the project list stays out of the home folder.
       SHELL: fake.shell,
       FUNTOWN_PROJECTS: join(E2E_FAKE_DIR, "projects.json"),
+      FUNTOWN_AVATAR: join(E2E_FAKE_DIR, "avatar.json"),
     },
     reuseExistingServer: false,
   },
