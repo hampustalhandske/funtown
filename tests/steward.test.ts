@@ -337,3 +337,15 @@ describe("the steward", () => {
     expect(pastes(fake.attachInput(next.short))).toEqual([filled(pr(9))]);
   }, 15_000);
 });
+
+describe("the steward in the state", () => {
+  it("only_the_listed_steward_session_carries_steward_true_wherever_its_folder_is", async () => {
+    const p = paths();
+    const { fake } = reused(p, []);
+    const s = await startSteward(p, fake);
+    const t = await townWhere(s.url, (x) => houseAt(x, p.stewardDir)?.leads.length === 1 && houseAt(x, p.project)?.leads.length === 1);
+    expect(houseAt(t, p.stewardDir)?.leads[0]).toMatchObject({ id: SID, steward: true });
+    expect(houseAt(t, p.project)?.leads[0].id).toBe("s1");
+    expect(houseAt(t, p.project)?.leads[0]).not.toHaveProperty("steward");
+  });
+});

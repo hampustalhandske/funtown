@@ -41,7 +41,7 @@ async function openTown(page: Page, initial: unknown = state()) {
   await expect(page.locator("canvas")).toHaveCount(1);
   return stream;
 }
-/** An entry of the visually hidden list (1 px rows stacked at one corner, so the pointer hits a neighbour: it is clicked by event). */
+/** An entry of the visually hidden list; clicked like any button. */
 const item = (page: Page, name: RegExp) => page.getByRole("button", { name });
 
 test("the_hidden_list_names_every_character_hat_and_parcel_with_project_role_and_stage_and_omits_the_done_agent", async ({ page }) => {
@@ -77,10 +77,10 @@ test("an_agent_that_finishes_or_a_lead_that_is_unlisted_leaves_the_town_within_5
 
 test("clicking_a_lead_or_a_hat_opens_that_characters_panel", async ({ page }) => {
   await openTown(page);
-  await item(page, /lead-2/).dispatchEvent("click");
+  await item(page, /lead-2/).click();
   await expect(page.getByRole("dialog", { name: "lead-2 details" })).toBeVisible();
   await page.keyboard.press("Escape");
-  await item(page, /Explore-1/).dispatchEvent("click");
+  await item(page, /Explore-1/).click();
   await expect(page.getByRole("dialog", { name: "Explore-1 details" })).toBeVisible();
 });
 
@@ -91,11 +91,11 @@ test("a_ready_parcel_opens_the_stewards_panel_and_an_unreviewed_one_opens_its_pr
     requested.push(r.request().url());
     return r.fulfill({ status: 200, contentType: "text/html", body: "<title>pr</title>" });
   });
-  await item(page, /4218/).dispatchEvent("click");
+  await item(page, /4218/).click();
   await expect(page.getByRole("dialog", { name: "steward details" })).toBeVisible();
   expect(requested).toEqual([]);
   await page.keyboard.press("Escape");
-  await item(page, /4217/).dispatchEvent("click");
+  await item(page, /4217/).click();
   await expect.poll(() => requested).toContain(PR_URL);
 });
 
@@ -105,9 +105,10 @@ test("the_town_page_shows_no_words_outside_panels_and_has_a_full_window_canvas_w
   const view = page.viewportSize()!;
   await expect.poll(async () => (await page.locator("canvas").boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(view.width - 1);
   expect((await page.locator("canvas").boundingBox())!.height).toBeGreaterThanOrEqual(view.height - 1);
-  for (const label of [/^settings$/i, /^work view$/i, /^morning$/i, /i had to switch/i]) {
+  for (const label of [/^settings$/i, /^work view$/i]) {
     await expect(page.getByRole("button", { name: label }).or(page.getByRole("link", { name: label })).first()).toBeAttached();
   }
+  await expect(page.getByRole("navigation", { name: "Controls" }).locator('button[aria-label="Morning"]')).toHaveCount(1);
   const words = await page.evaluate(() => {
     const seen: string[] = [];
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -132,7 +133,19 @@ test("the_settings_pane_offers_add_project_and_a_remove_project_per_project", as
   await page.getByRole("button", { name: /settings/i }).click();
   await expect(page.getByRole("textbox", { name: "Project folder" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add project" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /remove project/i })).toHaveCount(2);
+  await expect(page.getByRole("button", { name: /^remove (demo|other)-app$/i })).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Remove demo-app" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Remove other-app" })).toHaveCount(1);
+});
+
+test("i_had_to_switch_is_in_the_settings_pane_and_not_in_the_towns_icon_row", async ({ page }) => {
+  await openTown(page);
+  await expect(page.getByRole("navigation", { name: "Controls" }).getByRole("button", { name: /i had to switch/i })).toHaveCount(0);
+  await page.getByRole("button", { name: /^settings$/i }).click();
+  const button = page.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: "I had to switch" });
+  await expect(button).toBeVisible();
+  await button.click();
+  await expect(page.getByRole("textbox", { name: "Why?" })).toBeVisible();
 });
 
 test("the_town_loads_three_and_work_html_neither_loads_it_nor_draws_a_canvas", async ({ page }) => {
@@ -181,11 +194,48 @@ test("a_building_links_to_its_house_in_the_work_view_and_the_link_scrolls_to_tha
   await openTown(page, state({ houses }));
   const link = page.getByRole("link", { name: "proj-4, house" });
   await expect(link).toHaveAttribute("href", "/work.html#/work/proj-4");
-  await link.dispatchEvent("click");
+  await link.click();
   await expect(page).toHaveURL(/\/work\.html#/);
   const target = page.locator('section[aria-label="proj-4"]');
   await expect(target).toBeInViewport();
   await expect.poll(() => target.evaluate((el) => el.getBoundingClientRect().top)).toBeLessThan(page.viewportSize()!.height / 4);
   expect(await page.evaluate(() => scrollY)).toBeGreaterThan(0);
   await expect(page.locator('section[aria-label="proj-0"]')).not.toBeInViewport();
+});
+
+test("a_cwd_with_percent_and_hash_links_to_its_own_house_and_the_work_page_does_not_blank", async ({ page }) => {
+  const names = ["50%off", "a%41", "c#d"];
+  const houses = [...names, ...Array.from({ length: 10 }, (_, i) => `fill-${i}`)].map((n) => ({
+    project: n,
+    cwd: `/work/${n}`,
+    leads: [0, 1, 2].map((j) => lead(`l-${n}-${j}`, `lead-${n}-${j}`, {}, [sub(`h-${n}-${j}`, `hat-${n}-${j}`, "Plan")])),
+  }));
+  // The target is last in the work view, so reaching it takes a real scroll.
+  const ordered = [...houses.filter((h) => !names.includes(h.project)), ...houses.filter((h) => names.includes(h.project))];
+  for (const n of names) {
+    await openTown(page, state({ houses: ordered }));
+    await page.getByRole("link", { name: `${n}, house` }).click();
+    await expect(page).toHaveURL(/\/work\.html#/);
+    const target = page.locator(`section[aria-label="${n}"]`);
+    await expect(target).toBeVisible();
+    await expect(target).toBeInViewport();
+    expect(await page.evaluate(() => scrollY)).toBeGreaterThan(0);
+  }
+});
+
+test("a_malformed_hash_on_the_work_page_shows_the_houses_unscrolled", async ({ page }) => {
+  await stubStream(page, state());
+  await page.goto("/work.html#/work/50%off");
+  await expect(page.locator('section[aria-label="demo-app"]')).toBeVisible();
+  expect(await page.evaluate(() => scrollY)).toBe(0);
+});
+
+test("one_escape_closes_only_the_top_pane_when_settings_and_a_panel_are_both_open", async ({ page }) => {
+  await openTown(page);
+  await item(page, /lead-2/).click();
+  await expect(page.getByRole("dialog", { name: "lead-2 details" })).toBeVisible();
+  await page.getByRole("button", { name: /^settings$/i }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(2);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(1);
 });
