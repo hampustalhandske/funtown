@@ -14,12 +14,12 @@ on it.
   `letter.md` (printed at SessionStart; `~/.funtown/letter.md` overrides, empty = off); `install.ts`.
 - `server/` on 127.0.0.1:4777: `agents.ts` runs `claude`; `town.ts` merges the 2 s poll and hook
   events; `journal.ts`; `holds.ts` cards; `terminal.ts` `claude attach` and shells; `errors.ts` the error log;
-  `workflow.ts` phase file, `gh pr list`; `steward.ts` the steward; `projects.ts` added projects;
+  `workflow.ts` phase file, `gh pr list`; `steward.ts` the steward; `projects.ts` added projects; `avatar.ts` the chosen avatar file;
   `main.ts` run file, signals.
 - `web/` (React, Vite): `/` is the town (`index.html`, `src/town/`: `layout.ts` pure places, `Village.tsx`
-  the 3D scene, `TownPage.tsx` icons, Settings, hidden list; `kit/` the clay parts; no visible words on the
+  the 3D scene, `TownPage.tsx` icons, Settings (the avatar row), hidden list; `kit/` the clay parts (`avatars.ts` the eight presets: the king in a crown, the rest hatless, since every other hat is an agent's); no visible words on the
   town). A building opens its classroom at `#in=<cwd>`: `interior.ts` pure places and the whiteboard model,
-  `Classroom.tsx` the room, the lead at the front, you the crowned observer at the back; words only on the board;
+  `Classroom.tsx` the room, the lead at the front, you the observer at the back, wearing the chosen avatar; words only on the board;
   `drawn()` keeps a departed figure at the door for 2.5 s so it walks out.
   `/work.html` the work view (`App.tsx`: list, panels; a background lead's terminal mounts only after Show terminal; no command text on rows; `AnswerCard`, `Letters`, `Morning`,
   `Switch`, `needs.tsx`: `waitingList`, the desk order, card kinds first then oldest). Font Recursive (OFL, bundled, licence emitted next to it).
@@ -44,8 +44,9 @@ Contracts (source of truth: this list; full text in the local .workflow/history/
 - `claude`: `--version` (min 2.1.325), `agents --json` (failed: keep the last list), `--bg`
   (`bgIsolation: "none"`), `--bg <prompt>` (a run, own worktree), `attach`, `stop <id>` (Close session; the conversation is kept); `gh` only `pr list`; env drops `CLAUDE*`/`AI_AGENT`
   but `CLAUDE_CONFIG_DIR`. Page token in `<meta name="funtown-token">`: with the Origin for
-  `/jump`, `/sessions`, `/runs`, `/projects`, `/projects/remove`, `/sessions/stop`, `/shells/close`, `/answer`, `/review`, `/switch`,
+  `/jump`, `/sessions`, `/runs`, `/projects`, `/projects/remove`, `/sessions/stop`, `/shells/close`, `/answer`, `/avatar`, `/review`, `/switch`,
   `/term`; alone for `/letters`, `/morning`, `GET /projects`.
+- Avatar: `Town.avatar` = the chosen preset's id (absent = the king); `POST /avatar { id }` (id `^[a-z0-9-]{1,32}$`) writes `avatar.json` `{ id }`; the server stores any such id, the page falls back to the king for one it doesn't know; an unreadable file is logged and means none.
 - Projects: `projects.json`, real paths (symlinks resolved); each is a house with or without sessions;
   while the file can't be read, add and remove answer 500 and never write it. Only sessions in an
   added project or a folder inside one (a run's worktree), and the steward, are seen; Morning too.
@@ -53,7 +54,7 @@ Contracts (source of truth: this list; full text in the local .workflow/history/
   per project (`$SHELL -l`), kept when its socket closes, replay from a line start in the last 256 KB;
   ends on Close shell, `exit`, Remove project (asks first) or the server's close.
 - Env `FUNTOWN_` + `PORT`, `URL`, `CLAUDE`, `GH`, `STATE`, `ANSWERS`, `JOURNAL`, `LOG`, `RUN`,
-  `SWITCHES`, `STEWARD`, `PROJECTS` (paths default to `~/.funtown/`); `startServer` takes the paths as options.
+  `SWITCHES`, `STEWARD`, `PROJECTS`, `AVATAR` (paths default to `~/.funtown/`); `startServer` takes the paths as options.
 Commands: `npm start` (reinstalls hooks, serves); `npm run install-hooks`/`uninstall-hooks`; `npm test`.
 Decisions that bind
 - Funtown sends nothing but the opt-in "Suggest"; the `claude` and `gh` it runs talk to Anthropic and

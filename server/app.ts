@@ -14,6 +14,7 @@ import { describe, serverLogger } from "./errors.ts";
 import { morning, openJournal } from "./journal.ts";
 import { createSteward } from "./steward.ts";
 import { listPrs, parsePhase, type PhaseFile, type Pr } from "./workflow.ts";
+import { AVATAR_ID, readAvatar, writeAvatar } from "./avatar.ts";
 import { projectFolder, readProjects, writeProjects } from "./projects.ts";
 
 const DEFAULT_DIST = fileURLToPath(new URL("../web/dist/", import.meta.url));
@@ -122,7 +123,9 @@ async function readJson(req: IncomingMessage, max = Infinity): Promise<{ value: 
  * each a house even with no session; without one, adding answers 500. `POST /runs` starts
  * `claude --bg <prompt>` in a house's folder. `/term?shell=<cwd>` connects to that house's one
  * login shell, `shell` (an executable) started there on first connect; `POST /shells/close`
- * or removing the project ends it.
+ * or removing the project ends it. `avatar` (a path) holds the id chosen with `POST /avatar { id }`
+ * (page Origin and token; 400 for an id not matching /^[a-z0-9-]{1,32}$/, 500 without a path or
+ * when the file can't be written), which the State carries as `avatar`.
  */
 export async function startServer(opts: {
   port: number;
@@ -142,6 +145,7 @@ export async function startServer(opts: {
   stewardReadyMs?: number;
   stewardAnswerMs?: number;
   projects?: string;
+  avatar?: string;
   shell?: string;
 }): Promise<{ url: string; claude: Town["claude"]; close(): Promise<void> }> {
   const run = opts.run ?? defaultRun;
@@ -166,6 +170,12 @@ export async function startServer(opts: {
     logError("projects", err, opts.projects);
   }
   town.setProjects(projects);
+  let avatar: string | undefined;
+  try {
+    if (opts.avatar) avatar = readAvatar(opts.avatar);
+  } catch (err) {
+    logError("avatar", err, opts.avatar);
+  }
   const gh = opts.gh ?? "gh";
   const prMs = opts.prMs ?? 60_000;
   // cwd -> its open PRs, from the last gh list that worked
@@ -204,6 +214,7 @@ export async function startServer(opts: {
   const snapshot = () => {
     const state = town.snapshot(holds.cards());
     const stewardId = steward?.lead()?.id;
+    if (avatar !== undefined) state.avatar = avatar;
     for (const house of state.houses) {
       for (const lead of house.leads) if (lead.id === stewardId) lead.steward = true;
       const prs = prLists.get(house.cwd);
@@ -594,6 +605,27 @@ export async function startServer(opts: {
         logError("projects", err, cwd);
         res.writeHead(500, text).end(`Couldn't save the project list: ${(err as Error).message}`);
       }
+      return;
+    }
+
+    if (req.method === "POST" && path === "/avatar") {
+      const id = await pageField(req, res, "id");
+      if (id === null) return;
+      if (!AVATAR_ID.test(id)) {
+        res.writeHead(400, text).end("An avatar id is 1 to 32 lowercase letters, digits or hyphens.");
+        return;
+      }
+      try {
+        if (!opts.avatar) throw new Error("no avatar file is set");
+        writeAvatar(opts.avatar, id);
+        avatar = id;
+      } catch (err) {
+        logError("avatar", err, id);
+        res.writeHead(500, text).end(`Couldn't save the avatar: ${(err as Error).message}`);
+        return;
+      }
+      broadcast();
+      res.writeHead(204).end();
       return;
     }
 

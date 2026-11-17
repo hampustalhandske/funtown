@@ -5,6 +5,7 @@ import { Classroom, roomOf, type ClassroomProps } from "./Classroom.tsx";
 import { Bob, Body, Mover, Pennant, Pick, useHover } from "./kit/actors.tsx";
 import { SIDE_WALL_HEIGHT, WALL_HEIGHT } from "./kit/classroom.tsx";
 import { Clay, TONES } from "./kit/clay.tsx";
+import { avatarFor } from "./kit/avatars.ts";
 import { Hat } from "./kit/hats.tsx";
 import { PALETTE, type HatKind } from "./kit/palette.ts";
 import { Castle, Desk, Figure, HouseModel, Parcel } from "./kit/parts.tsx";
@@ -12,7 +13,6 @@ import { CASTLE, DESK, KING, QUEUE_HEAD, keyOf, poseOf, type Placed, type Spot }
 import type { TownIndex } from "./TownPage.tsx";
 
 const GROUND = "#efe6d6";
-const KING_COLOUR = TONES.ribbon;
 const QUEEN_COLOUR = PALETTE[4];
 const FOV = 40;
 /**
@@ -147,6 +147,8 @@ const plateHeight = (p: Placed) =>
 type Props = {
   /** The town's houses and characters, for the steward's stage and parcels' reviews. */
   index: TownIndex;
+  /** The id of the king's chosen preset (`Town.avatar`); absent or unknown shows the default. */
+  avatar?: string;
   placed: Placed[];
   /** The words a thing's hover plate shows. */
   name: (p: Placed) => string;
@@ -155,8 +157,9 @@ type Props = {
   inside?: ClassroomProps;
 };
 
-/** The village: the castle with the king at his desk, a building per house, and everyone placed by `layout`. */
-export function Village({ index, placed, name, onPick, inside }: Props) {
+/** The village: the castle with the king (in the chosen avatar) at his desk, a building per house, and everyone placed by `layout`. */
+export function Village({ index, avatar, placed, name, onPick, inside }: Props) {
+  const look = avatarFor(avatar);
   const bounds = useMemo(() => (inside ? roomBounds(inside.placed) : boundsOf(placed)), [inside?.placed, placed]);
   const [hover, setHover] = useHover(inside ? inside.placed.filter((p) => p.kind !== "observer").map(keyOf) : placed.map(keyOf));
   const pick = (p: Placed, children: ReactNode) => (
@@ -220,7 +223,7 @@ export function Village({ index, placed, name, onPick, inside }: Props) {
         <meshLambertMaterial color={GROUND} />
       </mesh>
       {inside ? (
-        <Classroom key={inside.house.cwd} {...inside} hover={hover} onHover={setHover} />
+        <Classroom key={inside.house.cwd} {...inside} look={look} hover={hover} onHover={setHover} />
       ) : (
         <>
           {/* The board the town stands on: grass on soil, catching shadows but casting none. */}
@@ -233,7 +236,7 @@ export function Village({ index, placed, name, onPick, inside }: Props) {
             <Desk />
             <Clay colour={TONES.paper} position={[0.3, 0.64, 0]} rotation-y={0.2}><boxGeometry args={[0.32, 0.06, 0.24]} /></Clay>
           </group>
-          <group position={[KING.x, 0, KING.z]}><Bob speed={1.2}><Figure colour={KING_COLOUR} hat="crown" /></Bob></group>
+          <group position={[KING.x, 0, KING.z]}><Bob speed={1.2}><Figure colour={look.coat} hat={look.hat} skin={look.skin} /></Bob></group>
           {[...rails].map(([rail, pegs]) => <Rail key={rail} pegs={pegs} />)}
           {placed.map((p) => <group key={keyOf(p)}>{thing(p)}</group>)}
         </>
