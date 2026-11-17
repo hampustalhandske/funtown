@@ -2,6 +2,7 @@
 
 One line per change, newest first.
 
+- 2026-11-17 08:44 · Projects and shells: add a project folder in the app (kept in `~/.funtown/projects.json`) and it shows even with no session; start a background run with a prompt in its own worktree; each project has a Shell tab with your login shell, which keeps running (a dev server goes on) until you close it. A new project shows how to accept Claude's trust prompt once.
 - 2026-11-16 21:40 · Workflow view: a project's `.claude/phase.json` shows its phase, a note and tags; each subagent shows its role; open pull requests show as parcels (via `gh pr list`); two sessions editing the same file each get a warning. One steward session in `~/.funtown/steward` gets each ready PR once and its review letter shows on the parcel (`~/.funtown/steward.md` changes the request, empty turns it off).
 - 2026-11-16 21:09 · A clay kit of parts for the coming 3D town (houses in project colours, the castle, characters with a hat per role, desk, parcel, ground), all drawn in code with an ink outline; see them at `/kit.html`. Browser tests take `FUNTOWN_E2E_PORT` (default 4799).
 - 2026-11-16 19:20 · An "I had to switch" button notes when and why you left Funtown (`~/.funtown/switches.jsonl`). Hooks and the server share one error log (`~/.funtown/errors.log`) that names the failing step; a crash, a failed start and, on the next start, a run that ended without shutting down are logged. Also: the Morning window starts at its last successful load, the letter shape reaches resumed sessions, and hook paths with shell characters work.

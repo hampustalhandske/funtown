@@ -4,6 +4,7 @@ import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach } from "vitest";
+import WebSocket from "ws";
 import { startServer } from "../server/app.ts";
 import { FakeClaude } from "./fake-claude.ts";
 import type { Town } from "../server/types.ts";
@@ -16,6 +17,7 @@ const open: Server[] = [];
 const fakes: FakeClaude[] = [];
 const dirs: string[] = [];
 const holds: AbortController[] = [];
+const sockets: WebSocket[] = [];
 
 /** A folder that exists, with symlinks resolved so a child process reports the same path. */
 export function realDir(): string {
@@ -46,13 +48,14 @@ function minimalPage(): string {
  */
 export async function start(opts: StartOptions & { fake?: FakeClaude } = {}): Promise<Server> {
   const { fake = fakeClaude(), ...rest } = opts;
-  const s = await startServer({ port: 0, pollMs: 100, distDir: minimalPage(), gh: fake.path, ...rest, claude: fake.path });
+  const s = await startServer({ port: 0, pollMs: 100, distDir: minimalPage(), gh: fake.path, shell: fake.shell, ...rest, claude: fake.path });
   const server = { ...s, fake };
   open.push(server);
   return server;
 }
 afterEach(async () => {
   for (const h of holds.splice(0)) h.abort();
+  for (const w of sockets.splice(0)) w.terminate();
   await Promise.all(open.splice(0).map((s) => s.close()));
   for (const f of fakes.splice(0)) f.dispose();
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
@@ -250,3 +253,55 @@ export async function refusedUrl(): Promise<string> {
   await new Promise((r) => s.close(r));
   return `http://127.0.0.1:${port}`;
 }
+
+/** POSTs JSON to `path` as the page would: its Origin and token, unless `headers` replaces them. */
+export async function postPage(s: { url: string }, path: string, body: unknown, headers?: Record<string, string>): Promise<Response> {
+  const h = headers ?? { origin: s.url, "x-funtown-token": await tokenOf(s.url) };
+  return fetch(`${s.url}${path}`, { method: "POST", headers: { "content-type": "application/json", ...h }, body: JSON.stringify(body) });
+}
+
+/** A path for a projects file in a fresh temp folder; the file itself does not exist yet. */
+export const projectsPath = () => join(realDir(), "projects.json");
+
+/** GET /projects with the page token: the status and the parsed list. */
+export async function getProjects(s: { url: string }): Promise<{ status: number; list: string[] }> {
+  const res = await fetch(`${s.url}/projects`, { headers: { "x-funtown-token": await tokenOf(s.url) } });
+  return { status: res.status, list: res.status === 200 ? ((await res.json()) as string[]) : [] };
+}
+
+/** An open /term socket: the output so far, the `shared` counts heard, whether it closed, and a frame sender. */
+export type Conn = { ws: WebSocket; out: () => string; shared: number[]; closed: () => boolean; send: (f: object) => void };
+
+/**
+ * Opens /term for a session (`{ lead }`) or a project's shell (`{ shell }` a cwd) at 100x30
+ * unless sized; `token` and `origin` default to the page's and null leaves them out. Resolves
+ * once open, rejects with the HTTP status when the upgrade is refused. Terminated after the test.
+ */
+export function connect(
+  s: { url: string; token: string },
+  target: { lead: string } | { shell: string },
+  q: { cols?: number; rows?: number; token?: string | null; origin?: string | null } = {},
+): Promise<Conn> {
+  const params = new URLSearchParams({ ...target, cols: String(q.cols ?? 100), rows: String(q.rows ?? 30) });
+  if (q.token !== null) params.set("token", q.token ?? s.token);
+  const headers = q.origin === null ? {} : { origin: q.origin ?? s.url };
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(`${s.url.replace("http", "ws")}/term?${params}`, { headers });
+    sockets.push(ws);
+    let out = "";
+    let closed = false;
+    const shared: number[] = [];
+    ws.on("message", (m) => {
+      const f = JSON.parse(m.toString());
+      if (f.t === "out") out += f.d;
+      if (f.t === "shared") shared.push(f.n);
+    });
+    ws.on("close", () => (closed = true));
+    ws.on("open", () => resolve({ ws, out: () => out, shared, closed: () => closed, send: (f) => ws.send(JSON.stringify(f)) }));
+    ws.on("unexpected-response", (_req, res) => reject(new Error(`status ${res.statusCode}`)));
+    ws.on("error", () => {});
+  });
+}
+
+/** True while a process with `pid` exists. */
+export const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };

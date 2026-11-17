@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState, useRef } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState, useRef, type FormEvent } from "react";
 import type { Card, Character, House, Lead, Parcel, Stage, Town } from "../../server/types.ts";
 import { AnswerCard } from "./AnswerCard.tsx";
 import { MorningButton } from "./Morning.tsx";
@@ -137,6 +137,47 @@ function LeadItem({ lead, cards, onSelect }: { lead: Lead; cards: Card[]; onSele
   );
 }
 
+/** Why a request failed: the text to show, and the HTTP status (0 when the server was not reached). */
+type Failure = { message: string; status: number };
+
+/** POSTs JSON with the page token; gives null on one of `ok`, else the failure. */
+async function post(path: string, body: object, ok: number[]): Promise<Failure | null> {
+  try {
+    const reply = await fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-funtown-token": funtownToken() },
+      body: JSON.stringify(body),
+    });
+    return ok.includes(reply.status)
+      ? null
+      : { message: (await reply.text()) || `Request failed (${reply.status}).`, status: reply.status };
+  } catch {
+    return { message: "Couldn't reach Funtown.", status: 0 };
+  }
+}
+
+const SETUP_HINT = "First time here? Run `claude` once in its Shell tab and accept the trust prompt.";
+
+/** The "Add project" form: an absolute folder path; shows the server's reason when it refuses. */
+function AddProject() {
+  const [cwd, setCwd] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  async function add(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    const failed = await post("/projects", { cwd: cwd.trim() }, [200, 201]);
+    setError(failed?.message ?? null);
+    if (!failed) setCwd("");
+  }
+  return (
+    <form className="add-project" onSubmit={add}>
+      <input aria-label="Project folder" placeholder="/absolute/path/to/project" value={cwd} onChange={(e) => setCwd(e.target.value)} />
+      <button type="submit" disabled={cwd.trim() === ""}>Add project</button>
+      {error && <p role="alert" className="error">{error}</p>}
+    </form>
+  );
+}
+
 function HouseCard({
   house,
   cards,
@@ -147,16 +188,49 @@ function HouseCard({
   house: House;
   cards: Card[];
   onSelect: Select;
-  onNew: (cwd: string) => Promise<string | null>;
+  onNew: (cwd: string) => Promise<Failure | null>;
   notice?: string;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [shell, setShell] = useState(false);
+  const [runOpen, setRunOpen] = useState(false);
+  const [prompt, setPrompt] = useState("");
+  const [failed, setFailed] = useState(false);
   async function start() {
     setError(null);
+    setFailed(false);
     setPending(true);
-    setError(await onNew(house.cwd));
+    const reason = await onNew(house.cwd);
+    setError(reason?.message ?? null);
+    setFailed(reason?.status === 500);
     setPending(false);
+  }
+  async function run(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setFailed(false);
+    setPending(true);
+    const reason = await post("/runs", { cwd: house.cwd, prompt }, [201]);
+    setError(reason?.message ?? null);
+    setFailed(reason?.status === 500);
+    if (!reason) {
+      setPrompt("");
+      setRunOpen(false);
+    }
+    setPending(false);
+  }
+  async function closeShell() {
+    setError(null);
+    setFailed(false);
+    setError((await post("/shells/close", { cwd: house.cwd }, [204, 404]))?.message ?? null);
+    setShell(false);
+  }
+  async function removeProject() {
+    if (!window.confirm(`Remove ${house.project} from Funtown? Its shell ends; sessions keep running.`)) return;
+    setError(null);
+    setFailed(false);
+    setError((await post("/projects/remove", { cwd: house.cwd }, [204, 404]))?.message ?? null);
   }
   const needsYou = house.leads.some((lead) => lead.stage === "needs_you");
   return (
@@ -178,9 +252,38 @@ function HouseCard({
           ))}
         </ul>
       )}
+      {house.added && !house.seen && <p className="hint">{SETUP_HINT}</p>}
       <button type="button" onClick={start} disabled={pending}>
         New session
       </button>
+      <button type="button" aria-expanded={runOpen} onClick={() => setRunOpen(!runOpen)}>
+        Background run
+      </button>
+      <button type="button" role="tab" aria-selected={shell} onClick={() => setShell(!shell)}>
+        Shell
+      </button>
+      {house.added && (
+        <button type="button" onClick={removeProject}>
+          Remove project
+        </button>
+      )}
+      {runOpen && (
+        <form className="run" onSubmit={run}>
+          <textarea aria-label="Prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+          <button type="submit" disabled={pending || prompt.trim() === ""}>Start run</button>
+        </form>
+      )}
+      {shell && (
+        <div role="tabpanel" aria-label="Shell">
+          <button type="button" onClick={closeShell}>Close shell</button>
+          <LazyBoundary>
+            <Suspense fallback={null}>
+              <SessionTerminal shell={house.cwd} />
+            </Suspense>
+          </LazyBoundary>
+        </div>
+      )}
+      {failed && error && !(house.added && !house.seen) && <p className="hint">{SETUP_HINT}</p>}
       {(error ?? notice) && <p role="alert" className="error">{error ?? notice}</p>}
     </section>
   );
@@ -308,21 +411,21 @@ export function App() {
     );
     return () => timers.forEach(clearTimeout);
   }, [opening]);
-  /** Starts a background session in `cwd`; gives an error text, or null once started (its terminal opens when listed). */
-  const startSession = useCallback(async (cwd: string): Promise<string | null> => {
+  /** Starts a background session in `cwd`; gives the failure, or null once started (its terminal opens when listed). */
+  const startSession = useCallback(async (cwd: string): Promise<Failure | null> => {
     try {
       const reply = await fetch("/sessions", {
         method: "POST",
         headers: { "content-type": "application/json", "x-funtown-token": funtownToken() },
         body: JSON.stringify({ cwd }),
       });
-      if (reply.status !== 201) return (await reply.text()) || `Start failed (${reply.status}).`;
+      if (reply.status !== 201) return { message: (await reply.text()) || `Start failed (${reply.status}).`, status: reply.status };
       const { id } = (await reply.json()) as { id: string };
       setMissing((all) => all.filter((c) => c !== cwd));
       setOpening((all) => [...all, { id, cwd, at: Date.now(), from: selectionNow.current }]);
       return null;
     } catch {
-      return "Couldn't reach Funtown.";
+      return { message: "Couldn't reach Funtown.", status: 0 };
     }
   }, []);
   const openCwd = lead && town?.houses.find((house) => house.leads.includes(lead))?.cwd;
@@ -359,6 +462,7 @@ export function App() {
         </div>
       )}
       <NeedsList waiting={waiting} onOpen={openWaiting} />
+      <AddProject />
       {town && town.houses.length === 0 && <p className="empty">No Claude sessions running yet.</p>}
       <main className="town">
         {town?.houses.map((house) => (

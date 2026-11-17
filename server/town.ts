@@ -124,6 +124,12 @@ export class TownState {
   private touched = new Map<string, Set<string>>();
   // cwd -> its project's phase file
   private phases = new Map<string, PhaseFile>();
+  // the folders the user added as projects, in the order added
+  private projects: readonly string[] = [];
+  // the folders where a shell runs
+  private shells: readonly string[] = [];
+  // cwds where a session has been listed since the server started
+  private seen = new Set<string>();
   private readonly journal: Journal | undefined;
   private readonly claude: Town["claude"];
   private readonly unlistedMs: number;
@@ -299,6 +305,7 @@ export class TownState {
       else this.failedSeen.add(s.sessionId);
       this.noteStuck(lead, stuckBefore, Date.now(), s.cwd);
       next.set(s.sessionId, s.cwd);
+      this.seen.add(s.cwd);
     }
     for (const sid of this.listed.keys()) if (!next.has(sid)) this.forget(sid);
     this.listed = next;
@@ -332,33 +339,52 @@ export class TownState {
     this.phases = phases;
   }
 
+  /** Sets the folders the user added as projects, in the order added. */
+  setProjects(projects: readonly string[]): void {
+    this.projects = projects;
+  }
+
+  /** Sets the folders where a shell runs. */
+  setShells(shells: readonly string[]): void {
+    this.shells = shells;
+  }
+
   /** The listed lead's letters, newest first (at most 20), or undefined when it is not listed. */
   letters(sessionId: string): Letter[] | undefined {
     return this.listed.has(sessionId) ? [...(this.letterLists.get(sessionId) ?? [])] : undefined;
   }
 
   /**
-   * The listed sessions, one house per cwd in list order, with `cards` (open cards of listed
-   * leads): while a card is open, the subagent it names, or else its lead, needs the user
-   * for the card's kind whatever the list or hooks say. Each house has its phase, each
-   * character its tags, and each lead the files it shares with another listed lead.
+   * One house per added project in the order added, even with no session, then one per other
+   * cwd of the listed sessions in list order, then one per other folder where a shell runs,
+   * with `cards` (open cards of listed leads): while a card is open, the subagent it names, or
+   * else its lead, needs the user for the card's kind whatever the list or hooks say. Each house
+   * has its phase, each character its tags, and each lead the files it shares with another
+   * listed lead.
    */
   snapshot(cards: Card[] = []): Town {
     const houses = new Map<string, House>();
+    const house = (cwd: string): House => {
+      let found = houses.get(cwd);
+      if (!found) {
+        const phase = this.phases.get(cwd);
+        found = { project: basename(cwd) || cwd, cwd, leads: [] };
+        if (phase) found.phase = { phase: phase.phase, ...(phase.note !== undefined ? { note: phase.note } : {}) };
+        if (this.seen.has(cwd)) found.seen = true;
+        houses.set(cwd, found);
+      }
+      return found;
+    };
+    for (const cwd of this.projects) house(cwd).added = true;
     for (const [sid, cwd] of this.listed) {
       const phase = this.phases.get(cwd);
-      let house = houses.get(cwd);
-      if (!house) {
-        house = { project: basename(cwd) || cwd, cwd, leads: [] };
-        if (phase) house.phase = { phase: phase.phase, ...(phase.note !== undefined ? { note: phase.note } : {}) };
-        houses.set(cwd, house);
-      }
       const lead = this.leads.get(sid)!;
       const shown = { ...withTags(lead, phase?.tags), subagents: lead.subagents.map((a) => withTags(a, phase?.tags)) };
       const overlaps = this.overlaps(sid, cwd);
       if (overlaps.length > 0) shown.overlaps = overlaps;
-      house.leads.push(withCards(shown, cards));
+      house(cwd).leads.push(withCards(shown, cards));
     }
+    for (const cwd of this.shells) house(cwd);
     return { houses: [...houses.values()], cards, started: this.started, claude: this.claude };
   }
 

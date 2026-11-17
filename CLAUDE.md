@@ -13,8 +13,9 @@ on it.
   `funtown-hold.ts` (sync, 2 h, PermissionRequest, AskUserQuestion, ExitPlanMode: waits on `/hold`);
   `letter.md` (printed at SessionStart; `~/.funtown/letter.md` overrides, empty = off); `install.ts`.
 - `server/` on 127.0.0.1:4777: `agents.ts` runs `claude`; `town.ts` merges the 2 s poll and hook
-  events; `journal.ts`; `holds.ts` cards; `terminal.ts` `claude attach`; `errors.ts` the error log;
-  `workflow.ts` phase file, `gh pr list`; `steward.ts` the steward; `main.ts` run file, signals.
+  events; `journal.ts`; `holds.ts` cards; `terminal.ts` `claude attach` and shells; `errors.ts` the error log;
+  `workflow.ts` phase file, `gh pr list`; `steward.ts` the steward; `projects.ts` added projects;
+  `main.ts` run file, signals.
 - `web/` (React, Vite): `AnswerCard`, `Letters`, `Morning`, `Switch`, `needs.tsx` (Needs you).
   `tests/`: Vitest; Playwright in `tests/e2e/`, one spec at a time; the fake `claude` is also `gh`.
 Contracts (source of truth: this list; full text in the local .workflow/history/m<N>-MILESTONE.md)
@@ -33,17 +34,24 @@ Contracts (source of truth: this list; full text in the local .workflow/history/
   steward in `~/.funtown/steward`: one request per ready PR head (`server/steward.md`; overridden by
   `~/.funtown/steward.md`, empty = off), pasted only with no card and not working; next letter = review.
 - `claude`: `--version` (min 2.1.325), `agents --json` (failed: keep the last list), `--bg`
-  (`bgIsolation: "none"`), `attach`; `gh` only `pr list`; no shell; env drops `CLAUDE*`/`AI_AGENT`
+  (`bgIsolation: "none"`), `--bg <prompt>` (a run, own worktree), `attach`; `gh` only `pr list`; env drops `CLAUDE*`/`AI_AGENT`
   but `CLAUDE_CONFIG_DIR`. Page token in `<meta name="funtown-token">`: with the Origin for
-  `/jump`, `/sessions`, `/answer`, `/switch`, `/term`; alone for `/letters`, `/morning`.
+  `/jump`, `/sessions`, `/runs`, `/projects`, `/projects/remove`, `/shells/close`, `/answer`, `/switch`,
+  `/term`; alone for `/letters`, `/morning`, `GET /projects`.
+- Projects: `projects.json`, real paths (symlinks resolved); each is a house with or without sessions;
+  while the file can't be read, add and remove answer 500 and never write it. Houses: added projects,
+  listed sessions' cwds, folders whose shell runs. Shell: `/term?shell=<house cwd>`, one login shell
+  per project (`$SHELL -l`), kept when its socket closes, replay from a line start in the last 256 KB;
+  ends on Close shell, `exit`, Remove project (asks first) or the server's close.
 - Env `FUNTOWN_` + `PORT`, `URL`, `CLAUDE`, `GH`, `STATE`, `ANSWERS`, `JOURNAL`, `LOG`, `RUN`,
-  `SWITCHES`, `STEWARD` (paths default to `~/.funtown/`); `startServer` takes the paths as options.
+  `SWITCHES`, `STEWARD`, `PROJECTS` (paths default to `~/.funtown/`); `startServer` takes the paths as options.
 Commands: `npm start` (reinstalls hooks, serves); `npm run install-hooks`/`uninstall-hooks`; `npm test`.
 Decisions that bind
 - Funtown sends nothing but the opt-in "Suggest"; the `claude` and `gh` it runs talk to Anthropic and
   GitHub as usual. 127.0.0.1, `Host` 127.0.0.1 or localhost; no reading Claude's folder; sessions only
   in listed projects and the steward's folder. `/events`, `/hold` refuse any `Origin`, no body limit;
-  page POSTs cap at 64 KB, `/term` frames 1 MB; ids, cwds, ttys reach children only as arguments.
+  page POSTs cap at 64 KB, `/term` frames 1 MB; ids, cwds, ttys, prompts reach children only as
+  arguments. The one shell Funtown starts is the Shell tab's interactive login shell in a house's folder.
 - All code our own. Tests never run the real `claude` or `gh`, use real names or the home folder.
   Replies are shaped only through SessionStart context; only the steward gets requests (reviews).
 - Out of git: `.workflow/`, .claude/settings.json, .claude/never-push; a security finding is fixed

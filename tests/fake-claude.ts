@@ -94,7 +94,7 @@ export class FakeClaude {
   }
   /** Empties the list and the `--bg` record and clears every failure switch. */
   reset(): this {
-    for (const n of ["started.json", "prs.json", "pr-calls.jsonl", "list-fail", "version-fail", "bg-fail", "bg-unlisted", "attach-chatty", "attach-sticky", "list-delay", "list-asks", "agents.pids"]) rmSync(join(this.dir, n), { force: true });
+    for (const n of ["started.json", "prs.json", "pr-calls.jsonl", "list-fail", "version-fail", "bg-fail", "bg-unlisted", "attach-chatty", "attach-sticky", "list-delay", "list-asks", "agents.pids", "shell-starts.jsonl"]) rmSync(join(this.dir, n), { force: true });
     return this.list([]);
   }
   /** Sets what `agents --json` prints. */
@@ -182,6 +182,20 @@ export class FakeClaude {
   attachPids(id: string): number[] {
     const f = join(this.dir, `attach-${id}.pids`);
     return existsSync(f) ? readFileSync(f, "utf8").split("\n").filter(Boolean).map(Number) : [];
+  }
+  /** Path of a fake login shell in this folder (see fake-shell.cjs), made on first use. */
+  get shell(): string {
+    const path = join(this.dir, "shell");
+    if (!existsSync(path)) {
+      copyFileSync(join(import.meta.dirname, "fake-shell.cjs"), path);
+      chmodSync(path, 0o755);
+    }
+    return path;
+  }
+  /** Every shell the fake shell has started so far: its pid and the folder it ran in. */
+  shellStarts(): { pid: number; cwd: string }[] {
+    const f = join(this.dir, "shell-starts.jsonl");
+    return existsSync(f) ? readFileSync(f, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
   }
   dispose() {
     rmSync(this.dir, { recursive: true, force: true });
