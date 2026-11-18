@@ -222,24 +222,24 @@ function HouseCard({
   const [runOpen, setRunOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [failed, setFailed] = useState(false);
-  async function start() {
+  /** Clears the last error, runs `fn`, shows its failure, and flags a 500 so the setup hint can appear. */
+  async function attempt(fn: () => Promise<Failure | null>) {
     setError(null);
     setFailed(false);
-    setPending(true);
-    const reason = await onNew(house.cwd);
+    const reason = await fn();
     setError(reason?.message ?? null);
     setFailed(reason?.status === 500);
+    return reason;
+  }
+  async function start() {
+    setPending(true);
+    await attempt(() => onNew(house.cwd));
     setPending(false);
   }
   async function run(event: FormEvent) {
     event.preventDefault();
-    setError(null);
-    setFailed(false);
     setPending(true);
-    const reason = await post("/runs", { cwd: house.cwd, prompt }, [201]);
-    setError(reason?.message ?? null);
-    setFailed(reason?.status === 500);
-    if (!reason) {
+    if (!(await attempt(() => post("/runs", { cwd: house.cwd, prompt }, [201])))) {
       setPrompt("");
       setRunOpen(false);
     }

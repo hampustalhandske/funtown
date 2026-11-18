@@ -82,21 +82,28 @@ const ICONS = {
   back: <Icon><path d="M10 6l-6 6 6 6M4 12h16" /></Icon>,
 };
 
-type SettingsProps = { town: Town | null; muted: boolean; onMute: () => void; open: OpenSession | null; onClose: () => void };
-
-/** The settings pane: add or remove projects, your avatar, sounds and pop-ups, "I had to switch", and Claude version problems. */
-function Settings({ town, muted, onMute, open, onClose }: SettingsProps) {
-  const [error, setError] = useState<string | null>(null);
+/**
+ * Calls `onClose` on Escape and stops the event there, so a pane closes without the panel under it closing too.
+ * It listens on the document, which an event reaches before the window. With `skipInTerminal`, Escape typed in a terminal is left alone.
+ */
+function useEscape(onClose: () => void, skipInTerminal = false) {
   useEffect(() => {
-    // On the document, which an event reaches before the window, so Escape closes this pane and not the panel under it too.
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || (event.target instanceof Element && event.target.closest(".terminal"))) return;
+      if (event.key !== "Escape" || (skipInTerminal && event.target instanceof Element && event.target.closest(".terminal"))) return;
       event.stopPropagation();
       onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, skipInTerminal]);
+}
+
+type SettingsProps = { town: Town | null; muted: boolean; onMute: () => void; open: OpenSession | null; onClose: () => void };
+
+/** The settings pane: add or remove projects, your avatar, sounds and pop-ups, "I had to switch", and Claude version problems. */
+function Settings({ town, muted, onMute, open, onClose }: SettingsProps) {
+  const [error, setError] = useState<string | null>(null);
+  useEscape(onClose, true);
   async function remove(house: House) {
     setError((await removeProject(house))?.message ?? null);
   }
@@ -155,15 +162,7 @@ type AskTarget = { cwd: string; parcel: Parcel };
 function AskPanel({ target, onClose }: { target: AskTarget; onClose: () => void }) {
   const { cwd, parcel } = target;
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.stopPropagation();
-      onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscape(onClose);
   async function ask() {
     const failed = await askReview(cwd, parcel.number);
     if (failed) setError(failed.message);
