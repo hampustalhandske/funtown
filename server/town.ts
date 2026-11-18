@@ -22,8 +22,7 @@ export type HookEvent = {
   funtown?: { tty?: string | null; term_program?: string | null; at?: number };
 };
 
-/** Letters kept per lead, and the longest letter text. */
-const MAX_LETTERS = 1;
+/** The longest letter text. */
 const MAX_LETTER_TEXT = 65_536;
 
 /** How many of a hook event's `background_tasks` are subagents still running or pending, leaving out `except`. */
@@ -116,8 +115,8 @@ export class TownState {
   // session ids whose lead's own last turn event was Stop: a "busy" list (background
   // commands still running) doesn't make them working again
   private turnEnded = new Set<string>();
-  // session id -> its letters (its own and its subagents'), newest first
-  private letterLists = new Map<string, Letter[]>();
+  // session id -> its newest letter (its own or a subagent's)
+  private newestLetter = new Map<string, Letter>();
   private letterCount = 0;
   // unique per start, so letter ids never repeat across restarts
   private readonly idPrefix = randomUUID();
@@ -151,8 +150,7 @@ export class TownState {
     this.journal = journal;
     for (const e of [...(journal?.kept ?? [])].sort((a, b) => b.at - a.at)) {
       if (e.kind !== "letter") continue;
-      const list = this.letterLists.get(e.lead) ?? [];
-      if (list.length < MAX_LETTERS) this.letterLists.set(e.lead, [...list, e.letter]);
+      if (!this.newestLetter.has(e.lead)) this.newestLetter.set(e.lead, e.letter);
     }
   }
 
@@ -358,7 +356,9 @@ export class TownState {
 
   /** The listed lead's newest letter (its own or a subagent's) as a list, or undefined when it is not listed. */
   letters(sessionId: string): Letter[] | undefined {
-    return this.listed.has(sessionId) ? [...(this.letterLists.get(sessionId) ?? [])] : undefined;
+    if (!this.listed.has(sessionId)) return undefined;
+    const l = this.newestLetter.get(sessionId);
+    return l ? [l] : [];
   }
 
   /**
@@ -413,7 +413,7 @@ export class TownState {
     this.heard.delete(sessionId);
     this.leadHeardAt.delete(sessionId);
     this.turnEnded.delete(sessionId);
-    this.letterLists.delete(sessionId);
+    this.newestLetter.delete(sessionId);
     this.failedSeen.delete(sessionId);
     this.dropSession(sessionId, [this.agentCounts, this.lastAt, this.calls, this.handedBack]);
   }
@@ -467,7 +467,7 @@ export class TownState {
       text = `${cut}…`;
     }
     const letter: Letter = { id: `letter-${this.idPrefix}-${++this.letterCount}`, from: writer.id, name: writer.name, text, at };
-    this.letterLists.set(lead.id, [letter, ...(this.letterLists.get(lead.id) ?? [])].slice(0, MAX_LETTERS));
+    this.newestLetter.set(lead.id, letter);
     writer.letter = at;
     const cwd = this.listed.get(lead.id) ?? eventCwd;
     if (cwd) this.journal?.append({ kind: "letter", at, cwd, lead: lead.id, letter });
@@ -486,8 +486,8 @@ export class TownState {
       kind: "terminal",
       shortId: null,
     };
-    const own = this.letterLists.get(sid)?.find((l) => l.from === sid);
-    if (own) lead.letter = own.at;
+    const own = this.newestLetter.get(sid);
+    if (own?.from === sid) lead.letter = own.at;
     this.leads.set(sid, lead);
     return lead;
   }
