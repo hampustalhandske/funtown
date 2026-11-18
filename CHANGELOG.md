@@ -2,6 +2,7 @@
 
 One line per change, newest first.
 
+- 2026-11-18 08:50 · Simplified v2 without changing what it does: `GET /projects` is gone (the page never used it), the avatar and project files share one read and write helper, and small repeats in the web pages and the letter store are merged.
 - 2026-11-18 08:10 · Subagents whose own stop never arrived no longer stay on the rack and in the classroom: when a session's turn ends, every subagent not still running is finished.
 - 2026-11-18 07:35 · `npm test` and the test command build the page before the unit tests, so a fresh checkout or worktree passes.
 - 2026-11-17 21:40 · Settings has a row of eight avatars; the one you pick is the king at the castle desk and the observer in every classroom, and is kept across restarts. Only the king wears a hat.
