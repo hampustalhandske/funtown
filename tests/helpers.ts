@@ -263,12 +263,6 @@ export async function postPage(s: { url: string }, path: string, body: unknown, 
 /** A path for a projects file in a fresh temp folder; the file itself does not exist yet. */
 export const projectsPath = () => join(realDir(), "projects.json");
 
-/** GET /projects with the page token: the status and the parsed list. */
-export async function getProjects(s: { url: string }): Promise<{ status: number; list: string[] }> {
-  const res = await fetch(`${s.url}/projects`, { headers: { "x-funtown-token": await tokenOf(s.url) } });
-  return { status: res.status, list: res.status === 200 ? ((await res.json()) as string[]) : [] };
-}
-
 /** An open /term socket: the output so far, the `shared` counts heard, whether it closed, and a frame sender. */
 export type Conn = { ws: WebSocket; out: () => string; shared: number[]; closed: () => boolean; send: (f: object) => void };
 

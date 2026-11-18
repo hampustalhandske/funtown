@@ -1,5 +1,6 @@
-import { mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { realpathSync, statSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
+import { readIfExists, writeAtomic } from "./files.ts";
 
 /**
  * The folders the user added, from the projects file at `path` (a JSON array of absolute
@@ -7,13 +8,8 @@ import { dirname, isAbsolute, resolve } from "node:path";
  * read or is not such an array.
  */
 export function readProjects(path: string): string[] {
-  let text: string;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw err;
-  }
+  const text = readIfExists(path);
+  if (text === undefined) return [];
   const list: unknown = JSON.parse(text);
   if (!Array.isArray(list) || !list.every((p) => typeof p === "string" && isAbsolute(p))) {
     throw new Error("not a JSON array of absolute paths");
@@ -26,10 +22,7 @@ export function readProjects(path: string): string[] {
  * replaced whole, through a temporary file beside it, so a failed write leaves the old list.
  */
 export function writeProjects(path: string, list: readonly string[]): void {
-  mkdirSync(dirname(path), { recursive: true });
-  const temp = `${path}.${process.pid}.tmp`;
-  writeFileSync(temp, `${JSON.stringify(list, null, 2)}\n`);
-  renameSync(temp, path);
+  writeAtomic(path, `${JSON.stringify(list, null, 2)}\n`);
 }
 
 /**

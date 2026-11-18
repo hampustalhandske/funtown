@@ -636,15 +636,6 @@ export async function startServer(opts: {
       return;
     }
 
-    if (req.method === "GET" && path === "/projects") {
-      if (!tokenOk(req.headers["x-funtown-token"])) {
-        res.writeHead(403).end();
-        return;
-      }
-      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(projects));
-      return;
-    }
-
     if (req.method === "POST" && path === "/switch") {
       const body = await pageBody(req, res);
       if (body === null) return;

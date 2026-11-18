@@ -45,7 +45,7 @@ Contracts (source of truth: this list; full text in the local .workflow/history/
   (`bgIsolation: "none"`), `--bg <prompt>` (a run, own worktree), `attach`, `stop <id>` (Close session; the conversation is kept); `gh` only `pr list`; env drops `CLAUDE*`/`AI_AGENT`
   but `CLAUDE_CONFIG_DIR`. Page token in `<meta name="funtown-token">`: with the Origin for
   `/jump`, `/sessions`, `/runs`, `/projects`, `/projects/remove`, `/sessions/stop`, `/shells/close`, `/answer`, `/avatar`, `/review`, `/switch`,
-  `/term`; alone for `/letters`, `/morning`, `GET /projects`.
+  `/term`; alone for `/letters`, `/morning`.
 - Avatar: `Town.avatar` = the chosen preset's id (absent = the king); `POST /avatar { id }` (id `^[a-z0-9-]{1,32}$`) writes `avatar.json` `{ id }`; the server stores any such id, the page falls back to the king for one it doesn't know; an unreadable file is logged and means none.
 - Projects: `projects.json`, real paths (symlinks resolved); each is a house with or without sessions;
   while the file can't be read, add and remove answer 500 and never write it. Only sessions in an
