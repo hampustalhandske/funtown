@@ -38,29 +38,28 @@ async function open(
     if (jumpReply.delayMs) await new Promise((done) => setTimeout(done, jumpReply.delayMs));
     return r.fulfill({ status: jumpReply.status, contentType: "text/plain", body: jumpReply.body ?? "" });
   });
-  await page.goto("/");
+  await page.goto("/work.html");
   /** Sets the state the stream sends on its next (quick) reconnect. */
   return { jumps, send: stream.send };
 }
 
-test("clicking_a_lead_opens_a_panel_with_stage_step_need_and_its_subagents_and_escape_closes_it", async ({ page }) => {
+test("clicking_a_lead_opens_a_panel_with_stage_need_and_its_subagents_and_escape_closes_it", async ({ page }) => {
   await open(page);
   await page.locator('section[aria-label="demo-app"] .character').filter({ hasText: "lead-1" }).first().click({ position: { x: 5, y: 5 } });
   const panel = page.getByRole("dialog", { name: "lead-1 details" });
   await expect(panel).toBeVisible();
   await expect(panel).toContainText("needs_you".replace("_", " "), { ignoreCase: true });
-  await expect(panel).toContainText("Bash: npm test");
   await expect(panel).toContainText("waiting for you: permission");
-  await expect(panel.getByRole("list", { name: "Subagents" })).toHaveText("Explore-1 🟢 working");
+  await expect(panel.getByRole("list", { name: "Subagents" })).toHaveText(/^Explore-1\s*working$/);
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
 });
 
-test("a_lead_without_a_step_shows_nothing_yet_and_the_x_button_closes_the_panel", async ({ page }) => {
+test("the_x_button_closes_the_panel", async ({ page }) => {
   await open(page);
   await page.locator('section[aria-label="other-app"] .character').filter({ hasText: "lead-2" }).click();
   const panel = page.getByRole("dialog", { name: "lead-2 details" });
-  await expect(panel).toContainText("nothing yet");
+  await expect(panel).toContainText("working");
   await panel.getByRole("button", { name: /✕|close/i }).click();
   await expect(panel).toHaveCount(0);
 });
@@ -69,7 +68,7 @@ test("a_subagent_panel_jumps_to_its_leads_id_not_its_own", async ({ page }) => {
   const { jumps } = await open(page);
   await page.locator('ul[aria-label="lead-1 subagents"] .character').filter({ hasText: "Explore-1" }).click();
   const panel = page.getByRole("dialog", { name: "Explore-1 details" });
-  await expect(panel).toContainText("Read");
+  await expect(panel).toContainText("working");
   await panel.getByRole("button", { name: "Go to terminal" }).click();
   await expect.poll(() => jumps).toEqual([{ lead: "s1" }]);
 });
@@ -87,10 +86,10 @@ test("an_open_panel_follows_new_states_and_closes_when_its_character_is_removed"
   const stream = await open(page);
   await page.locator('section[aria-label="other-app"] .character').filter({ hasText: "lead-2" }).click();
   const panel = page.getByRole("dialog", { name: "lead-2 details" });
-  await expect(panel).toContainText("nothing yet");
+  await expect(panel).toContainText("working");
   const lead2 = town.houses[1].leads[0];
-  stream.send({ claude: { version: "2.1.325", problems: [] }, cards: [], houses: [town.houses[0], { ...town.houses[1], leads: [{ ...lead2, step: "Edit: a.ts" }] }] });
-  await expect(panel).toContainText("Edit: a.ts");
+  stream.send({ claude: { version: "2.1.325", problems: [] }, cards: [], houses: [town.houses[0], { ...town.houses[1], leads: [{ ...lead2, stage: "needs_you", needs: "turn ended" }] }] });
+  await expect(panel).toContainText("waiting for you: turn ended");
   stream.send({ claude: { version: "2.1.325", problems: [] }, cards: [], houses: [town.houses[0]] });
   await expect(panel).toHaveCount(0);
   stream.send(town);

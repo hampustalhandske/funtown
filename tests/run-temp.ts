@@ -20,11 +20,14 @@ export function runTemp(): () => void {
 
 /**
  * Vitest's global setup: one temp folder for the run, removed when it ends. Runs the fake
- * `claude` once, so macOS checks its one copy before the workers start (see fake-claude.ts).
+ * `claude` and the fake shell once each, so macOS checks their one copies before the workers
+ * start (see fake-claude.ts).
  */
 export default async function setup(): Promise<() => void> {
   const done = runTemp();
   const { FakeClaude } = await import("./fake-claude.ts");
-  execFileSync(FakeClaude.create().path, ["--version"]);
+  const fake = FakeClaude.create();
+  execFileSync(fake.path, ["--version"]);
+  execFileSync(fake.shell, [], { env: { ...process.env, FAKE_SHELL_EXIT: "0" } });
   return done;
 }

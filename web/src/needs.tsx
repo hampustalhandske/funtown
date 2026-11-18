@@ -1,25 +1,30 @@
 import { useEffect, useRef, useState } from "react";
-import type { Town } from "../../server/types.ts";
+import type { Card, Character, Town } from "../../server/types.ts";
 
 /** One character waiting for the user: where it is, what it needs and since when. */
 export type Waiting = { key: string; lead: string; id: string; project: string; cwd: string; name: string; need: string; since: number };
 
 const MUTE_KEY = "funtown-muted";
 const TOAST_MS = 8000;
+/** The needs that hold a card; every `Card["kind"]` must be listed. */
+const CARD_KINDS: Record<Card["kind"], true> = { permission: true, question: true, plan: true };
 
-/** Every needs_you character (lead or subagent) of `town`, oldest first. */
+/** What a needs_you character waits for, in words: "stuck: <reason>", the card kind, or "waiting". */
+export const needOf = (c: Character): string => (c.needs === "stuck" ? `stuck: ${c.reason ?? "error"}` : c.needs) ?? "waiting";
+
+/** Every needs_you character (lead or subagent) of `town`: cards (permission, question, plan) first, then the rest; oldest first within each. */
 export function waitingList(town: Town | null): Waiting[] {
   const list: Waiting[] = [];
   for (const house of town?.houses ?? []) {
     for (const lead of house.leads) {
       for (const c of [lead, ...lead.subagents]) {
         if (c.stage !== "needs_you") continue;
-        const need = (c.needs === "stuck" ? `stuck: ${c.reason ?? "error"}` : c.needs) ?? "waiting";
-        list.push({ key: `${lead.id}/${c.id}`, lead: lead.id, id: c.id, project: house.project, cwd: house.cwd, name: c.name, need, since: c.since ?? Infinity });
+        list.push({ key: `${lead.id}/${c.id}`, lead: lead.id, id: c.id, project: house.project, cwd: house.cwd, name: c.name, need: needOf(c), since: c.since ?? Infinity });
       }
     }
   }
-  return list.sort((a, b) => a.since - b.since);
+  const card = (w: Waiting) => (w.need in CARD_KINDS ? 0 : 1);
+  return list.sort((a, b) => card(a) - card(b) || a.since - b.since);
 }
 
 /** "3m" style wait text for a character waiting since `since`. */
@@ -116,7 +121,7 @@ export function useAlerts(waiting: Waiting[], loaded: boolean, muted: boolean, o
   return { toasts, drop: (w: Waiting) => setToasts((all) => all.filter((t) => t !== w)) };
 }
 
-/** Option+N (⌥N) opens the oldest waiting character, then the next, wrapping; ignored while typing. */
+/** Option+N (⌥N) opens the first waiting character of the list, then the next, wrapping; ignored while typing. */
 export function useNextKey(waiting: Waiting[], current: string | null, open: (w: Waiting) => void) {
   const latest = useRef({ waiting, current, open });
   latest.current = { waiting, current, open };
@@ -137,7 +142,7 @@ export function useNextKey(waiting: Waiting[], current: string | null, open: (w:
   }, []);
 }
 
-/** The "Needs you" list: one row per waiting character, oldest first. */
+/** The "Needs you" list: one row per waiting character, in `waitingList` order. */
 export function NeedsList({ waiting, onOpen }: { waiting: Waiting[]; onOpen: (w: Waiting) => void }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -147,7 +152,7 @@ export function NeedsList({ waiting, onOpen }: { waiting: Waiting[]; onOpen: (w:
   if (waiting.length === 0) return null;
   return (
     <section className="needs-list" aria-label="Needs you">
-      <h2>🔴 Needs you <span className="hint">⌥N opens the next</span></h2>
+      <h2>Needs you <span className="hint">⌥N opens the next</span></h2>
       <ol>
         {waiting.map((w) => (
           <li key={w.key}>

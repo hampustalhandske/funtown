@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { errorLines, fakeClaude, houseAt, leadsOf, listed, pr, realDir, sleep, start, townWhere, until } from "./helpers.ts";
 import { FakeClaude, type Pr } from "./fake-claude.ts";
 
-const GH_ARGS = ["pr", "list", "--state", "open", "--json", "number,title,url,isDraft,headRefOid", "--limit", "50"];
+const GH_ARGS = ["pr", "list", "--state", "open", "--json", "number,title,url,isDraft,headRefOid", "--limit", "50", "--author", "@me"];
 
 /**
  * A server with no steward listing lead s1 in `cwd` (default: a fresh real folder), polling PRs
@@ -38,7 +38,7 @@ describe("parcels from gh pr list", () => {
     expect(houseAt(later, cwd)!.parcels!.map((p) => p.number)).toEqual([13, 5]);
   });
 
-  it("gh_runs_without_a_shell_in_the_houses_folder_as_its_cwd_with_exactly_the_contracts_arguments", async () => {
+  it("gh_runs_without_a_shell_in_the_houses_folder_as_its_cwd_listing_only_the_users_own_open_prs", async () => {
     // Through a shell, the spaces and quotes in either path would break the command.
     const cwd = join(realDir(), "my app 'x' \"y\"");
     mkdirSync(cwd);

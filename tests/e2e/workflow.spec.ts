@@ -28,6 +28,7 @@ const town = {
         { number: 11, title: "Add docs", url: url(11), draft: false, review: { state: "reviewing", steward: "st1" } },
         { number: 10, title: "Try an idea", url: url(10), draft: true },
         { number: 9, title: "Wait in line", url: url(9), draft: false, review: { state: "queued" } },
+        { number: 8, title: "Not asked yet", url: url(8), draft: false, review: { state: "idle" } },
       ],
     },
     {
@@ -49,7 +50,7 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/letters?lead=st1", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "L1", from: "st1", name: "steward", text: REVIEW, at: 2 }]) }),
   );
-  await page.goto("/");
+  await page.goto("/work.html");
   await expect(house(page)).toBeVisible();
 });
 
@@ -84,6 +85,26 @@ test("each_parcel_shows_number_title_a_link_its_draft_mark_or_review_state", asy
   await expect(parcel(page, 10)).not.toContainText(/queued|reviewing|review ready/);
   await expect(parcel(page, 9)).toContainText("queued");
   await expect(parcel(page, 9)).not.toContainText("draft");
+});
+
+test("only_an_idle_parcel_has_an_ask_for_review_button_and_it_asks_only_when_clicked", async ({ page }) => {
+  const asked: { body: unknown; token: string | undefined; origin: string | undefined }[] = [];
+  await page.route("**/review", (r) => {
+    const req = r.request();
+    asked.push({ body: req.postDataJSON(), token: req.headers()["x-funtown-token"], origin: req.headers()["origin"] });
+    return r.fulfill({ status: 204 });
+  });
+  const button = (n: number) => parcel(page, n).getByRole("button", { name: "Ask for review" });
+  await expect(button(8)).toBeVisible();
+  for (const n of [9, 10, 11, 12]) await expect(button(n)).toHaveCount(0);
+  await expect(parcel(page, 8)).not.toContainText("draft");
+  expect(asked).toEqual([]);
+
+  await button(8).click();
+  await expect.poll(() => asked.length).toBe(1);
+  expect(asked[0].body).toEqual({ cwd: "/work/demo-app", number: 8 });
+  expect(asked[0].token).toBeTruthy();
+  expect(asked[0].origin).toBeTruthy();
 });
 
 test("clicking_a_ready_review_opens_the_stewards_panel_with_the_review_as_written", async ({ page }) => {

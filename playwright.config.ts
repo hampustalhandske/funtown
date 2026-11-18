@@ -29,6 +29,10 @@ export default defineConfig({
       // The fake `claude` also answers `gh pr list`, so no test runs the real gh.
       FUNTOWN_GH: fake.path,
       FUNTOWN_STEWARD: join(E2E_FAKE_DIR, "steward"),
+      // The Shell tab runs this fake login shell, never the user's own, and the project list stays out of the home folder.
+      SHELL: fake.shell,
+      FUNTOWN_PROJECTS: join(E2E_FAKE_DIR, "projects.json"),
+      FUNTOWN_AVATAR: join(E2E_FAKE_DIR, "avatar.json"),
     },
     reuseExistingServer: false,
   },

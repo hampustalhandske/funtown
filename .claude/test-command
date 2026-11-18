@@ -1,1 +1,1 @@
-npx eslint . && npx vitest run && npx playwright test
+npx eslint . && npx vite build && npx vitest run && npx playwright test

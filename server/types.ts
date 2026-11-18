@@ -60,6 +60,8 @@ export type Lead = Character & {
   shortId: string | null;
   /** Files this run and another listed run both touched; absent when none. */
   overlaps?: { file: string; with: string; withName: string }[];
+  /** True on the listed session the steward module tracks as the steward; absent on every other lead. */
+  steward?: true;
 };
 /** An open pull request of a house's project. */
 export type Parcel = {
@@ -67,9 +69,9 @@ export type Parcel = {
   title: string;
   url: string;
   draft: boolean;
-  /** The steward's review of the current head commit; absent for a draft or with reviews off. */
+  /** The steward's review of the current head commit; absent for a draft or with reviews off. "idle": not asked for. */
   review?: {
-    state: "queued" | "reviewing" | "ready";
+    state: "idle" | "queued" | "reviewing" | "ready";
     /** The steward's session id once it is listed. */
     steward?: string;
     /** The review letter's id, when ready. */
@@ -81,9 +83,13 @@ export type House = {
   cwd: string;
   leads: Lead[];
   /** From .claude/phase.json; absent when there is none or it is unreadable. */
-  phase?: { phase: string; note?: string };
+  phase?: { phase: string; note?: string; steps?: string[] };
   /** Open PRs, newest number first; absent until the first gh list succeeds. */
   parcels?: Parcel[];
+  /** True when the user added this folder in the app (it stays with no sessions). */
+  added?: boolean;
+  /** True once a session has been listed here since the server started. */
+  seen?: boolean;
 };
 /** A held request waiting for the user's answer. */
 export type Card = {
@@ -110,4 +116,6 @@ export type Town = {
   started: number;
   /** The installed Claude Code's version, and one line per feature that won't work with it. */
   claude: { version: string | null; problems: string[] };
+  /** The id of the avatar the user chose for the king; absent when none is chosen. */
+  avatar?: string;
 };

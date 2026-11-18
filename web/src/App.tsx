@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState, useRef } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState, useRef, type FormEvent } from "react";
 import type { Card, Character, House, Lead, Parcel, Stage, Town } from "../../server/types.ts";
 import { AnswerCard } from "./AnswerCard.tsx";
 import { MorningButton } from "./Morning.tsx";
@@ -13,10 +13,20 @@ const ReplyBox = lazy(() => import("./Letters.tsx").then((m) => ({ default: m.Re
 const SessionTerminal = lazy(() => import("./Terminal.tsx").then((m) => ({ default: m.SessionTerminal })));
 
 const STAGE_LABEL: Record<Stage, string> = {
-  working: "🟢 working",
-  needs_you: "🔴 needs you",
-  done: "⚪ done",
+  working: "working",
+  needs_you: "needs you",
+  done: "done",
 };
+
+/** A coloured dot (CSS) followed by the stage's word; the colour never carries the meaning alone. */
+function StageLabel({ stage }: { stage: Stage }) {
+  return (
+    <>
+      <span className="dot" data-stage={stage} aria-hidden="true" />
+      {STAGE_LABEL[stage]}
+    </>
+  );
+}
 
 const OPENING_TIMEOUT_MS = 30_000;
 
@@ -24,7 +34,7 @@ const OPENING_TIMEOUT_MS = 30_000;
  * Subscribes to the server's Town stream; gives the latest Town (null before the first) and
  * whether the server has restarted since the page loaded, which leaves the page's token stale.
  */
-function useTown(): [Town | null, boolean] {
+export function useTown(): [Town | null, boolean] {
   const [town, setTown] = useState<Town | null>(null);
   const [restarted, setRestarted] = useState(false);
   useEffect(() => {
@@ -50,26 +60,25 @@ function CharacterRow({
   avatar: string;
   onSelect: (id: string) => void;
 }) {
-  const { name, stage, activity, needs, letter, role, tags } = character;
+  const { name, stage, needs, letter, role, tags } = character;
   return (
     <button
       type="button"
       className={`character ${stage}`}
       data-stage={stage}
-      aria-label={[name, "kind" in character ? character.kind : null, STAGE_LABEL[stage].replace(/^\S+ /, "")].filter(Boolean).join(", ")}
+      aria-label={[name, "kind" in character ? character.kind : null, STAGE_LABEL[stage]].filter(Boolean).join(", ")}
       onClick={() => onSelect(character.id)}>
       <span className="avatar" aria-hidden="true">{avatar}</span>
       <span className="body">
         <span className="line">
           <span className="name">{name}</span>
           {"kind" in character && <span className="kind">{character.kind === "background" ? "background" : "terminal"}</span>}
-          <span className="stage">{STAGE_LABEL[stage]}</span>
+          <span className="stage"><StageLabel stage={stage} /></span>
           {role && <span className="badge role">{role}</span>}
           {tags?.map((tag) => <span key={tag} className="badge tag">{tag}</span>)}
           {letter !== undefined && <span className="mail" role="img" aria-label="has a letter">✉</span>}
         </span>
         {stage === "needs_you" && needs && <span className="activity">waiting for you: {needs}</span>}
-        {stage === "working" && <span className="activity">{activity ?? "thinking"}</span>}
         <Overlaps overlaps={(character as Partial<Lead>).overlaps} />
       </span>
     </button>
@@ -83,23 +92,33 @@ function Overlaps({ overlaps }: { overlaps: Lead["overlaps"] }) {
   ));
 }
 
-const REVIEW_LABEL = { queued: "queued", reviewing: "reviewing", ready: "review ready ✉" } as const;
+const REVIEW_LABEL = { idle: "Ask for review", queued: "queued", reviewing: "reviewing", ready: "review ready ✉" } as const;
 
-/** An open PR: number, title, draft mark, a link, and (for a ready PR) its review, which opens the steward's panel. */
-function ParcelItem({ parcel, onOpen }: { parcel: Parcel; onOpen: (steward: string) => void }) {
+/** Asks the steward to review PR `number` of the house in `cwd`; gives the failure, or null once it is queued. */
+export function askReview(cwd: string, number: number): Promise<Failure | null> {
+  return post("/review", { cwd, number }, [204]);
+}
+
+/** An open PR: number, title, draft mark, a link, and its review: a button to ask for one, or (when ready) the steward's panel. */
+function ParcelItem({ parcel, cwd, onOpen }: { parcel: Parcel; cwd: string; onOpen: (steward: string) => void }) {
   const { review } = parcel;
+  const [error, setError] = useState<string | null>(null);
+  async function ask() {
+    setError((await askReview(cwd, parcel.number))?.message ?? null);
+  }
   return (
     <li className="parcel">
       <a href={parcel.url} target="_blank" rel="noreferrer">#{parcel.number} {parcel.title}</a>
       {parcel.draft && <span className="badge">draft</span>}
       {review &&
-        (review.steward ? (
-          <button type="button" className="review" data-state={review.state} onClick={() => onOpen(review.steward as string)}>
+        (review.state === "idle" || review.steward ? (
+          <button type="button" className="review" data-state={review.state} onClick={() => (review.state === "idle" ? void ask() : onOpen(review.steward as string))}>
             {REVIEW_LABEL[review.state]}
           </button>
         ) : (
           <span className="review" data-state={review.state}>{REVIEW_LABEL[review.state]}</span>
         ))}
+      {error && <span role="alert" className="error">{error}</span>}
     </li>
   );
 }
@@ -137,6 +156,53 @@ function LeadItem({ lead, cards, onSelect }: { lead: Lead; cards: Card[]; onSele
   );
 }
 
+/** Why a request failed: the text to show, and the HTTP status (0 when the server was not reached). */
+type Failure = { message: string; status: number };
+
+/** POSTs JSON with the page token; gives null on one of `ok`, else the failure. */
+export async function post(path: string, body: unknown, ok: number[]): Promise<Failure | null> {
+  try {
+    const reply = await fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-funtown-token": funtownToken() },
+      body: JSON.stringify(body),
+    });
+    return ok.includes(reply.status)
+      ? null
+      : { message: (await reply.text()) || `Request failed (${reply.status}).`, status: reply.status };
+  } catch {
+    return { message: "Couldn't reach Funtown.", status: 0 };
+  }
+}
+
+/** Asks the user, then removes `house` from Funtown; gives the failure, or null once removed or when the user says no. */
+export async function removeProject(house: House): Promise<Failure | null> {
+  if (!window.confirm(`Remove ${house.project} from Funtown? Its shell ends; sessions keep running.`)) return null;
+  return post("/projects/remove", { cwd: house.cwd }, [204, 404]);
+}
+
+const SETUP_HINT = "First time here? Run `claude` once in its Shell tab and accept the trust prompt.";
+
+/** The "Add project" form: an absolute folder path; shows the server's reason when it refuses. */
+export function AddProject() {
+  const [cwd, setCwd] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  async function add(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    const failed = await post("/projects", { cwd: cwd.trim() }, [200, 201]);
+    setError(failed?.message ?? null);
+    if (!failed) setCwd("");
+  }
+  return (
+    <form className="add-project" onSubmit={add}>
+      <input aria-label="Project folder" placeholder="/absolute/path/to/project" value={cwd} onChange={(e) => setCwd(e.target.value)} />
+      <button type="submit" disabled={cwd.trim() === ""}>Add project</button>
+      {error && <p role="alert" className="error">{error}</p>}
+    </form>
+  );
+}
+
 function HouseCard({
   house,
   cards,
@@ -147,16 +213,47 @@ function HouseCard({
   house: House;
   cards: Card[];
   onSelect: Select;
-  onNew: (cwd: string) => Promise<string | null>;
+  onNew: (cwd: string) => Promise<Failure | null>;
   notice?: string;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  async function start() {
+  const [shell, setShell] = useState(false);
+  const [runOpen, setRunOpen] = useState(false);
+  const [prompt, setPrompt] = useState("");
+  const [failed, setFailed] = useState(false);
+  /** Clears the last error, runs `fn`, shows its failure, and flags a 500 so the setup hint can appear. */
+  async function attempt(fn: () => Promise<Failure | null>) {
     setError(null);
+    setFailed(false);
+    const reason = await fn();
+    setError(reason?.message ?? null);
+    setFailed(reason?.status === 500);
+    return reason;
+  }
+  async function start() {
     setPending(true);
-    setError(await onNew(house.cwd));
+    await attempt(() => onNew(house.cwd));
     setPending(false);
+  }
+  async function run(event: FormEvent) {
+    event.preventDefault();
+    setPending(true);
+    if (!(await attempt(() => post("/runs", { cwd: house.cwd, prompt }, [201])))) {
+      setPrompt("");
+      setRunOpen(false);
+    }
+    setPending(false);
+  }
+  async function closeShell() {
+    setError(null);
+    setFailed(false);
+    setError((await post("/shells/close", { cwd: house.cwd }, [204, 404]))?.message ?? null);
+    setShell(false);
+  }
+  async function remove() {
+    setFailed(false);
+    setError((await removeProject(house))?.message ?? null);
   }
   const needsYou = house.leads.some((lead) => lead.stage === "needs_you");
   return (
@@ -174,22 +271,52 @@ function HouseCard({
       {house.parcels && house.parcels.length > 0 && (
         <ul className="parcels" aria-label={`${house.project} pull requests`}>
           {house.parcels.map((parcel) => (
-            <ParcelItem key={parcel.number} parcel={parcel} onOpen={(id) => onSelect(id, id)} />
+            <ParcelItem key={parcel.number} parcel={parcel} cwd={house.cwd} onOpen={(id) => onSelect(id, id)} />
           ))}
         </ul>
       )}
+      {house.added && !house.seen && <p className="hint">{SETUP_HINT}</p>}
       <button type="button" onClick={start} disabled={pending}>
         New session
       </button>
+      <button type="button" aria-expanded={runOpen} onClick={() => setRunOpen(!runOpen)}>
+        Background run
+      </button>
+      <button type="button" role="tab" aria-selected={shell} onClick={() => setShell(!shell)}>
+        Shell
+      </button>
+      {house.added && (
+        <button type="button" onClick={remove}>
+          Remove project
+        </button>
+      )}
+      {runOpen && (
+        <form className="run" onSubmit={run}>
+          <textarea aria-label="Prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+          <button type="submit" disabled={pending || prompt.trim() === ""}>Start run</button>
+        </form>
+      )}
+      {shell && (
+        <div role="tabpanel" aria-label="Shell">
+          <button type="button" onClick={closeShell}>Close shell</button>
+          <LazyBoundary>
+            <Suspense fallback={null}>
+              <SessionTerminal shell={house.cwd} />
+            </Suspense>
+          </LazyBoundary>
+        </div>
+      )}
+      {failed && error && !(house.added && !house.seen) && <p className="hint">{SETUP_HINT}</p>}
       {(error ?? notice) && <p role="alert" className="error">{error ?? notice}</p>}
     </section>
   );
 }
 
-/** Details of one character: stage, step, need, its subagents (for a lead) and a button that focuses its terminal. */
-function Panel({ character, lead, cards, onClose }: { character: Character; lead: Lead; cards: Card[]; onClose: () => void }) {
+/** Details of one character: stage, need, its subagents (for a lead) and a button that focuses its terminal. */
+export function Panel({ character, lead, cards, onClose }: { character: Character; lead: Lead; cards: Card[]; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [terminal, setTerminal] = useState(false);
   const reply = useRef<((text: string) => string | null) | null>(null);
   const stamp = [lead, ...lead.subagents].map((c) => c.letter ?? 0).join(",");
   useEffect(() => {
@@ -218,14 +345,24 @@ function Panel({ character, lead, cards, onClose }: { character: Character; lead
     }
   }
 
+  /** Stops the background session; the panel closes once the server has stopped it. */
+  async function stop() {
+    setError(null);
+    setPending(true);
+    const failed = await post("/sessions/stop", { lead: lead.id }, [204]);
+    setPending(false);
+    if (failed) setError(failed.message);
+    else onClose();
+  }
+
+  const background = character.id === lead.id && lead.kind === "background";
   return (
-    <aside className={`panel${character.id === lead.id && lead.kind === "background" ? " wide" : ""}`} role="dialog" aria-label={`${character.name} details`}>
+    <aside className={`panel${background && terminal ? " wide" : ""}`} role="dialog" aria-label={`${character.name} details`}>
       <button type="button" className="close" aria-label="Close" onClick={onClose}>
         ✕
       </button>
       <h2>{character.name}</h2>
-      <p>{STAGE_LABEL[character.stage]}</p>
-      <p className="activity">Step: {character.step ?? "nothing yet"}</p>
+      <p><StageLabel stage={character.stage} /></p>
       {character.stage === "needs_you" && character.needs && <p>waiting for you: {character.needs}</p>}
       {(character.role || character.tags?.length) && (
         <p>
@@ -239,7 +376,7 @@ function Panel({ character, lead, cards, onClose }: { character: Character; lead
         <ul aria-label="Subagents">
           {lead.subagents.map((sub) => (
             <li key={sub.id}>
-              {sub.name} {STAGE_LABEL[sub.stage]}
+              {sub.name} <StageLabel stage={sub.stage} />
             </li>
           ))}
         </ul>
@@ -249,7 +386,17 @@ function Panel({ character, lead, cards, onClose }: { character: Character; lead
           <Letters lead={lead.id} stamp={stamp} names={Object.fromEntries([lead, ...lead.subagents].map((c) => [c.id, c.name]))} only={character.id === lead.id ? undefined : character.id} />
         </Suspense>
       </LazyBoundary>
-      {character.id === lead.id && lead.kind === "background" && (
+      {background && (
+        <>
+          <button type="button" aria-expanded={terminal} onClick={() => setTerminal(!terminal)}>
+            {terminal ? "Hide terminal" : "Show terminal"}
+          </button>
+          <button type="button" onClick={stop} disabled={pending}>
+            Close session
+          </button>
+        </>
+      )}
+      {background && terminal && (
         <LazyBoundary>
           <Suspense fallback={null}>
             <ReplyBox send={(text) => (reply.current ? reply.current(text) : "Not sent: the terminal isn't connected.")} />
@@ -270,18 +417,41 @@ function Panel({ character, lead, cards, onClose }: { character: Character; lead
   );
 }
 
-/** The town page: one house per project, its leads and their subagents, with a list of everyone waiting for you. */
-export function App() {
-  const [town, restarted] = useTown();
+/**
+ * The character whose panel is open, and the Needs you wiring both pages share: the waiting list,
+ * mute, sound and toasts, and ⌥N. A selection whose character leaves the town closes.
+ */
+export function useSelection(town: Town | null) {
   const [selection, setSelection] = useState<{ lead: string; id: string } | null>(null);
   const onClose = useCallback(() => setSelection(null), []);
-  const lead = selection
-    ? town?.houses.flatMap((house) => house.leads).find((l) => l.id === selection.lead)
-    : undefined;
+  const lead = selection ? town?.houses.flatMap((house) => house.leads).find((l) => l.id === selection.lead) : undefined;
   const selected = lead && [lead, ...lead.subagents].find((c) => c.id === selection?.id);
   useEffect(() => {
     if (town && selection && !selected) setSelection(null);
   }, [town, selection, selected]);
+  const openCwd = lead && town?.houses.find((house) => house.leads.includes(lead))?.cwd;
+  const openSession = selected && openCwd ? { id: selected.id, name: selected.name, cwd: openCwd } : null;
+  const waiting = waitingList(town);
+  const [muted, toggleMute] = useMute();
+  const openWaiting = useCallback((w: Waiting) => setSelection({ lead: w.lead, id: w.id }), []);
+  const { toasts, drop } = useAlerts(waiting, town !== null, muted, openWaiting);
+  useNextKey(waiting, selection && `${selection.lead}/${selection.id}`, openWaiting);
+  return { selection, setSelection, onClose, lead, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop };
+}
+
+/** The house `/work.html#<cwd>` names, or "" when the hash isn't a valid encoded folder. */
+function hashedHouse(): string {
+  try {
+    return decodeURIComponent(location.hash.slice(1));
+  } catch {
+    return "";
+  }
+}
+
+/** The town page: one house per project, its leads and their subagents, with a list of everyone waiting for you. */
+export function App() {
+  const [town, restarted] = useTown();
+  const { selection, setSelection, onClose, lead, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop } = useSelection(town);
   // The selection when each New session was clicked; a session opens itself only if that is still it (or nothing is open).
   const selectionNow = useRef(selection);
   selectionNow.current = selection;
@@ -308,34 +478,35 @@ export function App() {
     );
     return () => timers.forEach(clearTimeout);
   }, [opening]);
-  /** Starts a background session in `cwd`; gives an error text, or null once started (its terminal opens when listed). */
-  const startSession = useCallback(async (cwd: string): Promise<string | null> => {
+  /** Starts a background session in `cwd`; gives the failure, or null once started (its terminal opens when listed). */
+  const startSession = useCallback(async (cwd: string): Promise<Failure | null> => {
     try {
       const reply = await fetch("/sessions", {
         method: "POST",
         headers: { "content-type": "application/json", "x-funtown-token": funtownToken() },
         body: JSON.stringify({ cwd }),
       });
-      if (reply.status !== 201) return (await reply.text()) || `Start failed (${reply.status}).`;
+      if (reply.status !== 201) return { message: (await reply.text()) || `Start failed (${reply.status}).`, status: reply.status };
       const { id } = (await reply.json()) as { id: string };
       setMissing((all) => all.filter((c) => c !== cwd));
       setOpening((all) => [...all, { id, cwd, at: Date.now(), from: selectionNow.current }]);
       return null;
     } catch {
-      return "Couldn't reach Funtown.";
+      return { message: "Couldn't reach Funtown.", status: 0 };
     }
   }, []);
-  const openCwd = lead && town?.houses.find((house) => house.leads.includes(lead))?.cwd;
-  const openSession = selected && openCwd ? { id: selected.id, name: selected.name, cwd: openCwd } : null;
-  const waiting = waitingList(town);
-  const [muted, toggleMute] = useMute();
-  const openWaiting = useCallback((w: Waiting) => setSelection({ lead: w.lead, id: w.id }), []);
-  const { toasts, drop } = useAlerts(waiting, town !== null, muted, openWaiting);
-  useNextKey(waiting, selection && `${selection.lead}/${selection.id}`, openWaiting);
+  // `/work.html#<cwd>` scrolls to that house once the town has listed it.
+  const hash = hashedHouse();
+  const hasHouse = town?.houses.some((house) => house.cwd === hash) ?? false;
+  useEffect(() => {
+    if (!hasHouse) return;
+    [...document.querySelectorAll<HTMLElement>("section.house")].find((el) => el.title === hash)?.scrollIntoView();
+  }, [hasHouse, hash]);
   return (
     <>
       <header>
         <h1>Funtown</h1>
+        <a href="/" aria-label="Town" title="Town">🏘️</a>
         <button type="button" aria-pressed={muted} onClick={toggleMute}>
           {muted ? "Unmute" : "Mute"}
         </button>
@@ -359,6 +530,7 @@ export function App() {
         </div>
       )}
       <NeedsList waiting={waiting} onOpen={openWaiting} />
+      <AddProject />
       {town && town.houses.length === 0 && <p className="empty">No Claude sessions running yet.</p>}
       <main className="town">
         {town?.houses.map((house) => (

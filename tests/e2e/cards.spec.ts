@@ -29,7 +29,7 @@ async function open(page: Page, initial: unknown, reply: { status: number } = { 
     answers.push(r.request().postDataJSON());
     return r.fulfill({ status: reply.status, contentType: "text/plain", body: "" });
   });
-  await page.goto("/");
+  await page.goto("/work.html");
   return { answers, send: stream.send };
 }
 const house = (page: Page) => page.locator('section[aria-label="demo-app"]');

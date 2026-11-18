@@ -7,13 +7,15 @@ import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { TownState, type HookEvent } from "./town.ts";
 import type { Town } from "./types.ts";
-import { checkVersion, execFileAsync, listAgents, startBackground } from "./agents.ts";
+import { checkVersion, execFileAsync, listAgents, startBackground, stopBackground, type Listed } from "./agents.ts";
 import { createTerminals, isSize } from "./terminal.ts";
 import { createHolds } from "./holds.ts";
 import { describe, serverLogger } from "./errors.ts";
 import { morning, openJournal } from "./journal.ts";
 import { createSteward } from "./steward.ts";
 import { listPrs, parsePhase, type PhaseFile, type Pr } from "./workflow.ts";
+import { AVATAR_ID, readAvatar, writeAvatar } from "./avatar.ts";
+import { projectFolder, readProjects, writeProjects } from "./projects.ts";
 
 const DEFAULT_DIST = fileURLToPath(new URL("../web/dist/", import.meta.url));
 const DEFAULT_STEWARD_PROMPT = fileURLToPath(new URL("./steward.md", import.meta.url));
@@ -62,6 +64,7 @@ const defaultRun = async (file: string, args: string[]) => {
 
 const MAX_PAGE_BODY = 64 * 1024;
 const MAX_REASON = 1_000;
+const MAX_PROMPT = 16 * 1024;
 
 /** The command that brings a lead's terminal to the front, or null for an unknown terminal. */
 function jumpCommand(termProgram: string | null, tty: string | null): [string, string[]] | null {
@@ -100,22 +103,29 @@ async function readJson(req: IncomingMessage, max = Infinity): Promise<{ value: 
  * Server-Sent Events. `claude --version` is checked once before listening. Everything else is
  * served from `distDir` (default web/dist/); HTML gets the page's token and a CSP. `POST /jump`
  * runs `run` (default: execFile, 60 s timeout) to bring a lead's terminal to the front, `POST
- * /sessions` starts `claude --bg` in a house's folder, and the `/term` WebSocket attaches a
- * background lead; all three need the page's own Origin and token. `/events` refuses any
- * request with an `Origin` header, so web pages cannot post to it. `POST /hold` (no Origin
- * either) holds a permission, question or plan as a card until `POST /answer` (page Origin
- * and token) answers it or it is released; `answerLog` (a JSONL path) gets one line per
- * closed card. `journal` (a JSONL path) gets a line per kept letter and per character that
+ * /sessions` starts `claude --bg` in a house's folder, `POST /sessions/stop` runs `claude stop` on
+ * a background lead, and the `/term` WebSocket attaches a background lead; each needs the page's
+ * own Origin and token. `/events` refuses any request with an `Origin` header, so web pages
+ * cannot post to it. `POST /hold` (no Origin either) holds a permission, question or plan as a
+ * card until `POST /answer` (page Origin and token) answers it or it is released; `answerLog` (a
+ * JSONL path) gets one line per closed card. `journal` (a JSONL path) gets a line per kept letter and per character that
  * becomes stuck, and feeds `GET /morning?since=<ms>` (page token). `unlistedMs` (default 10 s)
  * is how long hook data and holds wait for their session to be listed, and holds for a page to
  * be open. `errorLog` (a path) gets one line per server error, besides stderr. `POST /switch` (page
  * Origin and token) appends `{ at, reason?, open? }` to `switchLog` (a JSONL path); without one it
  * answers 500. Each poll reads every house's `.claude/phase.json`; every `prMs` (default 60 s)
  * `gh` (default "gh") lists each house's open PRs. With a `stewardDir`, a steward session there
- * pre-reviews each ready PR with the text of `stewardPrompt` (a path, default server/steward.md;
- * an empty file turns reviews off); an attach that isn't ready within `stewardReadyMs` (default
- * 15 s) is given up, and a request with no answer after `stewardAnswerMs` (default 30 min) no
- * longer holds back the next.
+ * pre-reviews each ready PR asked for with `POST /review { cwd, number }` (page Origin and
+ * token; 409 for a draft or with reviews off) using the text of `stewardPrompt` (a path, default
+ * server/steward.md; an empty file turns reviews off); an attach that isn't ready within
+ * `stewardReadyMs` (default 15 s) is given up, and a request with no answer after
+ * `stewardAnswerMs` (default 30 min) no longer holds back the next. `projects` (a path) holds the folders added with `POST /projects`,
+ * each a house even with no session; without one, adding answers 500. `POST /runs` starts
+ * `claude --bg <prompt>` in a house's folder. `/term?shell=<cwd>` connects to that house's one
+ * login shell, `shell` (an executable) started there on first connect; `POST /shells/close`
+ * or removing the project ends it. `avatar` (a path) holds the id chosen with `POST /avatar { id }`
+ * (page Origin and token; 400 for an id not matching /^[a-z0-9-]{1,32}$/, 500 without a path or
+ * when the file can't be written), which the State carries as `avatar`.
  */
 export async function startServer(opts: {
   port: number;
@@ -134,6 +144,9 @@ export async function startServer(opts: {
   stewardDir?: string;
   stewardReadyMs?: number;
   stewardAnswerMs?: number;
+  projects?: string;
+  avatar?: string;
+  shell?: string;
 }): Promise<{ url: string; claude: Town["claude"]; close(): Promise<void> }> {
   const run = opts.run ?? defaultRun;
   const claude = opts.claude ?? "claude";
@@ -145,7 +158,24 @@ export async function startServer(opts: {
   const journal = opts.journal ? openJournal(opts.journal, logError) : undefined;
   const town = new TownState(version, unlistedMs, journal);
   const holds = createHolds(town, { unlistedMs, answerLog: opts.answerLog, logError, changed: () => broadcast() });
-  const terminals = createTerminals(claude, logError);
+  const terminals = createTerminals(claude, opts.shell, logError, () => {
+    if (closed) return;
+    town.setShells(terminals.shells());
+    broadcast();
+  });
+  let projects: string[] = [];
+  try {
+    if (opts.projects) projects = readProjects(opts.projects);
+  } catch (err) {
+    logError("projects", err, opts.projects);
+  }
+  town.setProjects(projects);
+  let avatar: string | undefined;
+  try {
+    if (opts.avatar) avatar = readAvatar(opts.avatar);
+  } catch (err) {
+    logError("avatar", err, opts.avatar);
+  }
   const gh = opts.gh ?? "gh";
   const prMs = opts.prMs ?? 60_000;
   // cwd -> its open PRs, from the last gh list that worked
@@ -183,7 +213,10 @@ export async function startServer(opts: {
 
   const snapshot = () => {
     const state = town.snapshot(holds.cards());
+    const stewardId = steward?.lead()?.id;
+    if (avatar !== undefined) state.avatar = avatar;
     for (const house of state.houses) {
+      for (const lead of house.leads) if (lead.id === stewardId) lead.steward = true;
       const prs = prLists.get(house.cwd);
       if (prs) house.parcels = prs.map((pr) => ({ number: pr.number, title: pr.title, url: pr.url, draft: pr.draft, review: steward?.review(pr) }));
     }
@@ -267,13 +300,13 @@ export async function startServer(opts: {
     try {
       if (list) {
         lastReason = "";
-        town.sync(list, askedAt);
+        town.sync(list.filter(seen), askedAt);
         holds.refresh();
       } else {
         town.expire();
       }
       const listed = town.cwds();
-      const cwds = [...new Set(listed.values())];
+      const cwds = houseCwds();
       const phases = new Map<string, PhaseFile>();
       for (const cwd of cwds) {
         const phase = readPhase(cwd);
@@ -293,6 +326,42 @@ export async function startServer(opts: {
       // The next poll is always scheduled, so one bad list never stops the updates.
       pollTimer = setTimeout(() => (polling = poll()), pollMs);
     }
+  };
+
+  /**
+   * True when Funtown shows the listed session `s`: with a projects file, only a session in an
+   * added project or a folder inside one (such as a run's worktree), and the steward; without
+   * one, every session.
+   */
+  const seen = (s: Listed) => (s.id !== undefined && s.id === steward?.shortId()) || inProject(s.cwd);
+  /** True when `cwd` is an added project or a folder inside one, or when there is no projects file. */
+  const inProject = (cwd: string) => !opts.projects || projects.some((p) => cwd === p || cwd.startsWith(`${p}/`));
+
+  /** The folder of every house: the added projects, the listed sessions' cwds and the folders where a shell runs. */
+  const houseCwds = () => [...new Set([...projects, ...town.cwds().values(), ...terminals.shells()])];
+  /**
+   * The added projects as the projects file holds them now, or null once it has answered 500
+   * because the file can't be read or there is none.
+   */
+  const currentProjects = (res: ServerResponse): string[] | null => {
+    if (!opts.projects) {
+      res.writeHead(500, text).end("Funtown has no projects file set.");
+      return null;
+    }
+    try {
+      return readProjects(opts.projects);
+    } catch (err) {
+      res.writeHead(500, text).end(`Funtown can't read ${opts.projects}: ${(err as Error).message}. Fix or delete it, then try again.`);
+      return null;
+    }
+  };
+  /** Makes `list` the added projects, in the projects file and on the Town. */
+  const saveProjects = (list: string[]) => {
+    if (!opts.projects) throw new Error("no projects file is set");
+    writeProjects(opts.projects, list);
+    projects = list;
+    town.setProjects(list);
+    broadcast();
   };
 
   const hostOk = (host: string | undefined) => host === `127.0.0.1:${port}` || host === `localhost:${port}`;
@@ -405,10 +474,31 @@ export async function startServer(opts: {
       return;
     }
 
+    if (req.method === "POST" && path === "/review") {
+      const body = await pageBody(req, res);
+      if (body === null) return;
+      const { cwd, number } = body;
+      if (typeof cwd !== "string" || typeof number !== "number") {
+        res.writeHead(400).end();
+        return;
+      }
+      if (!steward) {
+        res.writeHead(409, text).end("Funtown's reviews are off.");
+        return;
+      }
+      const status = steward.ask(cwd, number);
+      if (status === 204) {
+        steward.pump();
+        broadcast();
+      }
+      res.writeHead(status).end();
+      return;
+    }
+
     if (req.method === "POST" && path === "/sessions") {
       const cwd = await pageField(req, res, "cwd");
       if (cwd === null) return;
-      if (!town.snapshot().houses.some((h) => h.cwd === cwd)) {
+      if (!houseCwds().includes(cwd)) {
         res.writeHead(404).end();
         return;
       }
@@ -419,6 +509,130 @@ export async function startServer(opts: {
         logError("start session", err, cwd);
         res.writeHead(500, text).end(`Couldn't start a session: ${(err as Error).message}`);
       }
+      return;
+    }
+
+    if (req.method === "POST" && path === "/sessions/stop") {
+      const leadId = await pageField(req, res, "lead");
+      if (leadId === null) return;
+      const lead = town.lead(leadId);
+      if (!lead) {
+        res.writeHead(404).end();
+        return;
+      }
+      if (lead.shortId === null) {
+        res.writeHead(409, text).end("Funtown can only close a background session.");
+        return;
+      }
+      try {
+        await stopBackground(claude, lead.shortId);
+        res.writeHead(204).end();
+      } catch (err) {
+        logError("stop session", err, town.cwds().get(lead.id));
+        res.writeHead(500, text).end(`Couldn't close the session: ${(err as Error).message}`);
+      }
+      return;
+    }
+
+    if (req.method === "POST" && path === "/runs") {
+      const body = await pageBody(req, res);
+      if (body === null) return;
+      const { cwd, prompt } = body;
+      if (typeof cwd !== "string" || typeof prompt !== "string") {
+        res.writeHead(400).end();
+        return;
+      }
+      let problem: string | undefined;
+      if (prompt.trim() === "") problem = "The prompt is empty.";
+      else if (Buffer.byteLength(prompt) > MAX_PROMPT) problem = "The prompt is over 16 KB.";
+      else if (prompt.startsWith("-")) problem = "The prompt can't start with -.";
+      if (problem) {
+        res.writeHead(400, text).end(problem);
+        return;
+      }
+      if (!houseCwds().includes(cwd)) {
+        res.writeHead(404).end();
+        return;
+      }
+      try {
+        const id = await startBackground(claude, cwd, prompt);
+        res.writeHead(201, { "content-type": "application/json" }).end(JSON.stringify({ id }));
+      } catch (err) {
+        logError("start run", err, cwd);
+        res.writeHead(500, text).end(`Couldn't start a run: ${(err as Error).message}`);
+      }
+      return;
+    }
+
+    if (req.method === "POST" && path === "/projects") {
+      const given = await pageField(req, res, "cwd");
+      if (given === null) return;
+      const current = currentProjects(res);
+      if (current === null) return;
+      const folder = projectFolder(given);
+      if ("reason" in folder) {
+        res.writeHead(400, text).end(folder.reason);
+        return;
+      }
+      if (current.includes(folder.cwd)) {
+        res.writeHead(200).end();
+        return;
+      }
+      try {
+        saveProjects([...current, folder.cwd]);
+        res.writeHead(201).end();
+      } catch (err) {
+        logError("projects", err, folder.cwd);
+        res.writeHead(500, text).end(`Couldn't save the project list: ${(err as Error).message}`);
+      }
+      return;
+    }
+
+    if (req.method === "POST" && path === "/projects/remove") {
+      const cwd = await pageField(req, res, "cwd");
+      if (cwd === null) return;
+      const current = currentProjects(res);
+      if (current === null) return;
+      if (!current.includes(cwd)) {
+        res.writeHead(404).end();
+        return;
+      }
+      try {
+        saveProjects(current.filter((p) => p !== cwd));
+        terminals.closeShell(cwd);
+        res.writeHead(204).end();
+      } catch (err) {
+        logError("projects", err, cwd);
+        res.writeHead(500, text).end(`Couldn't save the project list: ${(err as Error).message}`);
+      }
+      return;
+    }
+
+    if (req.method === "POST" && path === "/avatar") {
+      const id = await pageField(req, res, "id");
+      if (id === null) return;
+      if (!AVATAR_ID.test(id)) {
+        res.writeHead(400, text).end("An avatar id is 1 to 32 lowercase letters, digits or hyphens.");
+        return;
+      }
+      try {
+        if (!opts.avatar) throw new Error("no avatar file is set");
+        writeAvatar(opts.avatar, id);
+        avatar = id;
+      } catch (err) {
+        logError("avatar", err, id);
+        res.writeHead(500, text).end(`Couldn't save the avatar: ${(err as Error).message}`);
+        return;
+      }
+      broadcast();
+      res.writeHead(204).end();
+      return;
+    }
+
+    if (req.method === "POST" && path === "/shells/close") {
+      const cwd = await pageField(req, res, "cwd");
+      if (cwd === null) return;
+      res.writeHead(terminals.closeShell(cwd) ? 204 : 404).end();
       return;
     }
 
@@ -482,7 +696,7 @@ export async function startServer(opts: {
         res.writeHead(500).end();
         return;
       }
-      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(morning(entries, since)));
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(morning(entries.filter((e) => !("cwd" in e) || inProject(e.cwd)), since)));
       return;
     }
 
@@ -545,11 +759,18 @@ export async function startServer(opts: {
     if (!hostOk(req.headers.host)) return refuse(403);
     if (url.pathname !== "/term") return refuse(404);
     if (!fromPage(req.headers.origin, url.searchParams.get("token"))) return refuse(403);
+    const cols = Number(url.searchParams.get("cols"));
+    const rows = Number(url.searchParams.get("rows"));
+    const shellCwd = url.searchParams.get("shell");
+    if (shellCwd !== null) {
+      if (!houseCwds().includes(shellCwd)) return refuse(404);
+      if (!isSize(cols) || !isSize(rows)) return refuse(400);
+      socket.removeListener("error", onError);
+      return terminals.shell(req, socket, head, shellCwd, cols, rows);
+    }
     const lead = town.lead(url.searchParams.get("lead") ?? "");
     if (!lead) return refuse(404);
     if (lead.kind !== "background" || !lead.shortId) return refuse(409);
-    const cols = Number(url.searchParams.get("cols"));
-    const rows = Number(url.searchParams.get("rows"));
     if (!isSize(cols) || !isSize(rows)) return refuse(400);
     socket.removeListener("error", onError);
     terminals.attach(req, socket, head, lead.id, lead.shortId, cols, rows);

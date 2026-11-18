@@ -6,6 +6,7 @@ import { Html, OrbitControls } from "@react-three/drei";
 import { TONES } from "./kit/clay.tsx";
 import { Hat } from "./kit/hats.tsx";
 import { PALETTE, ROLE_HATS, type HatKind } from "./kit/palette.ts";
+import { Door, Floor, SeatedFigure, StudentDesk, Table, TeacherDesk, Wall, Whiteboard } from "./kit/classroom.tsx";
 import { Castle, Desk, Figure, GroundTile, HouseModel, Parcel } from "./kit/parts.tsx";
 
 const roles = new Map<HatKind, string[]>();
@@ -62,6 +63,11 @@ function Preview() {
       <Row z={-3.5} gap={3.5} items={[
         ["ground tile", <GroundTile />, 0], ["castle", <Castle />, 2.4], ["desk", <Desk />, 0.6], ["parcel", <Parcel />, 0.5],
       ]} />
+      <Row z={-1} gap={3.5} items={[
+        ["student desk", <><StudentDesk /><SeatedFigure colour={PALETTE[3]} hat="hardhat" /></>, 1.9], ["teacher's desk", <TeacherDesk width={2} />, 0.6],
+        ["table", <Table width={2} depth={0.8} />, 0.6], ["door", <Door />, 1.2], ["floor", <Floor width={2} depth={2} />, 0],
+      ]} />
+      <Row z={-11.5} gap={7} items={[["whiteboard", <group position={[0, 1.4, 0]}><Whiteboard /></group>, 2.7], ["wall", <Wall length={2} height={1.6} />, 1.6]]} />
       <Row z={1} gap={2.6} items={HATS.map(([hat, role], i) => [role, <Figure colour={PALETTE[i]} hat={hat} />, 1.8])} />
       <Row z={4} gap={2.6} items={HATS.map(([hat]) => [hat, <group scale={1.5}><Hat kind={hat} colour={TONES.ribbon} /></group>, 0.8])} />
       <OrbitControls autoRotate autoRotateSpeed={0.6} target={TARGET} />

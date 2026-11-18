@@ -3,16 +3,22 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_FAKE_DIR, E2E_URL, FakeClaude, listed, listedBg } from "../fake-claude.ts";
+import { addProjectFolder, removeProjectFolder, showTerminal } from "./stream.ts";
 
 const fake = FakeClaude.at(E2E_FAKE_DIR);
 const sid = "abcd1234-0000-4000-8000-000000000000";
 let cwd = "";
 let project = "";
 
-test.beforeEach(() => {
+test.beforeEach(async () => {
   cwd = realpathSync(mkdtempSync(join(tmpdir(), "funtown-e2e-proj-")));
   project = basename(cwd);
   fake.reset();
+  await addProjectFolder(cwd);
+});
+
+test.afterEach(async () => {
+  await removeProjectFolder(cwd);
 });
 
 const session = () => listed("t1", cwd, { name: "alpha" });
@@ -25,7 +31,7 @@ const echoed = async (page: Page) =>
 
 test("rows_show_each_sessions_name_and_kind", async ({ page }) => {
   fake.list([session(), bg()]);
-  await page.goto("/");
+  await page.goto("/work.html");
   await expect(row(page, "alpha")).toContainText(/terminal/i);
   await expect(row(page, "beta")).toContainText(/background/i);
 });
@@ -34,8 +40,9 @@ test("a_background_session_opens_a_live_terminal_that_echoes_typed_text_and_send
   const violations: string[] = [];
   page.on("console", (m) => /content security policy/i.test(m.text()) && violations.push(m.text()));
   fake.list([bg()]);
-  await page.goto("/");
+  await page.goto("/work.html");
   await row(page, "beta").click({ position: { x: 5, y: 5 } });
+  await showTerminal(page.getByRole("dialog"));
   await expect(screen(page)).toContainText("attached abcd1234");
   await page.locator(".xterm").click();
   await page.keyboard.type("hello");
@@ -49,7 +56,7 @@ test("a_background_session_opens_a_live_terminal_that_echoes_typed_text_and_send
 
 test("a_terminal_session_shows_the_hint_and_go_to_terminal_and_no_live_terminal", async ({ page }) => {
   fake.list([session()]);
-  await page.goto("/");
+  await page.goto("/work.html");
   await row(page, "alpha").click({ position: { x: 5, y: 5 } });
   const panel = page.getByRole("dialog", { name: "alpha details" });
   await expect(panel).toContainText("press ← or type /bg in its terminal to open it here");
@@ -57,12 +64,14 @@ test("a_terminal_session_shows_the_hint_and_go_to_terminal_and_no_live_terminal"
   await expect(panel.locator(".xterm")).toHaveCount(0);
 });
 
-test("new_session_starts_a_background_session_in_the_project_and_opens_its_terminal", async ({ page }) => {
+test("new_session_starts_a_background_session_in_the_project_and_opens_its_panel_whose_terminal_shows_on_request", async ({ page }) => {
   fake.list([session()]);
-  await page.goto("/");
+  await page.goto("/work.html");
   await page.locator(`section[aria-label="${project}"]`).getByRole("button", { name: /new session/i }).click();
-  // --bg plus the next poll and the attach can take longer than the default 5 s
-  await expect(screen(page)).toContainText("attached", { timeout: 10_000 });
+  // --bg plus the next poll can take longer than the default 5 s
+  await expect(page.getByRole("dialog")).toBeVisible({ timeout: 10_000 });
+  await showTerminal(page.getByRole("dialog"));
+  await expect(screen(page)).toContainText("attached");
   expect(fake.started().map((s) => s.cwd)).toEqual([cwd]);
 });
 
@@ -73,7 +82,7 @@ test("the_page_sends_the_servers_token_with_jump", async ({ page }) => {
     sent = r.request().headers()["x-funtown-token"];
     return r.fulfill({ status: 204 });
   });
-  await page.goto("/");
+  await page.goto("/work.html");
   const token = await page.locator('meta[name="funtown-token"]').getAttribute("content");
   expect(token).toMatch(/^[0-9a-f]+$/);
   await row(page, "alpha").click({ position: { x: 5, y: 5 } });
@@ -87,7 +96,7 @@ test("a_failed_version_check_shows_every_problem_line_in_a_banner", async ({ pag
   await page.route("**/stream", (r) =>
     r.fulfill({ status: 200, headers: { "content-type": "text/event-stream" }, body: `event: state\ndata: ${JSON.stringify(state)}\n\n` }),
   );
-  await page.goto("/");
+  await page.goto("/work.html");
   for (const p of problems) await expect(page.getByText(p)).toBeVisible();
 });
 
@@ -99,7 +108,7 @@ test("a_subagent_of_a_background_lead_has_no_go_to_terminal_button", async ({ pa
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ hook_event_name: "SubagentStart", session_id: sid, cwd, funtown: { tty: null, term_program: null, at: 1 }, ...extra }),
     });
-  await page.goto("/");
+  await page.goto("/work.html");
   await expect(row(page, "beta")).toBeVisible();
   expect((await hook({ agent_id: "x1", agent_type: "Explore" })).status).toBe(204);
   await page.locator('ul[aria-label="beta subagents"] .character').filter({ hasText: "Explore-1" }).click();
@@ -121,8 +130,9 @@ test("the_page_sends_the_terminals_size_as_soon_as_the_socket_opens", async ({ p
     server.onMessage((m) => ws.send(m));
   });
   fake.list([bg()]);
-  await page.goto("/");
+  await page.goto("/work.html");
   await row(page, "beta").click({ position: { x: 5, y: 5 } });
+  await showTerminal(page.getByRole("dialog"));
   await expect(screen(page)).toContainText("attached abcd1234");
   // nothing typed or resized by the test: the first frame is the size the terminal has when the socket opens
   await expect.poll(() => sent.length).toBeGreaterThan(0);

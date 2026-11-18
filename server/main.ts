@@ -42,6 +42,9 @@ try {
     gh: process.env.FUNTOWN_GH,
     stewardDir: process.env.FUNTOWN_STEWARD ?? join(homedir(), ".funtown", "steward"),
     stewardPrompt: existsSync(stewardPrompt) ? stewardPrompt : undefined,
+    projects: process.env.FUNTOWN_PROJECTS ?? join(homedir(), ".funtown", "projects.json"),
+    avatar: process.env.FUNTOWN_AVATAR ?? join(homedir(), ".funtown", "avatar.json"),
+    shell: process.env.SHELL || "/bin/zsh",
   });
 } catch (err) {
   fail("start", err);

@@ -22,13 +22,17 @@ export type HookEvent = {
   funtown?: { tty?: string | null; term_program?: string | null; at?: number };
 };
 
-/** Letters kept per lead, and the longest letter text. */
-const MAX_LETTERS = 20;
+/** The longest letter text. */
 const MAX_LETTER_TEXT = 65_536;
 
 /** How many of a hook event's `background_tasks` are subagents still running or pending, leaving out `except`. */
 function runningAgents(tasks: HookEvent["background_tasks"], except?: string): number {
   return (tasks ?? []).filter((t) => t.type === "subagent" && (t.status === "running" || t.status === "pending") && t.id !== except).length;
+}
+
+/** The ids of a hook event's `background_tasks` that are subagents still running or pending. */
+function runningIds(tasks: HookEvent["background_tasks"]): Set<string> {
+  return new Set((tasks ?? []).filter((t) => t.type === "subagent" && (t.status === "running" || t.status === "pending")).map((t) => t.id));
 }
 
 function waitingOn(n: number): string {
@@ -111,8 +115,8 @@ export class TownState {
   // session ids whose lead's own last turn event was Stop: a "busy" list (background
   // commands still running) doesn't make them working again
   private turnEnded = new Set<string>();
-  // session id -> its letters (its own and its subagents'), newest first
-  private letterLists = new Map<string, Letter[]>();
+  // session id -> its newest letter (its own or a subagent's)
+  private newestLetter = new Map<string, Letter>();
   private letterCount = 0;
   // unique per start, so letter ids never repeat across restarts
   private readonly idPrefix = randomUUID();
@@ -124,6 +128,12 @@ export class TownState {
   private touched = new Map<string, Set<string>>();
   // cwd -> its project's phase file
   private phases = new Map<string, PhaseFile>();
+  // the folders the user added as projects, in the order added
+  private projects: readonly string[] = [];
+  // the folders where a shell runs
+  private shells: readonly string[] = [];
+  // cwds where a session has been listed since the server started
+  private seen = new Set<string>();
   private readonly journal: Journal | undefined;
   private readonly claude: Town["claude"];
   private readonly unlistedMs: number;
@@ -140,8 +150,7 @@ export class TownState {
     this.journal = journal;
     for (const e of [...(journal?.kept ?? [])].sort((a, b) => b.at - a.at)) {
       if (e.kind !== "letter") continue;
-      const list = this.letterLists.get(e.lead) ?? [];
-      if (list.length < MAX_LETTERS) this.letterLists.set(e.lead, [...list, e.letter]);
+      if (!this.newestLetter.has(e.lead)) this.newestLetter.set(e.lead, e.letter);
     }
   }
 
@@ -230,6 +239,7 @@ export class TownState {
       case "Stop": {
         // Running subagents keep the lead working until a Stop finds none.
         const busy = runningAgents(event.background_tasks);
+        this.finishSubagents(lead, runningIds(event.background_tasks), when);
         if (busy > 0) set(lead, "working", waitingOn(busy));
         else set(lead, "needs_you", null, "turn ended");
         this.addLetter(lead, lead, event.last_assistant_message, when, event.cwd);
@@ -293,12 +303,14 @@ export class TownState {
         if (lead.stage !== "needs_you") this.mark(lead, "needs_you", null, Date.now(), s.waitingFor ?? "input needed");
       } else if (s.status === "idle") {
         this.mark(lead, "needs_you", null, Date.now(), "turn ended");
+        this.finishSubagents(lead, new Set(), Date.now());
       }
       if (s.state !== "failed") this.failedSeen.delete(s.sessionId);
       else if (this.failedSeen.has(s.sessionId)) stuckBefore.add(lead.id);
       else this.failedSeen.add(s.sessionId);
       this.noteStuck(lead, stuckBefore, Date.now(), s.cwd);
       next.set(s.sessionId, s.cwd);
+      this.seen.add(s.cwd);
     }
     for (const sid of this.listed.keys()) if (!next.has(sid)) this.forget(sid);
     this.listed = next;
@@ -332,33 +344,54 @@ export class TownState {
     this.phases = phases;
   }
 
-  /** The listed lead's letters, newest first (at most 20), or undefined when it is not listed. */
+  /** Sets the folders the user added as projects, in the order added. */
+  setProjects(projects: readonly string[]): void {
+    this.projects = projects;
+  }
+
+  /** Sets the folders where a shell runs. */
+  setShells(shells: readonly string[]): void {
+    this.shells = shells;
+  }
+
+  /** The listed lead's newest letter (its own or a subagent's) as a list, or undefined when it is not listed. */
   letters(sessionId: string): Letter[] | undefined {
-    return this.listed.has(sessionId) ? [...(this.letterLists.get(sessionId) ?? [])] : undefined;
+    if (!this.listed.has(sessionId)) return undefined;
+    const l = this.newestLetter.get(sessionId);
+    return l ? [l] : [];
   }
 
   /**
-   * The listed sessions, one house per cwd in list order, with `cards` (open cards of listed
-   * leads): while a card is open, the subagent it names, or else its lead, needs the user
-   * for the card's kind whatever the list or hooks say. Each house has its phase, each
-   * character its tags, and each lead the files it shares with another listed lead.
+   * One house per added project in the order added, even with no session, then one per other
+   * cwd of the listed sessions in list order, then one per other folder where a shell runs,
+   * with `cards` (open cards of listed leads): while a card is open, the subagent it names, or
+   * else its lead, needs the user for the card's kind whatever the list or hooks say. Each house
+   * has its phase, each character its tags, and each lead the files it shares with another
+   * listed lead.
    */
   snapshot(cards: Card[] = []): Town {
     const houses = new Map<string, House>();
+    const house = (cwd: string): House => {
+      let found = houses.get(cwd);
+      if (!found) {
+        const phase = this.phases.get(cwd);
+        found = { project: basename(cwd) || cwd, cwd, leads: [] };
+        if (phase) found.phase = { phase: phase.phase, ...(phase.note !== undefined ? { note: phase.note } : {}), ...(phase.steps ? { steps: phase.steps } : {}) };
+        if (this.seen.has(cwd)) found.seen = true;
+        houses.set(cwd, found);
+      }
+      return found;
+    };
+    for (const cwd of this.projects) house(cwd).added = true;
     for (const [sid, cwd] of this.listed) {
       const phase = this.phases.get(cwd);
-      let house = houses.get(cwd);
-      if (!house) {
-        house = { project: basename(cwd) || cwd, cwd, leads: [] };
-        if (phase) house.phase = { phase: phase.phase, ...(phase.note !== undefined ? { note: phase.note } : {}) };
-        houses.set(cwd, house);
-      }
       const lead = this.leads.get(sid)!;
       const shown = { ...withTags(lead, phase?.tags), subagents: lead.subagents.map((a) => withTags(a, phase?.tags)) };
       const overlaps = this.overlaps(sid, cwd);
       if (overlaps.length > 0) shown.overlaps = overlaps;
-      house.leads.push(withCards(shown, cards));
+      house(cwd).leads.push(withCards(shown, cards));
     }
+    for (const cwd of this.shells) house(cwd);
     return { houses: [...houses.values()], cards, started: this.started, claude: this.claude };
   }
 
@@ -380,7 +413,7 @@ export class TownState {
     this.heard.delete(sessionId);
     this.leadHeardAt.delete(sessionId);
     this.turnEnded.delete(sessionId);
-    this.letterLists.delete(sessionId);
+    this.newestLetter.delete(sessionId);
     this.failedSeen.delete(sessionId);
     this.dropSession(sessionId, [this.agentCounts, this.lastAt, this.calls, this.handedBack]);
   }
@@ -434,7 +467,7 @@ export class TownState {
       text = `${cut}…`;
     }
     const letter: Letter = { id: `letter-${this.idPrefix}-${++this.letterCount}`, from: writer.id, name: writer.name, text, at };
-    this.letterLists.set(lead.id, [letter, ...(this.letterLists.get(lead.id) ?? [])].slice(0, MAX_LETTERS));
+    this.newestLetter.set(lead.id, letter);
     writer.letter = at;
     const cwd = this.listed.get(lead.id) ?? eventCwd;
     if (cwd) this.journal?.append({ kind: "letter", at, cwd, lead: lead.id, letter });
@@ -453,10 +486,15 @@ export class TownState {
       kind: "terminal",
       shortId: null,
     };
-    const own = this.letterLists.get(sid)?.find((l) => l.from === sid);
-    if (own) lead.letter = own.at;
+    const own = this.newestLetter.get(sid);
+    if (own?.from === sid) lead.letter = own.at;
     this.leads.set(sid, lead);
     return lead;
+  }
+
+  /** Marks `lead`'s working subagents done except those in `running`: once its turn has ended, no other subagent of it is working. */
+  private finishSubagents(lead: Lead, running: Set<string>, when: number): void {
+    for (const a of lead.subagents) if (a.stage === "working" && !running.has(a.id)) this.mark(a, "done", null, when);
   }
 
   private agent(lead: Lead, event: HookEvent): Character {

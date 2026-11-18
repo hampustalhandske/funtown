@@ -6,7 +6,8 @@
 //   call; its pid goes to agents.pids). `--bg` appends (cwd, argv, CLAUDE*/AI_AGENT variable names) to started.json and lists a new background session (none
 //   with bg-unlisted); `attach <id>` echoes every input chunk as `got:<JSON string>` and appends it to attach-<id>.input, and
 //   with attach-chatty also prints a dot every 100 ms, so its output never pauses, and with
-//   attach-sticky outlives a hangup by a second.
+//   attach-sticky outlives a hangup by a second. `stop <id>` appends its argv to stop-calls.jsonl and removes the
+//   listed session whose short id is <id> (exit 1 with a message when none is listed, or always with stop-fail).
 // It also stands in for `gh`: `pr list ...` appends (cwd, argv) to pr-calls.jsonl and prints
 //   prs.json's list for its cwd (`[]` when none is set; a null entry fails like gh outside a repo).
 const fs = process.getBuiltinModule("fs");
@@ -53,6 +54,16 @@ if (argv[0] === "--version") {
     fs.renameSync(file("list.tmp"), file("list.json"));
   }
   out(`${id}\n`);
+} else if (argv[0] === "stop") {
+  fs.appendFileSync(file("stop-calls.jsonl"), JSON.stringify(argv) + "\n");
+  const list = JSON.parse(read("list.json", "[]"));
+  const rest = list.filter((s) => s.id !== argv[1]);
+  if (fs.existsSync(file("stop-fail")) || rest.length === list.length || argv.length !== 2) {
+    process.stderr.write("stop failed\n");
+    process.exit(1);
+  }
+  fs.writeFileSync(file("list.tmp"), JSON.stringify(rest));
+  fs.renameSync(file("list.tmp"), file("list.json"));
 } else if (argv[0] === "pr" && argv[1] === "list") {
   fs.appendFileSync(file("pr-calls.jsonl"), JSON.stringify({ cwd: process.cwd(), argv }) + "\n");
   const prs = JSON.parse(read("prs.json", "{}"))[process.cwd()];
