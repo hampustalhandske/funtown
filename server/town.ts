@@ -31,6 +31,11 @@ function runningAgents(tasks: HookEvent["background_tasks"], except?: string): n
   return (tasks ?? []).filter((t) => t.type === "subagent" && (t.status === "running" || t.status === "pending") && t.id !== except).length;
 }
 
+/** The ids of a hook event's `background_tasks` that are subagents still running or pending. */
+function runningIds(tasks: HookEvent["background_tasks"]): Set<string> {
+  return new Set((tasks ?? []).filter((t) => t.type === "subagent" && (t.status === "running" || t.status === "pending")).map((t) => t.id));
+}
+
 function waitingOn(n: number): string {
   return `waiting on ${n} ${n === 1 ? "agent" : "agents"}`;
 }
@@ -236,6 +241,7 @@ export class TownState {
       case "Stop": {
         // Running subagents keep the lead working until a Stop finds none.
         const busy = runningAgents(event.background_tasks);
+        this.finishSubagents(lead, runningIds(event.background_tasks), when);
         if (busy > 0) set(lead, "working", waitingOn(busy));
         else set(lead, "needs_you", null, "turn ended");
         this.addLetter(lead, lead, event.last_assistant_message, when, event.cwd);
@@ -299,6 +305,7 @@ export class TownState {
         if (lead.stage !== "needs_you") this.mark(lead, "needs_you", null, Date.now(), s.waitingFor ?? "input needed");
       } else if (s.status === "idle") {
         this.mark(lead, "needs_you", null, Date.now(), "turn ended");
+        this.finishSubagents(lead, new Set(), Date.now());
       }
       if (s.state !== "failed") this.failedSeen.delete(s.sessionId);
       else if (this.failedSeen.has(s.sessionId)) stuckBefore.add(lead.id);
@@ -483,6 +490,11 @@ export class TownState {
     if (own) lead.letter = own.at;
     this.leads.set(sid, lead);
     return lead;
+  }
+
+  /** Marks `lead`'s working subagents done except those in `running`: once its turn has ended, no other subagent of it is working. */
+  private finishSubagents(lead: Lead, running: Set<string>, when: number): void {
+    for (const a of lead.subagents) if (a.stage === "working" && !running.has(a.id)) this.mark(a, "done", null, when);
   }
 
   private agent(lead: Lead, event: HookEvent): Character {

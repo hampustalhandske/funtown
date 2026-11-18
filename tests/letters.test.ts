@@ -166,13 +166,20 @@ describe("a lead whose turn ends while its subagents still work", () => {
     expect(await leadWhere(s.url, () => true)).toMatchObject({ stage: "working", activity: "waiting on 2 agents" });
   });
 
-  it("a_stop_without_background_tasks_ends_the_turn_even_while_a_subagent_row_still_shows_working", async () => {
+  it("a_stop_without_background_tasks_ends_the_turn_and_finishes_every_subagent_row", async () => {
     const s = await withWorkingSubagents();
     await s.send(ev("Stop", { last_assistant_message: "Interrupted." }));
     const lead = await leadWhere(s.url, (l) => l?.stage === "needs_you");
     expect(lead).toMatchObject({ needs: "turn ended", activity: null });
     expect(typeof lead.since).toBe("number");
-    expect(lead.subagents.map((a) => a.stage)).toEqual(["working", "working"]);
+    expect(lead.subagents.map((a) => a.stage)).toEqual(["done", "done"]);
+  });
+
+  it("a_stop_listing_only_x1_running_finishes_x2_whose_own_stop_never_came", async () => {
+    const s = await withWorkingSubagents();
+    await s.send(ev("Stop", { last_assistant_message: "Waiting for x1.", background_tasks: [task("x1", "running")] }));
+    const lead = await leadWhere(s.url, (l) => l?.activity === "waiting on 1 agent");
+    expect(lead.subagents.map((a) => [a.id, a.stage])).toEqual([["x1", "working"], ["x2", "done"]]);
   });
 
   it("each_subagent_stop_recounts_from_its_own_tasks_leaving_itself_out_and_at_0_the_lead_works_with_no_activity_until_its_next_stop", async () => {
@@ -197,6 +204,6 @@ describe("a lead whose turn ends while its subagents still work", () => {
     s.fake.list([listed("s1", CWD, { status: "idle" })]);
     const lead = await leadWhere(s.url, (l) => l?.stage === "needs_you");
     expect(lead.needs).toBe("turn ended");
-    expect(lead.subagents.map((a) => a.stage)).toEqual(["working", "working"]);
+    expect(lead.subagents.map((a) => a.stage)).toEqual(["done", "done"]);
   });
 });

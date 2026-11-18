@@ -29,7 +29,7 @@ Contracts (source of truth: this list; full text in the local .workflow/history/
 - State (`server/types.ts`, SSE `state`): leads only while listed; the steward's lead has `steward:
   true`; `cards` oldest first, a carded character is needs_you with `needs` = card kind; waiting has
   `since`; stuck has `needs` "stuck" and `reason`; `letter` = newest letter's `at`; a Stop with
-  running `background_tasks` stays working.
+  running `background_tasks` stays working; a Stop, or a poll saying idle, marks every subagent not still running done.
 - Letters: Stop `last_assistant_message`; a subagent's handback report, else its SubagentStop message;
   as written, never parsed; the newest only per lead, 65,536 chars, ids unique across restarts; `GET /letters?lead=`;
   reply: bracketed paste, `\r` over `/term`. Journal: JSONL, 7 days (steward kept), `/morning?since=`.
