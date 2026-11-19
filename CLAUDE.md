@@ -1,12 +1,10 @@
 # Funtown
 
-Charter: .workflow/CHARTER.md. Current state: .workflow/HANDOFF.md. Parked ideas: .workflow/PARKING.md.
-These and the rest of the planning notes (MILESTONE, METRICS, spikes, history) live in
-`.workflow/`, which is gitignored as a whole: local only, never staged, and absent from a fresh
-clone or a worktree; there, work from this file and CHANGELOG.md. The public record is
-CHANGELOG.md: one line per change, newest first, with date and time. `.workflow/spikes/` holds
-the Claude Code 2.1.325 behaviours v2 builds on; rerun a note's Reproduce before relying
-on it.
+Goal: GOAL.md. Specs: docs/specs/<slug>.md. Terms: GLOSSARY.md. Tickets and parked ideas:
+`.scratch/` (local only, gitignored). The public record is CHANGELOG.md: one line per change,
+newest first, with date and time. `.workflow/` is the local, untracked archive of the old
+milestone notes; its `spikes/` hold the Claude Code 2.1.325 behaviours v2 builds on: rerun a
+note's Reproduce before relying on it.
 
 ## Map
 - `hooks/`: `funtown-hook.ts` (async, every event to `/events` with tty and `at`; 800 ms, exits 0);
@@ -24,7 +22,7 @@ on it.
   `/work.html` the work view (`App.tsx`: list, panels; a background lead's terminal mounts only after Show terminal; no command text on rows; `AnswerCard`, `Letters`, `Morning`,
   `Switch`, `needs.tsx`: `waitingList`, the desk order, card kinds first then oldest). Font Recursive (OFL, bundled, licence emitted next to it).
   `tests/`: Vitest; Playwright in `tests/e2e/`, one spec at a time; the fake `claude` is also `gh`.
-Contracts (source of truth: this list; full text in the local .workflow/history/m<N>-MILESTONE.md)
+Contracts (source of truth: this list)
 - Event: POST `/events`, hook JSON + `funtown: { tty, term_program, at }`; stale ones ignored.
 - State (`server/types.ts`, SSE `state`): leads only while listed; the steward's lead has `steward:
   true`; `cards` oldest first, a carded character is needs_you with `needs` = card kind; waiting has
@@ -64,5 +62,5 @@ Decisions that bind
   arguments. The one shell Funtown starts is the Shell tab's interactive login shell in a house's folder.
 - All code our own. Tests never run the real `claude` or `gh`, use real names or the home folder.
   Replies are shaped only through SessionStart context; only the steward gets requests (reviews).
-- Out of git: `.workflow/`, .claude/settings.json, .claude/never-push; a security finding is fixed
+- Out of git: `.workflow/`, `.scratch/`, .claude/settings.json, .claude/never-push; a security finding is fixed
   before the push and never written in a tracked file. Fixed CSP; no raw HTML in letters.
