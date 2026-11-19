@@ -2,6 +2,7 @@
 
 One line per change, newest first.
 
+- 2026-11-19 19:00 · Moved planning to workflow 1.0.0: CLAUDE.md points at GOAL.md, docs/specs/, GLOSSARY.md and .scratch/ instead of the old milestone notes, .scratch/ stays out of git, and Dependabot keeps the CI's actions and npm packages current.
 - 2026-11-18 08:50 · Simplified v2 without changing what it does: `GET /projects` is gone (the page never used it), the avatar and project files share one read and write helper, and small repeats in the web pages and the letter store are merged.
 - 2026-11-18 08:10 · Subagents whose own stop never arrived no longer stay on the rack and in the classroom: when a session's turn ends, every subagent not still running is finished.
 - 2026-11-18 07:35 · `npm test` and the test command build the page before the unit tests, so a fresh checkout or worktree passes.
