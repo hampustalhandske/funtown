@@ -2,6 +2,7 @@
 
 One line per change, newest first.
 
+- 2026-11-21 09:10 · A session's terminal feels like the real one: it loads with the page and attaches early, opens in a big sheet (about 103 x 43 at 1280 x 800) in Menlo 13, Option types, Cmd+click opens web links, a slow resume says "Waking the session...", a detach folds the sheet back, and every pty Funtown starts tells Claude the same terminal.
 - 2026-11-20 10:00 · Added GOAL.md: why Funtown exists, who it's for, how we'll know it works, what it isn't, and its big parts (Glance, Desk, Yard, Look, Play, App, Residents, Life), so every spec can say which part it serves.
 - 2026-11-19 19:00 · Moved planning to workflow 1.0.0: CLAUDE.md points at GOAL.md, docs/specs/, GLOSSARY.md and .scratch/ instead of the old milestone notes, docs/ is tracked again so specs reach git, .scratch/ stays out of git, and Dependabot keeps the CI's actions and npm packages current.
 - 2026-11-18 08:50 · Simplified v2 without changing what it does: `GET /projects` is gone (the page never used it), the avatar and project files share one read and write helper, and small repeats in the web pages and the letter store are merged.
