@@ -6,7 +6,8 @@
 //   call; its pid goes to agents.pids). `--bg` appends (cwd, argv, CLAUDE*/AI_AGENT variable names) to started.json and lists a new background session (none
 //   with bg-unlisted); `attach <id>` prints its TERM, COLORTERM, TERM_PROGRAM and the names of the terminal-program variables it got, echoes every input chunk as `got:<JSON string>` and appends it to attach-<id>.input, and
 //   with attach-chatty also prints a dot every 100 ms, so its output never pauses, and with
-//   attach-sticky outlives a hangup by a second. `stop <id>` appends its argv to stop-calls.jsonl and removes the
+//   attach-sticky outlives a hangup by a second, and with attach-links prints three links after its first line, each
+//   alone on a line from column 0: a plain http URL, an OSC 8 https link and an OSC 8 javascript: link. `stop <id>` appends its argv to stop-calls.jsonl and removes the
 //   listed session whose short id is <id> (exit 1 with a message when none is listed, or always with stop-fail).
 // It also stands in for `gh`: `pr list ...` appends (cwd, argv) to pr-calls.jsonl and prints
 //   prs.json's list for its cwd (`[]` when none is set; a null entry fails like gh outside a repo).
@@ -81,6 +82,10 @@ if (argv[0] === "--version") {
   // the terminal-program variables a real terminal sets, which Funtown must not pass on
   const termVars = Object.keys(process.env).filter((k) => /^(TERM_PROGRAM|TERM_PROGRAM_VERSION|TERM_SESSION_ID|LC_TERMINAL|LC_TERMINAL_VERSION|TMUX|TMUX_PANE|STY|VTE_VERSION|WT_SESSION|TERMINAL_EMULATOR)$|^(ITERM_|KITTY_|GHOSTTY_|WEZTERM_|ALACRITTY_|KONSOLE_)/.test(k));
   out(`attached ${id} TERM=${process.env.TERM} size:${size()} env:[${leaked.sort().join(",")}] COLORTERM=${process.env.COLORTERM} TERM_PROGRAM=${process.env.TERM_PROGRAM} terminal-vars:[${termVars.join(",")}]\r\n`);
+  if (fs.existsSync(file("attach-links"))) {
+    const osc = (url, text) => `\x1b]8;;${url}\x1b\\${text}\x1b]8;;\x1b\\\r\n`;
+    out("http://example.test/plain\r\n" + osc("https://example.test/osc", "osc-link") + osc("javascript:alert(1)", "js-link"));
+  }
   process.stdout.on("resize", () => out(`size:${size()}\r\n`));
   if (fs.existsSync(file("attach-chatty"))) setInterval(() => out("."), 100);
   if (fs.existsSync(file("attach-sticky"))) process.on("SIGHUP", () => setTimeout(() => process.exit(0), 1000));

@@ -139,6 +139,58 @@ test("the_page_sends_the_terminals_size_as_soon_as_the_socket_opens", async ({ p
   expect(JSON.parse(sent[0])).toEqual({ t: "resize", c: Number(query!.get("cols")), r: Number(query!.get("rows")) });
 });
 
+test.describe("links", () => {
+  const opened = (page: Page) => page.evaluate(() => (window as unknown as { opened: string[] }).opened);
+  /** Clicks the first cell of the row showing `text`, holding `modifier`: the rows sit under xterm's overlay, so the click goes by mouse position. */
+  const clickLink = async (page: Page, text: string, modifier?: "Meta" | "Alt") => {
+    const box = (await screen(page).locator(":scope > div").filter({ hasText: text }).first().boundingBox())!;
+    await page.mouse.move(box.x + 4, box.y + box.height / 2);
+    if (modifier) await page.keyboard.down(modifier);
+    await page.mouse.down();
+    await page.mouse.up();
+    if (modifier) await page.keyboard.up(modifier);
+  };
+
+  test.beforeEach(async ({ page }) => {
+    fake.linksAttach().list([bg()]);
+    await page.addInitScript(() => {
+      const w = window as unknown as { opened: string[] };
+      w.opened = [];
+      window.open = (url) => (w.opened.push(String(url)), null);
+    });
+    await page.goto("/work.html");
+    await row(page, "beta").click({ position: { x: 5, y: 5 } });
+    await showTerminal(page.getByRole("dialog"));
+    await expect(screen(page)).toContainText("js-link");
+  });
+
+  for (const [kind, text, url] of [
+    ["a_plain_http_link", "http://example.test/plain", "http://example.test/plain"],
+    ["an_osc_8_link", "osc-link", "https://example.test/osc"],
+  ]) {
+    test(`cmd_click_on_${kind}_opens_it_and_a_plain_click_opens_nothing_and_no_confirm_appears`, async ({ page }) => {
+      const dialogs: string[] = [];
+      page.on("dialog", (d) => (dialogs.push(d.message()), d.dismiss()));
+      await clickLink(page, text);
+      await clickLink(page, text, "Alt");
+      expect(await opened(page)).toEqual([]);
+      await clickLink(page, text, "Meta");
+      await expect.poll(() => opened(page)).toEqual([url]);
+      expect(dialogs).toEqual([]);
+    });
+  }
+
+  test("a_javascript_link_opens_nothing_even_with_cmd", async ({ page }) => {
+    const dialogs: string[] = [];
+    page.on("dialog", (d) => (dialogs.push(d.message()), d.dismiss()));
+    await clickLink(page, "js-link", "Meta");
+    // the https link proves Cmd+click works here, so the js-link's silence is the filter's doing
+    await clickLink(page, "osc-link", "Meta");
+    await expect.poll(() => opened(page)).toEqual(["https://example.test/osc"]);
+    expect(dialogs).toEqual([]);
+  });
+});
+
 /** The names of the scripts the page asks for from now on. */
 const watchScripts = (page: Page) => {
   const names: string[] = [];

@@ -1,8 +1,23 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
-import { Terminal as XTerm } from "@xterm/xterm";
+import { Terminal as XTerm, type ILink } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { funtownToken } from "./token.ts";
+
+/** Opens `url` in a new tab (in the app, the window's rule sends it to the default browser), only for Cmd+click and only for http and https. */
+function openLink(event: MouseEvent, url: string) {
+  if (event.metaKey && /^https?:\/\//i.test(url)) window.open(url, "_blank", "noopener");
+}
+
+/** Finds the plain http and https URLs in one buffer line (1-based), leaving off the punctuation a sentence puts after one. */
+function plainLinks(term: XTerm, line: number): ILink[] {
+  const text = term.buffer.active.getLine(line - 1)?.translateToString(true) ?? "";
+  return [...text.matchAll(/https?:\/\/[^\s<>"'`]+/g)].map((m) => {
+    const url = m[0].replace(/[.,;:!?)\]}]+$/, "");
+    const x = m.index + 1;
+    return { text: url, range: { start: { x, y: line }, end: { x: x + url.length - 1, y: line } }, activate: openLink };
+  });
+}
 
 /**
  * Live terminal of one background session: an xterm.js view over the `/term` WebSocket; closing it
@@ -31,7 +46,10 @@ export function SessionTerminal({
       fontSize: 13,
       fontFamily: "Menlo, monospace",
       ...(shell === undefined && { scrollback: 0 }),
+      // OSC 8 hyperlinks come to openLink instead of xterm.js's default confirm() prompt.
+      linkHandler: { activate: openLink },
     });
+    term.registerLinkProvider({ provideLinks: (line, done) => done(plainLinks(term, line)) });
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host.current!);
