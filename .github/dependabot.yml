@@ -1,9 +1,18 @@
-# Weekly update PRs for the CI's actions and the npm packages.
+# Weekly update PRs for the CI's actions and the npm packages, bundled so a week brings few PRs:
+# one for all the actions, one for every npm minor and patch bump. A major npm bump can break
+# the build (TypeScript 6 to 7 did), so each still comes as its own PR.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    groups:
+      actions:
+        patterns: ["*"]
   - package-ecosystem: npm
     directory: /
     schedule: { interval: weekly }
+    groups:
+      npm-minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]

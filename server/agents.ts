@@ -33,6 +33,24 @@ export function claudeEnv(): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(process.env).filter(([k]) => k === "CLAUDE_CONFIG_DIR" || !/^(CLAUDE|AI_AGENT)/.test(k)));
 }
 
+/** The variables a terminal program sets about itself, which a pty Funtown starts must not inherit. */
+const TERMINAL_OWN = /^(TERM_PROGRAM|TERM_PROGRAM_VERSION|TERM_SESSION_ID|LC_TERMINAL|LC_TERMINAL_VERSION|TMUX|TMUX_PANE|STY|VTE_VERSION|WT_SESSION|TERMINAL_EMULATOR)$|^(ITERM_|KITTY_|GHOSTTY_|WEZTERM_|ALACRITTY_|KONSOLE_)/;
+
+/**
+ * The environment of a pty Funtown starts: `claudeEnv()` without the starting terminal's own
+ * variables, with `TERM=xterm-256color` and `COLORTERM=truecolor`, so Claude is told the same
+ * terminal whatever terminal Funtown was started from.
+ */
+export function ptyEnv(): NodeJS.ProcessEnv {
+  const env = Object.fromEntries(Object.entries(claudeEnv()).filter(([k]) => !TERMINAL_OWN.test(k)));
+  return { ...env, TERM: "xterm-256color", COLORTERM: "truecolor" };
+}
+
+/** The environment of a `claude attach` client: `ptyEnv()` plus `CLAUDE_CODE_ENABLE_AWAY_SUMMARY=0`, which turns off the away recap. */
+export function attachEnv(): NodeJS.ProcessEnv {
+  return { ...ptyEnv(), CLAUDE_CODE_ENABLE_AWAY_SUMMARY: "0" };
+}
+
 /** Why a failed `claude` run failed: its stderr when it printed any, else the error's message. */
 const reasonOf = (err: unknown): string => {
   const { stderr, message } = err as { stderr?: string; message: string };

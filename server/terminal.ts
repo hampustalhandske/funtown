@@ -2,7 +2,7 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { spawn, type IPty } from "node-pty";
 import { WebSocketServer, type WebSocket } from "ws";
-import { claudeEnv } from "./agents.ts";
+import { attachEnv, ptyEnv } from "./agents.ts";
 import type { LogError } from "./errors.ts";
 
 type Frame = { t?: unknown; d?: unknown; c?: unknown; r?: unknown } | null;
@@ -15,7 +15,8 @@ export const isSize = (n: unknown): n is number => Number.isInteger(n) && (n as 
 
 /**
  * Live terminals over WebSocket. Each socket on a session gets its own pty running `<claude>
- * attach <shortId>`; closing the socket kills the pty, and the pty exiting closes the socket.
+ * attach <shortId>`; closing the socket kills the pty, and the pty exiting closes the socket with
+ * code 4000 + the client's exit code (4000 + 128 + the signal when a signal killed it).
  * Each project folder has at most one shell, `<shell> -l` in a pty, which every socket on that
  * folder shares: it starts with the first socket, outlives its sockets, and closes them all when
  * it exits. Frames are JSON text of at most 1 MB: `{"t":"in","d"}` and `{"t":"resize","c","r"}`
@@ -66,7 +67,7 @@ export function createTerminals(claude: string, shell: string | undefined, logEr
   /** Starts `<shell> -l` in `cwd` at `cols` x `rows` as that folder's shell. */
   const startShell = (cwd: string, cols: number, rows: number) => {
     if (!shell) throw new Error("no shell is set");
-    const pty = spawn(shell, ["-l"], { name: "xterm-256color", cols, rows, cwd, env: claudeEnv() });
+    const pty = spawn(shell, ["-l"], { name: "xterm-256color", cols, rows, cwd, env: ptyEnv() });
     const sh = { pty, out: [] as string[], size: 0, trimmed: false, sockets: new Set<WebSocket>() };
     shells.set(cwd, sh);
     ptys.add(pty);
@@ -97,7 +98,7 @@ export function createTerminals(claude: string, shell: string | undefined, logEr
       wss.handleUpgrade(req, socket, head, (ws) => {
         let pty: IPty;
         try {
-          pty = spawn(claude, ["attach", shortId], { name: "xterm-256color", cols, rows, env: claudeEnv() });
+          pty = spawn(claude, ["attach", shortId], { name: "xterm-256color", cols, rows, env: attachEnv() });
         } catch (err) {
           logError("term", err, shortId);
           ws.close(1011, "couldn't start claude attach");
@@ -107,9 +108,9 @@ export function createTerminals(claude: string, shell: string | undefined, logEr
         pty.onData((d) => {
           if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ t: "out", d }));
         });
-        pty.onExit(() => {
+        pty.onExit(({ exitCode, signal }) => {
           ptys.delete(pty);
-          ws.close();
+          ws.close(4000 + (signal ? 128 + signal : exitCode));
         });
         const sockets = bySession.get(sessionId) ?? new Set<WebSocket>();
         bySession.set(sessionId, sockets);

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { errorLines, ev, fakeClaude, hold, houseAt, jsonLines, listed, listedBg, pastes, post, postPage, pr, realDir, sleep, start, tokenOf, townWhere, until } from "./helpers.ts";
+import { errorLines, ev, fakeClaude, hold, houseAt, inTerminal, jsonLines, listed, listedBg, pastes, post, postPage, pr, realDir, sleep, start, tokenOf, townWhere, until } from "./helpers.ts";
 import type { FakeClaude, Pr } from "./fake-claude.ts";
 import type { JournalEntry, Letter, Town } from "../server/types.ts";
 
@@ -108,6 +108,20 @@ describe("the steward", () => {
       { kind: "review", at: expect.any(Number), cwd: p.project, pr: 7, head: "head-7" },
     ]);
     await until(() => s.fake.attachPids(st.short).every(gone), 5000);
+  });
+
+  it("the_steward_attaches_with_the_terminal_identity_and_the_away_recap_off_whatever_terminal_the_server_started_in", async () => {
+    // Breaks if the steward's attach client inherits the starting terminal's identity, or leaves the recap on.
+    await inTerminal(async () => {
+      const p = paths();
+      const s = await startSteward(p, fakeWith(p, [pr(7)]));
+      await ask(s, p, 7);
+      const st = await stewardStarted(s.fake, p);
+      await until(() => pastes(s.fake.attachInput(st.short)).length === 1, 8000);
+      expect(s.fake.attachEnvs(st.short)).toEqual([
+        { claude: ["CLAUDE_CODE_ENABLE_AWAY_SUMMARY"], term: "xterm-256color", colorterm: "truecolor", termProgram: null, termVars: [] },
+      ]);
+    });
   });
 
   it("a_ready_pr_nobody_asked_about_stays_idle_and_no_steward_is_started_or_pasted_to", async () => {
