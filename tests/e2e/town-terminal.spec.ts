@@ -57,4 +57,26 @@ test.describe("the terminal sheet over the town at 1280 x 800", () => {
     await expect(panel.getByRole("textbox", { name: "Reply" })).toHaveCount(0);
     await removeProjectFolder(cwd);
   });
+
+  test("the_early_client_starts_at_the_sheets_size_so_show_resizes_nothing", async ({ page }) => {
+    // Catches the town's hidden terminal box drifting from its sheet, so Claude redraws the moment Show reveals it.
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "funtown-e2e-town-")));
+    fake.reset();
+    await addProjectFolder(cwd);
+    const before = fake.attachPids("abcd1234").length;
+    fake.list([listedBg("abcd1234-0000-4000-8000-000000000000", cwd, { name: "beta" })]);
+    await page.goto("/");
+    await expect(page.locator("canvas")).toHaveCount(1);
+    await page.getByRole("button", { name: /^beta,/ }).click();
+    await expect.poll(() => fake.attachPids("abcd1234").length).toBe(before + 1);
+    const panel = page.getByRole("dialog", { name: "beta details" });
+    await showTerminal(panel);
+    const screen = panel.locator(".xterm-rows");
+    await expect(screen).toContainText("attached abcd1234");
+    const size = (await sizeShown(screen))!;
+    expect(size.cols).toBeGreaterThanOrEqual(100);
+    expect(size.rows).toBeGreaterThanOrEqual(40);
+    expect(size.count).toBe(1);
+    await removeProjectFolder(cwd);
+  });
 });

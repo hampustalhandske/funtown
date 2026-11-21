@@ -113,7 +113,7 @@ test.describe("with the e2e server and its fake claude", () => {
   });
   const row = (page: Page) => page.locator(`section[aria-label="${project}"] .character`).filter({ hasText: "beta" }).first();
 
-  test("the_terminal_and_its_socket_start_on_show_the_reply_box_is_there_only_while_it_is_hidden_and_hiding_leaves_the_session_running", async ({ page }) => {
+  test("the_terminal_connects_hidden_the_reply_box_is_there_only_while_it_is_hidden_and_hiding_leaves_the_session_running", async ({ page }) => {
     const opened: string[] = [];
     const closed: string[] = [];
     page.on("websocket", (ws) => {
@@ -126,10 +126,10 @@ test.describe("with the e2e server and its fake claude", () => {
     const panel = dialog(page, "beta");
     const toggle = panel.getByRole("button", { name: /(show|hide) terminal/i });
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
-    await expect(panel.locator(".xterm")).toHaveCount(0);
     await expect(panel.getByRole("textbox", { name: "Reply" })).toBeVisible();
-    await page.waitForTimeout(500); // a socket opened on mount would show by now
-    expect(opened).toEqual([]);
+    // early attach: the socket opens with the terminal still hidden
+    await expect.poll(() => opened).toHaveLength(1);
+    await expect(panel.locator(".xterm-rows")).toBeHidden();
 
     await showTerminal(panel);
     await expect(toggle).toHaveAttribute("aria-expanded", "true");

@@ -25,6 +25,8 @@ const session = () => listed("t1", cwd, { name: "alpha" });
 const bg = () => listedBg(sid, cwd, { name: "beta" });
 const row = (page: Page, name: string) => page.locator(`section[aria-label="${project}"] .character`).filter({ hasText: name }).first();
 const screen = (page: Page) => page.getByRole("dialog").locator(".xterm-rows");
+/** Whether process `pid` still runs. */
+const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 /** Everything the fake echoed as `got:"..."`, joined, so one frame per key or per string reads the same. */
 const echoed = async (page: Page) =>
   [...(await screen(page).innerText()).matchAll(/got:"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]).join("");
@@ -456,5 +458,135 @@ test.describe("the terminal sheet at 1280 x 800", () => {
     expect(await terminal.boundingBox()).toEqual(before);
     expect((await panel.getByRole("button", { name: "Allow" }).boundingBox())!.x).toBeLessThan(before.x);
     expect(await sizeShown(screen(page))).toEqual(size);
+  });
+});
+
+test.describe("early attach", () => {
+  const short = sid.slice(0, 8);
+  /** The `claude attach` clients started for beta since `before` (the fake's pid file outlives a test). */
+  const since = (before: number) => fake.attachPids(short).slice(before);
+  /** Loads the work view with the page's clock paused, so the panel's 300 ms only passes on `clock.runFor`. */
+  async function pausedPage(page: Page, sessions = [bg()]) {
+    fake.list(sessions);
+    await page.clock.install();
+    await page.goto("/work.html");
+    await expect(row(page, "beta")).toBeVisible();
+    await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
+  }
+
+  test("a_panel_open_past_300_ms_starts_exactly_one_attach_and_one_closed_before_starts_none", async ({ page }) => {
+    // Catches a panel that attaches on every glance, or never before Show (so the click waits on the attach).
+    const before = fake.attachPids(short).length;
+    await pausedPage(page);
+    await row(page, "beta").click({ position: { x: 5, y: 5 } });
+    const panel = page.getByRole("dialog", { name: "beta details" });
+    await page.clock.runFor(200);
+    await panel.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(panel).toHaveCount(0);
+    await page.clock.runFor(1000);
+    expect(since(before)).toEqual([]);
+    await row(page, "beta").click({ position: { x: 5, y: 5 } });
+    await page.clock.runFor(300);
+    await expect.poll(() => since(before).length).toBe(1);
+    await page.clock.runFor(2000);
+    await page.clock.resume();
+    await showTerminal(panel);
+    await expect(screen(page)).toContainText("attached abcd1234");
+    expect(since(before)).toHaveLength(1);
+  });
+
+  test("hide_then_show_reuses_the_client_and_closing_the_panel_ends_it", async ({ page }) => {
+    // Catches a Show that starts a second client, and a closed panel that leaves its client attached.
+    const before = fake.attachPids(short).length;
+    await pausedPage(page);
+    await row(page, "beta").click({ position: { x: 5, y: 5 } });
+    const panel = page.getByRole("dialog", { name: "beta details" });
+    await page.clock.runFor(300);
+    await expect.poll(() => since(before).length).toBe(1);
+    const [pid] = since(before);
+    await page.clock.resume();
+    await showTerminal(panel);
+    await expect(screen(page)).toContainText("attached abcd1234");
+    await panel.getByRole("button", { name: /hide terminal/i }).click();
+    await showTerminal(panel);
+    await expect(screen(page)).toContainText("attached abcd1234");
+    expect(since(before)).toEqual([pid]);
+    expect(alive(pid)).toBe(true);
+    await panel.getByRole("button", { name: "Close", exact: true }).click();
+    await expect.poll(() => alive(pid)).toBe(false);
+  });
+
+  test("opening_another_characters_panel_ends_the_first_ones_client", async ({ page }) => {
+    // Catches a client that outlives its panel when the user moves straight to another character.
+    const other = "efgh5678-0000-4000-8000-000000000000";
+    const before = fake.attachPids(short).length;
+    await pausedPage(page, [bg(), listedBg(other, cwd, { name: "gamma" })]);
+    await row(page, "beta").click({ position: { x: 5, y: 5 } });
+    await page.clock.runFor(300);
+    await expect.poll(() => since(before).length).toBe(1);
+    const [pid] = since(before);
+    await row(page, "gamma").click({ position: { x: 5, y: 5 } });
+    await expect(page.getByRole("dialog", { name: "gamma details" })).toBeVisible();
+    await page.clock.runFor(100);
+    await expect.poll(() => alive(pid)).toBe(false);
+  });
+
+  test("show_pressed_before_300_ms_connects_and_shows_the_session_with_one_client", async ({ page }) => {
+    // Catches a Show that waits for the early attach, and the switch-off path (connect on Show) breaking.
+    const before = fake.attachPids(short).length;
+    await pausedPage(page);
+    await row(page, "beta").click({ position: { x: 5, y: 5 } });
+    const panel = page.getByRole("dialog", { name: "beta details" });
+    await showTerminal(panel);
+    await expect.poll(() => since(before).length).toBe(1);
+    // xterm draws on animation frames, so let time run to read the screen; the 300 ms then pass too
+    await page.clock.resume();
+    await expect(screen(page)).toContainText("attached abcd1234");
+    await expect(page.locator(".xterm-helper-textarea")).toBeFocused();
+    await page.clock.runFor(1000);
+    expect(since(before)).toHaveLength(1);
+  });
+
+  test("the_hidden_terminal_never_holds_focus_even_through_tab_and_keys_typed_in_the_page_never_reach_the_session", async ({ page }) => {
+    // Catches an early terminal that grabs the keyboard (or sits in the tab order), so the user's typing lands in Claude unseen.
+    await page.addInitScript(() => {
+      const w = window as unknown as { inTerminal: number };
+      w.inTerminal = 0;
+      document.addEventListener("focusin", (e) => (e.target as Element).closest?.(".screen") && w.inTerminal++, true);
+    });
+    const typed = fake.attachInput(short).length;
+    const before = fake.attachPids(short).length;
+    fake.list([bg()]);
+    await page.goto("/work.html");
+    await row(page, "beta").click({ position: { x: 5, y: 5 } });
+    await expect.poll(() => since(before).length).toBe(1);
+    for (let i = 0; i < 40; i++) {
+      await page.keyboard.press("Tab");
+      await page.keyboard.type("zq");
+    }
+    expect(await page.evaluate(() => (window as unknown as { inTerminal: number }).inTerminal)).toBe(0);
+    // the reply box took some of the typing; send nothing, and the session must have had no byte
+    expect(fake.attachInput(short).slice(typed)).toBe("");
+    await showTerminal(page.getByRole("dialog"));
+    await expect(page.locator(".xterm-helper-textarea")).toBeFocused();
+  });
+
+  test.describe("at 1280 x 800", () => {
+    test.use({ viewport: { width: 1280, height: 800 } });
+
+    test("the_early_client_starts_at_the_sheets_size_so_show_resizes_nothing", async ({ page }) => {
+      // Catches a hidden terminal made at xterm's 80 x 24, so Claude redraws for the new size the moment Show reveals it.
+      const before = fake.attachPids(short).length;
+      fake.list([bg()]);
+      await page.goto("/work.html");
+      await row(page, "beta").click({ position: { x: 5, y: 5 } });
+      await expect.poll(() => since(before).length).toBe(1);
+      await showTerminal(page.getByRole("dialog"));
+      await expect(screen(page)).toContainText("attached abcd1234");
+      const size = (await sizeShown(screen(page)))!;
+      expect(size.cols).toBeGreaterThanOrEqual(100);
+      expect(size.rows).toBeGreaterThanOrEqual(40);
+      expect(size.count).toBe(1);
+    });
   });
 });

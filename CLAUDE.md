@@ -19,7 +19,7 @@ note's Reproduce before relying on it.
   town). A building opens its classroom at `#in=<cwd>`: `interior.ts` pure places and the whiteboard model,
   `Classroom.tsx` the room, the lead at the front, you the observer at the back, wearing the chosen avatar; words only on the board;
   `drawn()` keeps a departed figure at the door for 2.5 s so it walks out.
-  `/work.html` the work view (`App.tsx`: list, panels; a background lead's terminal mounts only after Show terminal, and a shown terminal opens the terminal sheet (the panel's lines in a 19rem column, the terminal beside it); no command text on rows; `AnswerCard`, `Letters` (the only lazy part: the Markdown renderer), `ReplyBox`, `Morning`,
+  `/work.html` the work view (`App.tsx`: list, panels; a background lead's terminal connects when its panel has been open 300 ms and shows on Show terminal, and a shown terminal opens the terminal sheet (the panel's lines in a 19rem column, the terminal beside it); no command text on rows; `AnswerCard`, `Letters` (the only lazy part: the Markdown renderer), `ReplyBox`, `Morning`,
   `Switch`, `needs.tsx`: `waitingList`, the desk order, card kinds first then oldest). Font Recursive (OFL, bundled, licence emitted next to it).
   `tests/`: Vitest; Playwright in `tests/e2e/`, one spec at a time; the fake `claude` is also `gh`.
 Contracts (source of truth: this list)

@@ -41,7 +41,7 @@ export const addProjectFolder = (cwd: string) => pagePost("/projects", { cwd });
 /** Takes `cwd` off the project list again. */
 export const removeProjectFolder = (cwd: string) => pagePost("/projects/remove", { cwd });
 
-/** Presses "Show terminal" in a background lead's panel, which is what mounts its live terminal and reply box. */
+/** Presses "Show terminal" in a background lead's panel, which reveals its live terminal (and connects it, if the panel was open under 300 ms). */
 export const showTerminal = (panel: Locator) => panel.getByRole("button", { name: /show terminal/i }).click();
 
 /** The text a viewer can see on the page: text nodes of at least 3 px that are not clipped, transparent or hidden. */

@@ -32,6 +32,12 @@ function StageLabel({ stage }: { stage: Stage }) {
 const OPENING_TIMEOUT_MS = 30_000;
 
 /**
+ * The switch for early attach: on, a background lead's panel open this long starts the session's `claude attach`
+ * out of view, so Show terminal has its screen at once. Off (false), the terminal connects on Show terminal.
+ */
+const EARLY_ATTACH: number | false = 300;
+
+/**
  * Subscribes to the server's Town stream; gives the latest Town (null before the first) and
  * whether the server has restarted since the page loaded, which leaves the page's token stale.
  */
@@ -316,8 +322,15 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [terminal, setTerminal] = useState(false);
-  // Once shown, the terminal stays mounted (hidden) while the panel lives, so its socket stays open for the reply box.
+  // Once started (early attach, or the first Show), the terminal stays mounted while the panel lives, hidden out of view
+  // whenever it isn't shown, so its socket stays open for the reply box. Closing the panel closes the socket.
   const [started, setStarted] = useState(false);
+  const background = character.id === lead.id && lead.kind === "background";
+  useEffect(() => {
+    if (!background || EARLY_ATTACH === false) return;
+    const timer = setTimeout(() => setStarted(true), EARLY_ATTACH);
+    return () => clearTimeout(timer);
+  }, [background]);
   const screen = useRef<HTMLDivElement>(null);
   const column = useRef<HTMLDivElement>(null);
   const leaveTerminal = useCallback(() => column.current?.focus(), []);
@@ -363,7 +376,6 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
     else onClose();
   }
 
-  const background = character.id === lead.id && lead.kind === "background";
   // A shown terminal opens the terminal sheet: the panel's lines in a column on the left, the terminal beside it.
   const sheet = background && terminal;
   return (
@@ -424,7 +436,8 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
         {error && <p role="alert" className="error">{error}</p>}
       </div>
       {background && started && (
-        <div className="screen" ref={screen} hidden={!terminal}>
+        // Hidden, it is inert: out of the tab order and unfocusable, and the page's CSS keeps it out of view at the sheet's size.
+        <div className="screen" ref={screen} inert={!terminal}>
           <LazyBoundary>
             <SessionTerminal lead={lead.id} reply={reply} onLeave={leaveTerminal} />
           </LazyBoundary>
