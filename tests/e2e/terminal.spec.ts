@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_FAKE_DIR, E2E_URL, FakeClaude, listed, listedBg } from "../fake-claude.ts";
-import { addProjectFolder, removeProjectFolder, showTerminal } from "./stream.ts";
+import { addProjectFolder, fontOf, removeProjectFolder, scrollsBack, showTerminal } from "./stream.ts";
 
 const fake = FakeClaude.at(E2E_FAKE_DIR);
 const sid = "abcd1234-0000-4000-8000-000000000000";
@@ -173,4 +173,29 @@ test("the_letters_markdown_renderer_is_not_in_the_first_page_load", async ({ pag
   expect(scripts.filter((s) => /^Letters/.test(s))).toEqual([]);
   await row(page, "beta").click({ position: { x: 5, y: 5 } });
   await expect.poll(() => scripts.some((s) => /^Letters/.test(s))).toBe(true);
+});
+
+/** Sends `lines` numbered lines to the page's terminal as if the session printed them, then `END`. */
+async function floodTerminal(page: Page, lines: number) {
+  await page.routeWebSocket(/\/term/, (ws) => {
+    const server = ws.connectToServer();
+    ws.onMessage((m) => server.send(m));
+    server.onMessage((m) => ws.send(m));
+    const d = Array.from({ length: lines }, (_, i) => `line-${i}\r\n`).join("") + "END\r\n";
+    ws.send(JSON.stringify({ t: "out", d }));
+  });
+}
+
+test("a_session_terminal_is_set_in_menlo_13_and_has_no_scrollback", async ({ page }) => {
+  await floodTerminal(page, 300);
+  fake.list([bg()]);
+  await page.goto("/work.html");
+  await row(page, "beta").click({ position: { x: 5, y: 5 } });
+  await showTerminal(page.getByRole("dialog"));
+  await expect(screen(page)).toContainText("attached abcd1234");
+  const terminal = page.getByRole("dialog").locator(".xterm");
+  const { family, size } = await fontOf(terminal);
+  expect(family).toMatch(/^"?Menlo"?(,|$)/);
+  expect(size).toBe("13px");
+  expect(await scrollsBack(page, terminal)).toBe(false);
 });

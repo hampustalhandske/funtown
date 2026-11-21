@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_FAKE_DIR, FakeClaude, listed } from "../fake-claude.ts";
-import { addProjectFolder } from "./stream.ts";
+import { addProjectFolder, fontOf, scrollsBack } from "./stream.ts";
 
 const fake = FakeClaude.at(E2E_FAKE_DIR);
 let cwd = "";
@@ -82,6 +82,21 @@ test("the_shell_tab_echoes_input_survives_a_reload_replays_its_output_and_close_
 
   await house(page).getByRole("button", { name: "Close shell" }).click();
   await expect.poll(() => { try { process.kill(pid, 0); return true; } catch { return false; } }).toBe(false);
+});
+
+test("the_shell_tab_is_set_in_menlo_13_and_keeps_its_scrollback", async ({ page }) => {
+  await page.goto("/work.html");
+  await addProject(page, cwd);
+  await house(page).getByRole("tab", { name: "Shell" }).click();
+  await expect(screen(page)).toContainText(`shell args:-l cwd:${cwd}`, { timeout: 10_000 });
+  await page.locator(".xterm").click();
+  await page.keyboard.insertText("flood");
+  await expect(screen(page)).toContainText("END");
+  const terminal = house(page).getByRole("tabpanel").locator(".xterm");
+  const { family, size } = await fontOf(terminal);
+  expect(family).toMatch(/^"?Menlo"?(,|$)/);
+  expect(size).toBe("13px");
+  expect(await scrollsBack(page, terminal)).toBe(true);
 });
 
 test("a_failed_start_shows_the_reason_and_the_setup_hint_in_a_house_that_has_a_session", async ({ page }) => {

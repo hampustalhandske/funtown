@@ -63,3 +63,23 @@ export function visibleWords(page: Page): Promise<string[]> {
     return seen;
   });
 }
+
+/** The font a terminal draws in, as the page computes it. */
+export const fontOf = (root: Locator) =>
+  root.locator(".xterm-rows").evaluate((rows) => {
+    const style = getComputedStyle(rows);
+    return { family: style.fontFamily, size: style.fontSize };
+  });
+
+/** Whether the wheel scrolls back: after it turns up over a terminal full of `line-<n>` lines, an earlier line shows. */
+export async function scrollsBack(page: Page, root: Locator) {
+  const first = async () => {
+    const numbers = [...(await root.locator(".xterm-rows").innerText()).matchAll(/line-(\d+)/g)].map((m) => Number(m[1]));
+    return Math.min(...numbers);
+  };
+  const before = await first();
+  await root.hover();
+  await page.mouse.wheel(0, -2000);
+  await page.waitForTimeout(300);
+  return (await first()) < before;
+}

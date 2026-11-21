@@ -24,7 +24,14 @@ export function SessionTerminal({
   const [closed, setClosed] = useState(false);
 
   useEffect(() => {
-    const term = new XTerm({ cursorBlink: true, fontSize: 13 });
+    // Menlo so Claude's box lines draw in one font. A session draws on the alternate screen and never
+    // uses scrollback, so it keeps none (which also gives back the scrollbar's columns); the Shell tab keeps xterm's default.
+    const term = new XTerm({
+      cursorBlink: true,
+      fontSize: 13,
+      fontFamily: "Menlo, monospace",
+      ...(shell === undefined && { scrollback: 0 }),
+    });
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host.current!);
