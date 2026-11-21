@@ -64,3 +64,11 @@ Decisions that bind
   Replies are shaped only through SessionStart context; only the steward gets requests (reviews).
 - Out of git: `.workflow/`, `.scratch/`, .claude/settings.json, .claude/never-push; a security finding is fixed
   before the push and never written in a tracked file. Fixed CSP; no raw HTML in letters.
+- The town draws with three.js's WebGL renderer (WebGL2) in Chrome's engine. Custom GLSL shaders
+  live in one place and only those the user approved: the sea, the sky, the ink outline on
+  characters and the tilt-shift blur. WebGPU only by the user's decision.
+- The page never calls the app: it talks only to the server and keeps working in a browser tab.
+  The app's native parts (summon key, menu bar icon) live in its main file.
+- The app's window loads only Funtown's own page on 127.0.0.1, with Node off inside it (context
+  isolation and the sandbox on), new windows refused and outside links opened in the default
+  browser.
