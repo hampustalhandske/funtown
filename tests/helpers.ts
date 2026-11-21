@@ -318,5 +318,4 @@ export function connect(
   });
 }
 
-/** True while a process with `pid` exists. */
-export const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+export { alive } from "./fake-claude.ts";

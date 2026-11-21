@@ -24,6 +24,25 @@ export async function hook(sid: string, cwd: string, name: string, extra: Record
   expect(res.status).toBe(204);
 }
 
+/** The stream state with a working background session `sid` named beta in `cwd` (a folder named `project`), and `cards` waiting. */
+export const betaState = (project: string, cwd: string, sid: string, cards: unknown[]) => ({
+  claude: { version: "2.1.325", problems: [] },
+  cards,
+  houses: [
+    { project, cwd, leads: [{ id: sid, name: "beta", stage: "working", activity: null, step: null, tty: null, termProgram: null, kind: "background", shortId: sid.slice(0, 8), subagents: [] }] },
+  ],
+});
+
+/** A question card of `sid`'s, tall enough to fill a column on its own. */
+export const questionCard = (sid: string, cwd: string) => ({
+  id: "c2", lead: sid, agent: null, kind: "question", tool: "AskUserQuestion", cwd, at: 1,
+  input: {
+    questions: ["Which database?", "Which cache?", "Which queue?"].map((question) => ({
+      question, header: "Q", multiSelect: false, options: ["Postgres", "SQLite", "Redis"].map((label) => ({ label, description: "" })),
+    })),
+  },
+});
+
 /** Runs a page-authenticated POST (the page's token and Origin) against the e2e server. */
 async function pagePost(path: string, body: unknown) {
   const html = await (await fetch(`${E2E_URL}/work.html`)).text();

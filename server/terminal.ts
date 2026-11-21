@@ -2,7 +2,7 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { spawn, type IPty } from "node-pty";
 import { WebSocketServer, type WebSocket } from "ws";
-import { ptyEnv } from "./agents.ts";
+import { attachEnv, ptyEnv } from "./agents.ts";
 import type { LogError } from "./errors.ts";
 
 type Frame = { t?: unknown; d?: unknown; c?: unknown; r?: unknown } | null;
@@ -67,7 +67,7 @@ export function createTerminals(claude: string, shell: string | undefined, logEr
   /** Starts `<shell> -l` in `cwd` at `cols` x `rows` as that folder's shell. */
   const startShell = (cwd: string, cols: number, rows: number) => {
     if (!shell) throw new Error("no shell is set");
-    const pty = spawn(shell, ["-l"], { name: "xterm-256color", cols, rows, cwd, env: ptyEnv(false) });
+    const pty = spawn(shell, ["-l"], { name: "xterm-256color", cols, rows, cwd, env: ptyEnv() });
     const sh = { pty, out: [] as string[], size: 0, trimmed: false, sockets: new Set<WebSocket>() };
     shells.set(cwd, sh);
     ptys.add(pty);
@@ -98,7 +98,7 @@ export function createTerminals(claude: string, shell: string | undefined, logEr
       wss.handleUpgrade(req, socket, head, (ws) => {
         let pty: IPty;
         try {
-          pty = spawn(claude, ["attach", shortId], { name: "xterm-256color", cols, rows, env: ptyEnv(true) });
+          pty = spawn(claude, ["attach", shortId], { name: "xterm-256color", cols, rows, env: attachEnv() });
         } catch (err) {
           logError("term", err, shortId);
           ws.close(1011, "couldn't start claude attach");

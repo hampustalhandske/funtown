@@ -24,7 +24,7 @@ async function withHouses() {
 const connect = (s: { url: string; token: string }, cwd: string, q: Parameters<typeof open>[2] = {}) => open(s, { shell: cwd }, q);
 
 it("sessions_keeps_the_servers_terminal_variables_for_claude_bg_which_is_not_a_pty", async () => {
-  // Breaks if the terminal identity is applied to the non-pty runs, which keep today's env.
+  // Breaks if the terminal identity is applied to the non-pty runs, which keep the server's own terminal variables.
   await inTerminal(async () => {
     const cwd = realDir();
     const s = await start();

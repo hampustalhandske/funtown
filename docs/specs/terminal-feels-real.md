@@ -241,9 +241,12 @@ column and its terminal while the terminal is shown)
   Show terminal and Close session. Ctrl+Z does it. `←` on an empty prompt opens Claude's agent view
   inside the sheet, and the sheet stays, as you accepted. Whether `/exit` ends the client is a live
   check.
-- **Attach failed** (any other close): the narrow panel shows the client's last non-empty printed
-  line, read from the page's own copy of the terminal's text. Beat: the server putting it in the
-  close reason (123 bytes at most, and the server would have to keep output).
+- **Attach failed** (a close code 4001 to 4255, the client's own non-zero exit): the narrow panel
+  shows the client's last non-empty printed line, read from the page's own copy of the terminal's
+  text. Funtown's own closes say what happened instead: 1006 "Lost the connection to Funtown.",
+  1011 "Couldn't start the session's client.", anything else "Couldn't attach to the session." (the
+  user's call in the end review). Beat: the server putting it in the close reason (123 bytes at
+  most, and the server would have to keep output).
 - **Session closed** (Close session): the lead leaves the listing and its panel closes (today).
 - The Shell tab's ending is unchanged ("Terminal closed.").
 

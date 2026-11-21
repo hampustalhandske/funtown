@@ -253,18 +253,23 @@ const neverConnects = (page: Page) =>
 /** Answers every `/term` socket the page opens by closing it at once. */
 const closesAtOnce = (page: Page) => page.routeWebSocket(/\/term/, (ws) => ws.close());
 
-for (const [how, socket] of [["not_yet_connected", neverConnects], ["closed", closesAtOnce]] as const) {
+for (const [how, socket, endLine] of [
+  ["not_yet_connected", neverConnects, null],
+  ["closed", closesAtOnce, "Couldn't attach to the session."],
+] as const) {
   test(`send_while_the_terminal_socket_is_${how}_keeps_the_text_and_shows_an_alert`, async ({ page }) => {
     await socket(page);
     await openWith(page, true);
     await openTerminalPanel(page, false);
     const p = panel(page, "alpha");
-    await expect(p.getByRole("alert")).toHaveCount(0);
+    const notSent = p.getByRole("alert").filter({ hasText: "Not sent" });
+    await expect(notSent).toHaveCount(0);
+    // a closed socket has ended the terminal, and the panel says so before the reply goes
+    if (endLine) await expect(p.getByRole("alert")).toHaveText(endLine);
     const reply = p.getByRole("textbox", { name: "Reply" });
     await reply.fill("use main");
-    await page.waitForTimeout(200); // let a closing socket finish closing before Send
     await p.getByRole("button", { name: "Send" }).click();
-    await expect(p.getByRole("alert")).toBeVisible();
+    await expect(notSent).toHaveText("Not sent: the terminal isn't connected.");
     await expect(reply).toHaveValue("use main");
   });
 }

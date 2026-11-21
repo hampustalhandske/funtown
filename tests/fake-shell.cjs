@@ -13,8 +13,8 @@ const path = process.getBuiltinModule("path");
 const out = (s) => process.stdout.write(s);
 const size = () => `${process.stdout.columns}x${process.stdout.rows}`;
 const leaked = Object.keys(process.env).filter((k) => /^(CLAUDE|AI_AGENT)/.test(k));
-// the terminal-program variables a real terminal sets, which Funtown must not pass on
-const termVars = Object.keys(process.env).filter((k) => /^(TERM_PROGRAM|TERM_PROGRAM_VERSION|TERM_SESSION_ID|LC_TERMINAL|LC_TERMINAL_VERSION|TMUX|TMUX_PANE|STY|VTE_VERSION|WT_SESSION|TERMINAL_EMULATOR)$|^(ITERM_|KITTY_|GHOSTTY_|WEZTERM_|ALACRITTY_|KONSOLE_)/.test(k));
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- a plain script: the fake installs terminal-vars.cjs beside itself
+const termVars = require("./terminal-vars.cjs")();
 
 if (process.env.FAKE_SHELL_EXIT) process.exit(Number(process.env.FAKE_SHELL_EXIT));
 process.stdin.setRawMode(true);

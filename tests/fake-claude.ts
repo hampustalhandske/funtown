@@ -34,8 +34,12 @@ export const E2E_URL = `http://127.0.0.1:${E2E_PORT}`;
 /** Where the e2e web server's fake `claude` lives, so the config and the specs share it; one per port. */
 export const E2E_FAKE_DIR = join(tmpdir(), `funtown-e2e-claude-${E2E_PORT}`);
 
+/** True while a process with `pid` exists. */
+export const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
 const SOURCE = join(import.meta.dirname, "fake-claude.cjs");
 const SHELL_SOURCE = join(import.meta.dirname, "fake-shell.cjs");
+const TERMINAL_VARS_SOURCE = join(import.meta.dirname, "terminal-vars.cjs");
 
 const texts = new Map<string, string>();
 /** True when `path` holds the current text of the fake script `source`. */
@@ -86,6 +90,7 @@ export class FakeClaude {
     mkdirSync(dir, { recursive: true });
     const f = new FakeClaude(dir);
     link(SOURCE, f.path);
+    link(TERMINAL_VARS_SOURCE, join(dir, "terminal-vars.cjs"));
     return f;
   }
   /** Points at a fake already installed in `dir`. */
@@ -222,6 +227,11 @@ export class FakeClaude {
     const f = join(this.dir, `attach-${id}.input`);
     return existsSync(f) ? readFileSync(f, "utf8") : "";
   }
+  /** What each `attach <id>` process started so far saw of its environment: the names of its CLAUDE and AI_AGENT variables, TERM, COLORTERM, TERM_PROGRAM (null when unset) and the terminal-program variable names. */
+  attachEnvs(id: string): { claude: string[]; term: string; colorterm: string; termProgram: string | null; termVars: string[] }[] {
+    const f = join(this.dir, `attach-${id}.env`);
+    return existsSync(f) ? readFileSync(f, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+  }
   /** Pids of every `attach <id>` process started so far. */
   attachPids(id: string): number[] {
     const f = join(this.dir, `attach-${id}.pids`);
@@ -231,6 +241,7 @@ export class FakeClaude {
   get shell(): string {
     const path = join(this.dir, "shell");
     link(SHELL_SOURCE, path);
+    link(TERMINAL_VARS_SOURCE, join(this.dir, "terminal-vars.cjs"));
     return path;
   }
   /** Every shell the fake shell has started so far: its pid and the folder it ran in. */

@@ -142,7 +142,10 @@ test.describe("with the e2e server and its fake claude", () => {
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await expect(panel.locator(".xterm-rows")).toBeHidden();
     await expect(panel.getByRole("textbox", { name: "Reply" })).toBeVisible();
-    await page.waitForTimeout(300);
+    // a reply goes out only through an open socket, so the hidden terminal kept it
+    await panel.getByRole("textbox", { name: "Reply" }).fill("still there");
+    await panel.getByRole("button", { name: "Send" }).click();
+    await expect(panel.getByRole("textbox", { name: "Reply" })).toHaveValue("");
     expect(closed).toEqual([]);
     await panel.getByRole("button", { name: "Close", exact: true }).click();
     await expect.poll(() => closed).toHaveLength(1);

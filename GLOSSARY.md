@@ -15,7 +15,7 @@ The time from the click or key that shows a session's terminal to its text being
 _Avoid_: load time, attach time
 
 **Early attach**:
-A session's `claude attach` started when its panel opens, before the terminal is shown.
+A session's `claude attach` started once its panel has been open 300 ms, before the terminal is shown.
 _Avoid_: warm client, pre-attach, keep-alive
 
 **Detach**:

@@ -2,11 +2,12 @@ import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { E2E_FAKE_DIR, E2E_URL, FakeClaude, listed, listedBg } from "../fake-claude.ts";
-import { addProjectFolder, fontOf, removeProjectFolder, scrollsBack, showTerminal, sizeShown, stubStream } from "./stream.ts";
+import { alive, E2E_FAKE_DIR, E2E_URL, FakeClaude, listed, listedBg } from "../fake-claude.ts";
+import { addProjectFolder, betaState, fontOf, questionCard, removeProjectFolder, scrollsBack, showTerminal, sizeShown, stubStream } from "./stream.ts";
 
 const fake = FakeClaude.at(E2E_FAKE_DIR);
 const sid = "abcd1234-0000-4000-8000-000000000000";
+const short = sid.slice(0, 8);
 let cwd = "";
 let project = "";
 
@@ -25,11 +26,29 @@ const session = () => listed("t1", cwd, { name: "alpha" });
 const bg = () => listedBg(sid, cwd, { name: "beta" });
 const row = (page: Page, name: string) => page.locator(`section[aria-label="${project}"] .character`).filter({ hasText: name }).first();
 const screen = (page: Page) => page.getByRole("dialog").locator(".xterm-rows");
-/** Whether process `pid` still runs. */
-const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 /** Everything the fake echoed as `got:"..."`, joined, so one frame per key or per string reads the same. */
 const echoed = async (page: Page) =>
   [...(await screen(page).innerText()).matchAll(/got:"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]).join("");
+
+/** Opens beta's panel in the work view and shows its terminal once it has attached; gives the panel. Set the fake's flags and the page's scripts first. */
+async function openSheet(page: Page) {
+  fake.list([bg()]);
+  await page.goto("/work.html");
+  await row(page, "beta").click({ position: { x: 5, y: 5 } });
+  const panel = page.getByRole("dialog");
+  await showTerminal(panel);
+  await expect(screen(page)).toContainText("attached abcd1234");
+  return panel;
+}
+
+/** Loads the work view with the page's clock paused, so a panel's 300 ms only passes on `clock.runFor`. */
+async function pausedPage(page: Page, sessions = [bg()]) {
+  fake.list(sessions);
+  await page.clock.install();
+  await page.goto("/work.html");
+  await expect(row(page, "beta")).toBeVisible();
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
+}
 
 test("rows_show_each_sessions_name_and_kind", async ({ page }) => {
   fake.list([session(), bg()]);
@@ -41,11 +60,7 @@ test("rows_show_each_sessions_name_and_kind", async ({ page }) => {
 test("a_background_session_opens_a_live_terminal_that_echoes_typed_text_and_sends_shift_enter_as_esc_cr", async ({ page }) => {
   const violations: string[] = [];
   page.on("console", (m) => /content security policy/i.test(m.text()) && violations.push(m.text()));
-  fake.list([bg()]);
-  await page.goto("/work.html");
-  await row(page, "beta").click({ position: { x: 5, y: 5 } });
-  await showTerminal(page.getByRole("dialog"));
-  await expect(screen(page)).toContainText("attached abcd1234");
+  await openSheet(page);
   await page.locator(".xterm").click();
   await page.keyboard.type("hello");
   await expect.poll(() => echoed(page)).toBe("hello");
@@ -131,11 +146,7 @@ test("the_page_sends_the_terminals_size_as_soon_as_the_socket_opens", async ({ p
     });
     server.onMessage((m) => ws.send(m));
   });
-  fake.list([bg()]);
-  await page.goto("/work.html");
-  await row(page, "beta").click({ position: { x: 5, y: 5 } });
-  await showTerminal(page.getByRole("dialog"));
-  await expect(screen(page)).toContainText("attached abcd1234");
+  await openSheet(page);
   // nothing typed or resized by the test: the first frame is the size the terminal has when the socket opens
   await expect.poll(() => sent.length).toBeGreaterThan(0);
   expect(JSON.parse(sent[0])).toEqual({ t: "resize", c: Number(query!.get("cols")), r: Number(query!.get("rows")) });
@@ -154,15 +165,13 @@ test.describe("links", () => {
   };
 
   test.beforeEach(async ({ page }) => {
-    fake.linksAttach().list([bg()]);
+    fake.linksAttach();
     await page.addInitScript(() => {
       const w = window as unknown as { opened: string[] };
       w.opened = [];
       window.open = (url) => (w.opened.push(String(url)), null);
     });
-    await page.goto("/work.html");
-    await row(page, "beta").click({ position: { x: 5, y: 5 } });
-    await showTerminal(page.getByRole("dialog"));
+    await openSheet(page);
     await expect(screen(page)).toContainText("js-link");
   });
 
@@ -198,11 +207,8 @@ test.describe("keys, copy, paste and scrolling", () => {
 
   /** Opens beta's terminal and gives its typing place the keyboard. */
   async function openTerminal(page: Page, modes = false) {
-    fake.modesAttach(modes).list([bg()]);
-    await page.goto("/work.html");
-    await row(page, "beta").click({ position: { x: 5, y: 5 } });
-    await showTerminal(page.getByRole("dialog"));
-    await expect(screen(page)).toContainText("attached abcd1234");
+    fake.modesAttach(modes);
+    await openSheet(page);
     // focus, not a click: in mouse mode a click would reach the session as a report
     await page.locator(".xterm-helper-textarea").focus();
   }
@@ -315,7 +321,7 @@ const watchScripts = (page: Page) => {
 };
 
 test("show_terminal_requests_no_script_so_no_click_waits_on_a_download", async ({ page }) => {
-  // Catches the terminal or the reply box going back to a lazy import: the click would wait on a download.
+  // Catches the terminal or the reply box loaded lazily: the click would wait on a download.
   const scripts = watchScripts(page);
   fake.list([bg()]);
   await page.goto("/work.html");
@@ -332,7 +338,7 @@ test("show_terminal_requests_no_script_so_no_click_waits_on_a_download", async (
 });
 
 test("the_letters_markdown_renderer_is_not_in_the_first_page_load", async ({ page }) => {
-  // Catches the reply box's move leaving the Markdown libraries in the main bundle.
+  // Catches the Markdown libraries sitting in the main bundle, which the reply box doesn't need.
   const scripts = watchScripts(page);
   fake.list([bg()]);
   await page.goto("/work.html");
@@ -356,11 +362,7 @@ async function floodTerminal(page: Page, lines: number) {
 
 test("a_session_terminal_is_set_in_menlo_13_and_has_no_scrollback", async ({ page }) => {
   await floodTerminal(page, 300);
-  fake.list([bg()]);
-  await page.goto("/work.html");
-  await row(page, "beta").click({ position: { x: 5, y: 5 } });
-  await showTerminal(page.getByRole("dialog"));
-  await expect(screen(page)).toContainText("attached abcd1234");
+  await openSheet(page);
   const terminal = page.getByRole("dialog").locator(".xterm");
   const { family, size } = await fontOf(terminal);
   expect(family).toMatch(/^"?Menlo"?(,|$)/);
@@ -371,24 +373,12 @@ test("a_session_terminal_is_set_in_menlo_13_and_has_no_scrollback", async ({ pag
 test.describe("the terminal sheet at 1280 x 800", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  /** Opens beta's panel and shows its terminal; gives the panel. */
-  async function openSheet(page: Page) {
-    fake.list([bg()]);
-    await page.goto("/work.html");
-    await row(page, "beta").click({ position: { x: 5, y: 5 } });
-    const panel = page.getByRole("dialog");
-    await showTerminal(panel);
-    await expect(screen(page)).toContainText("attached abcd1234");
-    return panel;
-  }
-
   test("the_shown_terminal_is_at_least_100_by_40_with_the_header_still_visible", async ({ page }) => {
-    // Catches the wide panel coming back: 95 x 25 and a panel that runs off the window.
+    // Catches a panel too small for Claude (95 x 25) or running off the window.
     const panel = await openSheet(page);
     const size = await sizeShown(screen(page));
     expect(size!.cols).toBeGreaterThanOrEqual(100);
     expect(size!.rows).toBeGreaterThanOrEqual(40);
-    console.log(`work view terminal: ${size!.cols}x${size!.rows}`);
     const header = (await page.locator("header").boundingBox())!;
     const sheet = (await panel.boundingBox())!;
     expect(sheet.y).toBeGreaterThanOrEqual(header.y + header.height);
@@ -422,6 +412,30 @@ test.describe("the terminal sheet at 1280 x 800", () => {
     await expect(page.locator(".xterm-helper-textarea")).toBeFocused();
   });
 
+  test("the_terminal_text_sits_inside_padding_so_the_rounded_corner_never_clips_the_cursor", async ({ page }) => {
+    // Catches text flush on the box's left edge.
+    const panel = await openSheet(page);
+    const box = (await panel.getByLabel("Session terminal").boundingBox())!;
+    const text = (await screen(page).boundingBox())!;
+    expect(text.x - box.x).toBeGreaterThanOrEqual(4);
+    expect(text.y - box.y).toBeGreaterThanOrEqual(4);
+  });
+
+  test("with_a_card_the_buttons_stay_inside_the_window_on_the_sheet_and_on_the_narrow_panel", async ({ page }) => {
+    // Catches a tall card pushing Show terminal, Hide terminal and Close session below the window.
+    fake.list([bg()]);
+    await stubStream(page, betaState(project, cwd, sid, [questionCard(sid, cwd)]));
+    await page.goto("/work.html");
+    await row(page, "beta").click({ position: { x: 5, y: 5 } });
+    const panel = page.getByRole("dialog");
+    await expect(panel.getByText("Which queue?")).toBeAttached({ timeout: 10_000 });
+    await expect(panel.getByRole("button", { name: "Show terminal" })).toBeInViewport({ ratio: 1 });
+    await showTerminal(panel);
+    await expect(screen(page)).toContainText("attached abcd1234");
+    await expect(panel.getByRole("button", { name: "Hide terminal" })).toBeInViewport({ ratio: 1 });
+    await expect(panel.getByRole("button", { name: "Close session" })).toBeInViewport({ ratio: 1 });
+  });
+
   test("the_terminal_refits_and_the_session_is_told_when_the_window_changes_size", async ({ page }) => {
     // Catches a terminal that keeps its size when the window shrinks, so Claude draws to a size the user doesn't see.
     await openSheet(page);
@@ -434,26 +448,14 @@ test.describe("the terminal sheet at 1280 x 800", () => {
   });
 
   test("a_card_shows_in_the_column_and_takes_no_rows_from_the_terminal", async ({ page }) => {
-    // Catches a card stacked above the terminal, as in the wide panel, which cost it eight rows.
-    fake.list([bg()]);
-    const state = (cards: unknown[]) => ({
-      claude: { version: "2.1.325", problems: [] },
-      cards,
-      houses: [
-        { project, cwd, leads: [{ id: sid, name: "beta", stage: "working", activity: null, step: null, tty: null, termProgram: null, kind: "background", shortId: sid.slice(0, 8), subagents: [] }] },
-      ],
-    });
-    const card = { id: "c1", lead: sid, agent: null, kind: "permission", tool: "Bash", input: { command: "rm -rf build" }, cwd, at: 1 };
-    const stream = await stubStream(page, state([]));
-    await page.goto("/work.html");
-    await row(page, "beta").click({ position: { x: 5, y: 5 } });
-    const panel = page.getByRole("dialog");
-    await showTerminal(panel);
-    await expect(screen(page)).toContainText("attached abcd1234");
+    // Catches a card stacked above the terminal, which would cost it rows.
+    const stream = await stubStream(page, betaState(project, cwd, sid, []));
+    const panel = await openSheet(page);
     const terminal = panel.getByLabel("Session terminal");
     const before = (await terminal.boundingBox())!;
     const size = (await sizeShown(screen(page)))!;
-    stream.send(state([card]));
+    const card = { id: "c1", lead: sid, agent: null, kind: "permission", tool: "Bash", input: { command: "rm -rf build" }, cwd, at: 1 };
+    stream.send(betaState(project, cwd, sid, [card]));
     await expect(panel.getByRole("button", { name: "Allow" })).toBeVisible({ timeout: 10_000 });
     expect(await terminal.boundingBox()).toEqual(before);
     expect((await panel.getByRole("button", { name: "Allow" }).boundingBox())!.x).toBeLessThan(before.x);
@@ -461,18 +463,21 @@ test.describe("the terminal sheet at 1280 x 800", () => {
   });
 });
 
+test.describe("the terminal sheet at 390 px", () => {
+  test.use({ viewport: { width: 390, height: 800 } });
+
+  test("the_buttons_are_inside_the_window_and_the_terminal_keeps_at_least_40_columns", async ({ page }) => {
+    // Catches the 19rem column keeping its width and squeezing the terminal to 2 columns.
+    const panel = await openSheet(page);
+    await expect(panel.getByRole("button", { name: "Hide terminal" })).toBeInViewport({ ratio: 1 });
+    await expect(panel.getByRole("button", { name: "Close session" })).toBeInViewport({ ratio: 1 });
+    expect((await sizeShown(screen(page)))!.cols).toBeGreaterThanOrEqual(40);
+  });
+});
+
 test.describe("early attach", () => {
-  const short = sid.slice(0, 8);
   /** The `claude attach` clients started for beta since `before` (the fake's pid file outlives a test). */
   const since = (before: number) => fake.attachPids(short).slice(before);
-  /** Loads the work view with the page's clock paused, so the panel's 300 ms only passes on `clock.runFor`. */
-  async function pausedPage(page: Page, sessions = [bg()]) {
-    fake.list(sessions);
-    await page.clock.install();
-    await page.goto("/work.html");
-    await expect(row(page, "beta")).toBeVisible();
-    await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
-  }
 
   test("a_panel_open_past_300_ms_starts_exactly_one_attach_and_one_closed_before_starts_none", async ({ page }) => {
     // Catches a panel that attaches on every glance, or never before Show (so the click waits on the attach).
@@ -550,9 +555,16 @@ test.describe("early attach", () => {
   test("the_hidden_terminal_never_holds_focus_even_through_tab_and_keys_typed_in_the_page_never_reach_the_session", async ({ page }) => {
     // Catches an early terminal that grabs the keyboard (or sits in the tab order), so the user's typing lands in Claude unseen.
     await page.addInitScript(() => {
-      const w = window as unknown as { inTerminal: number };
+      const w = window as unknown as { inTerminal: number; focusCalls: number };
       w.inTerminal = 0;
+      w.focusCalls = 0;
       document.addEventListener("focusin", (e) => (e.target as Element).closest?.(".screen") && w.inTerminal++, true);
+      // the terminal sits inert while hidden, so a focus() the page's code asks of it would do nothing visible: count the calls
+      const focus = HTMLElement.prototype.focus;
+      HTMLElement.prototype.focus = function (...args) {
+        if (this.closest(".screen")) w.focusCalls++;
+        return focus.apply(this, args);
+      };
     });
     const typed = fake.attachInput(short).length;
     const before = fake.attachPids(short).length;
@@ -565,10 +577,28 @@ test.describe("early attach", () => {
       await page.keyboard.type("zq");
     }
     expect(await page.evaluate(() => (window as unknown as { inTerminal: number }).inTerminal)).toBe(0);
+    expect(await page.evaluate(() => (window as unknown as { focusCalls: number }).focusCalls)).toBe(0);
     // the reply box took some of the typing; send nothing, and the session must have had no byte
     expect(fake.attachInput(short).slice(typed)).toBe("");
     await showTerminal(page.getByRole("dialog"));
     await expect(page.locator(".xterm-helper-textarea")).toBeFocused();
+  });
+
+  test("after_hide_terminal_keys_typed_and_tabbed_in_the_page_never_reach_the_session", async ({ page }) => {
+    // Catches a hidden terminal that keeps the keyboard the user had in it, so the page's typing lands in Claude unseen.
+    const typed = fake.attachInput(short).length;
+    const panel = await openSheet(page);
+    await page.locator(".xterm-helper-textarea").focus();
+    await page.keyboard.type("a");
+    await expect.poll(() => fake.attachInput(short).slice(typed)).toBe("a");
+    await panel.getByRole("button", { name: /hide terminal/i }).click();
+    await expect(panel.getByRole("textbox", { name: "Reply" })).toBeVisible();
+    for (let i = 0; i < 12; i++) {
+      await page.keyboard.press("Tab");
+      await page.keyboard.type("zq");
+      expect(await page.evaluate(() => document.activeElement?.closest(".screen") ?? null)).toBeNull();
+    }
+    expect(fake.attachInput(short).slice(typed)).toBe("a");
   });
 
   test.describe("at 1280 x 800", () => {
@@ -592,16 +622,11 @@ test.describe("early attach", () => {
 });
 
 test.describe("the waking line", () => {
-  const short = sid.slice(0, 8);
   const waking = (page: Page) => page.getByText("Waking the session...");
   /** Opens beta's panel with the page's clock paused and lets the early attach start its client; the terminal is not shown yet. */
   async function openPanel(page: Page) {
     const before = fake.attachPids(short).length;
-    fake.list([bg()]);
-    await page.clock.install();
-    await page.goto("/work.html");
-    await expect(row(page, "beta")).toBeVisible();
-    await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
+    await pausedPage(page);
     await row(page, "beta").click({ position: { x: 5, y: 5 } });
     await page.clock.runFor(300);
     await expect.poll(() => fake.attachPids(short).length).toBe(before + 1);
@@ -654,7 +679,6 @@ test.describe("the waking line", () => {
 });
 
 test.describe("the client's end", () => {
-  const short = sid.slice(0, 8);
   const starts = () => fake.attachPids(short).length;
 
   test("exit_0_folds_the_sheet_and_says_detached_and_only_show_terminal_attaches_again", async ({ page }) => {
@@ -662,6 +686,7 @@ test.describe("the client's end", () => {
     fake.list([bg()]);
     fake.exitAttach({ code: 0, line: "Detached." });
     const before = starts();
+    await page.clock.install();
     await page.goto("/work.html");
     await row(page, "beta").click({ position: { x: 5, y: 5 } });
     const panel = page.getByRole("dialog", { name: "beta details" });
@@ -670,7 +695,9 @@ test.describe("the client's end", () => {
     await expect(panel).not.toHaveClass(/sheet/);
     await expect(panel.getByRole("button", { name: "Show terminal" })).toBeVisible();
     await expect(panel.getByRole("button", { name: "Close session" })).toBeVisible();
-    await page.waitForTimeout(1500);
+    // time passes on the page and no terminal comes back by itself
+    await page.clock.fastForward(5000);
+    await expect(panel.locator(".xterm")).toHaveCount(0);
     expect(starts()).toBe(before + 1);
 
     fake.exitAttach(null);
@@ -693,5 +720,53 @@ test.describe("the client's end", () => {
     await expect(panel).not.toContainText("Detached");
     await expect(panel).not.toHaveClass(/sheet/);
     await expect(panel.getByRole("button", { name: "Show terminal" })).toBeVisible();
+  });
+
+  test("a_close_of_funtowns_own_says_what_happened_not_the_clients_last_line", async ({ page }) => {
+    // Catches a failed start (close code 1011) shown as a client's exit, or with no line at all.
+    fake.list([bg()]);
+    await page.routeWebSocket(/\/term/, (ws) => ws.close({ code: 1011, reason: "spawn failed" }));
+    await page.goto("/work.html");
+    await row(page, "beta").click({ position: { x: 5, y: 5 } });
+    const panel = page.getByRole("dialog", { name: "beta details" });
+    await showTerminal(panel);
+    await expect(panel.getByRole("alert")).toHaveText("Couldn't start the session's client.");
+    await expect(panel.getByRole("button", { name: "Show terminal" })).toBeVisible();
+  });
+
+  test("close_session_shows_no_end_line_while_the_client_exits_before_the_lead_leaves_the_list", async ({ page }) => {
+    // Catches "Detached; the session keeps running." flashing after Close session, which stops the session.
+    fake.list([bg()]);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route("**/sessions/stop", async (route) => {
+      await held;
+      await route.fulfill({ status: 204 });
+    });
+    await page.goto("/work.html");
+    await row(page, "beta").click({ position: { x: 5, y: 5 } });
+    const panel = page.getByRole("dialog", { name: "beta details" });
+    await showTerminal(panel);
+    await expect(screen(page)).toContainText("attached abcd1234");
+    await panel.getByRole("button", { name: "Close session" }).click();
+    // the client exits 0 (the fake quits on "quit"), as it does when its session is stopped
+    await page.locator(".xterm-helper-textarea").focus();
+    await page.keyboard.insertText("quit");
+    await expect(panel.locator(".xterm")).toHaveCount(0);
+    await expect(panel).not.toContainText("Detached");
+    release();
+    await expect(panel).toHaveCount(0);
+  });
+
+  test("after_a_detach_the_keyboard_moves_to_show_terminal_not_the_page_body", async ({ page }) => {
+    // Catches focus dropping to <body> when the terminal that held it goes.
+    fake.list([bg()]);
+    fake.exitAttach({ code: 0, line: "Detached." });
+    await page.goto("/work.html");
+    await row(page, "beta").click({ position: { x: 5, y: 5 } });
+    const panel = page.getByRole("dialog", { name: "beta details" });
+    await showTerminal(panel);
+    await expect(panel).toContainText("Detached; the session keeps running.");
+    await expect(panel.getByRole("button", { name: "Show terminal" })).toBeFocused();
   });
 });

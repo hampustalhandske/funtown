@@ -4,7 +4,7 @@
 //   list-fail, version-fail, bg-fail; list-delay (ms `agents --json` waits before printing
 //   what list.json held when it was asked) and list-asks (one character per `agents --json`
 //   call; its pid goes to agents.pids). `--bg` appends (cwd, argv, CLAUDE*/AI_AGENT variable names) to started.json and lists a new background session (none
-//   with bg-unlisted); `attach <id>` prints its TERM, COLORTERM, TERM_PROGRAM and the names of the terminal-program variables it got, echoes every input chunk as `got:<JSON string>` and appends it to attach-<id>.input, and
+//   with bg-unlisted); `attach <id>` prints its TERM, COLORTERM, TERM_PROGRAM and the names of the terminal-program variables it got, echoes every input chunk as `got:<JSON string>` and appends it to attach-<id>.input, records the environment it saw in attach-<id>.env, and
 //   with attach-chatty also prints a dot every 100 ms, so its output never pauses, and with
 //   attach-sticky outlives a hangup by a second, with attach-prompt draws `PROMPT-BOX` on the screen's last row (again after each resize), as Claude draws its prompt box there, and with attach-modes turns on bracketed paste and mouse mode (button tracking, SGR encoding) the way Claude does, and with attach-silent prints nothing of its own (no first line, no size lines, so a client that hasn't woken yet) until it is typed to, when it echoes `got:` like any attach, and with attach-links prints three links after its first line, each
 //   alone on a line from column 0: a plain http URL, an OSC 8 https link and an OSC 8 javascript: link. `stop <id>` appends its argv to stop-calls.jsonl and removes the
@@ -80,8 +80,9 @@ if (argv[0] === "--version") {
   fs.appendFileSync(file(`attach-${id}.pids`), `${process.pid}\n`);
   const leaked = Object.keys(process.env).filter((k) => /^(CLAUDE|AI_AGENT)/.test(k));
   const size = () => `${process.stdout.columns}x${process.stdout.rows}`;
-  // the terminal-program variables a real terminal sets, which Funtown must not pass on
-  const termVars = Object.keys(process.env).filter((k) => /^(TERM_PROGRAM|TERM_PROGRAM_VERSION|TERM_SESSION_ID|LC_TERMINAL|LC_TERMINAL_VERSION|TMUX|TMUX_PANE|STY|VTE_VERSION|WT_SESSION|TERMINAL_EMULATOR)$|^(ITERM_|KITTY_|GHOSTTY_|WEZTERM_|ALACRITTY_|KONSOLE_)/.test(k));
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- a plain script: the fake installs terminal-vars.cjs beside itself
+  const termVars = require("./terminal-vars.cjs")();
+  fs.appendFileSync(file(`attach-${id}.env`), JSON.stringify({ claude: leaked.sort(), term: process.env.TERM, colorterm: process.env.COLORTERM, termProgram: process.env.TERM_PROGRAM ?? null, termVars }) + "\n");
   const silent = fs.existsSync(file("attach-silent"));
   if (!silent) out(`attached ${id} TERM=${process.env.TERM} size:${size()} env:[${leaked.sort().join(",")}] COLORTERM=${process.env.COLORTERM} TERM_PROGRAM=${process.env.TERM_PROGRAM} terminal-vars:[${termVars.join(",")}]\r\n`);
   if (fs.existsSync(file("attach-exit"))) {

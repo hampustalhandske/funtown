@@ -33,15 +33,12 @@ function lastPrintedLine(term: XTerm): string {
 const WAKING_AFTER = 300;
 
 /**
- * Live terminal of one background session: an xterm.js view over the `/term` WebSocket; closing it
- * closes the socket. `reply` is set to a function that types a text into the session
- * as one prompt (bracketed paste, then Enter); it gives null when both frames were sent, else the reason it wasn't.
- * With `shell` (a house's folder) instead of `lead`, it shows that project's lasting shell; closing the view leaves the shell running.
- * `shown` says whether the page is showing it (the panel keeps a hidden one connected); a session's terminal that has had
- * no output 300 ms after it is shown gets "Waking the session..." drawn over it (not written into it) until the first output.
- * Cmd+Esc calls `onLeave` (the page moves the keyboard elsewhere) and sends the session nothing.
- * When a session's socket closes on its own, `onEnd` gets the close code (4000 + the client's exit
- * code, so 4000 is a detach) and the last line the client printed; the shell says "Terminal closed." instead.
+ * Live terminal over the `/term` WebSocket, for a background session (`lead`) or, with `shell` (a house's folder), that
+ * project's lasting shell (closing the view leaves the shell running). Closing the view closes the socket.
+ * `reply` is set to a function that types a text into the session as one prompt and gives null when it was sent, else the reason it wasn't.
+ * `shown` says whether the page is showing it (a hidden one stays connected and takes no focus); a session terminal still empty
+ * `WAKING_AFTER` ms after it is shown gets "Waking the session..." drawn over it. Cmd+Esc calls `onLeave` and sends the session nothing.
+ * When a session's socket closes on its own, `onEnd` gets the close code and the last line the client printed.
  */
 export function SessionTerminal({
   lead,
@@ -61,9 +58,13 @@ export function SessionTerminal({
   const host = useRef<HTMLDivElement>(null);
   const [shared, setShared] = useState(1);
   const [closed, setClosed] = useState(false);
-  // the latest onEnd, so a new function from the page doesn't reconnect the terminal
+  // the latest callbacks, so a new function from the page doesn't reconnect the terminal
   const ended = useRef(onEnd);
   ended.current = onEnd;
+  const left = useRef(onLeave);
+  left.current = onLeave;
+  const isShown = useRef(shown);
+  isShown.current = shown;
   const [output, setOutput] = useState(false);
   const [waking, setWaking] = useState(false);
 
@@ -138,7 +139,7 @@ export function SessionTerminal({
 
     term.attachCustomKeyEventHandler((event) => {
       if (event.key === "Escape" && event.metaKey) {
-        if (event.type === "keydown") onLeave?.();
+        if (event.type === "keydown") left.current?.();
         return false;
       }
       if (event.key !== "Enter" || !event.shiftKey) return true;
@@ -149,7 +150,8 @@ export function SessionTerminal({
     term.onResize(({ cols, rows }) => send({ t: "resize", c: cols, r: rows }));
     const observer = new ResizeObserver(() => fit.fit());
     observer.observe(host.current!);
-    term.focus();
+    // a hidden terminal takes no focus; the page gives it the keyboard when it is shown
+    if (isShown.current) term.focus();
 
     return () => {
       disposed = true;
@@ -158,7 +160,7 @@ export function SessionTerminal({
       socket.close();
       term.dispose();
     };
-  }, [lead, shell, reply, onLeave]);
+  }, [lead, shell, reply]);
 
   return (
     <>
