@@ -6,11 +6,12 @@ import { LazyBoundary } from "./LazyBoundary.tsx";
 import { NeedsList, NotifyButton, Toasts, useAlerts, useMute, useNextKey, waitingList, type Waiting } from "./needs.tsx";
 import { funtownToken } from "./token.ts";
 import { SwitchButton } from "./Switch.tsx";
+import { ReplyBox } from "./ReplyBox.tsx";
+import { SessionTerminal } from "./Terminal.tsx";
 
-// The Markdown renderer and the terminal load only when a panel shows them, keeping them out of the first page load.
+// The terminal and the reply box load with the page, so Show terminal never waits on a download.
+// Only the letters' Markdown renderer is lazy, which keeps it out of the first page load.
 const Letters = lazy(() => import("./Letters.tsx").then((m) => ({ default: m.Letters })));
-const ReplyBox = lazy(() => import("./Letters.tsx").then((m) => ({ default: m.ReplyBox })));
-const SessionTerminal = lazy(() => import("./Terminal.tsx").then((m) => ({ default: m.SessionTerminal })));
 
 const STAGE_LABEL: Record<Stage, string> = {
   working: "working",
@@ -300,9 +301,7 @@ function HouseCard({
         <div role="tabpanel" aria-label="Shell">
           <button type="button" onClick={closeShell}>Close shell</button>
           <LazyBoundary>
-            <Suspense fallback={null}>
-              <SessionTerminal shell={house.cwd} />
-            </Suspense>
+            <SessionTerminal shell={house.cwd} />
           </LazyBoundary>
         </div>
       )}
@@ -398,10 +397,8 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
       )}
       {background && terminal && (
         <LazyBoundary>
-          <Suspense fallback={null}>
-            <ReplyBox send={(text) => (reply.current ? reply.current(text) : "Not sent: the terminal isn't connected.")} />
-            <SessionTerminal lead={lead.id} reply={reply} />
-          </Suspense>
+          <ReplyBox send={(text) => (reply.current ? reply.current(text) : "Not sent: the terminal isn't connected.")} />
+          <SessionTerminal lead={lead.id} reply={reply} />
         </LazyBoundary>
       )}
       {character.id === lead.id && lead.kind === "terminal" && (

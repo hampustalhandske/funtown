@@ -138,3 +138,39 @@ test("the_page_sends_the_terminals_size_as_soon_as_the_socket_opens", async ({ p
   await expect.poll(() => sent.length).toBeGreaterThan(0);
   expect(JSON.parse(sent[0])).toEqual({ t: "resize", c: Number(query!.get("cols")), r: Number(query!.get("rows")) });
 });
+
+/** The names of the scripts the page asks for from now on. */
+const watchScripts = (page: Page) => {
+  const names: string[] = [];
+  page.on("request", (r) => /\.js($|\?)/.test(r.url()) && names.push(new URL(r.url()).pathname.split("/").pop()!));
+  return names;
+};
+
+test("show_terminal_requests_no_script_so_no_click_waits_on_a_download", async ({ page }) => {
+  // Catches the terminal or the reply box going back to a lazy import: the click would wait on a download.
+  const scripts = watchScripts(page);
+  fake.list([bg()]);
+  await page.goto("/work.html");
+  await row(page, "beta").click({ position: { x: 5, y: 5 } });
+  const panel = page.getByRole("dialog");
+  await expect(panel.getByRole("button", { name: /show terminal/i })).toBeVisible();
+  // the panel's own lazy part (the letters) has finished loading, so only the click can add a script
+  await expect.poll(() => scripts.some((s) => /^Letters/.test(s))).toBe(true);
+  scripts.length = 0;
+  await showTerminal(panel);
+  await expect(screen(page)).toContainText("attached abcd1234");
+  await expect(panel.getByRole("textbox", { name: "Reply" })).toBeVisible();
+  expect(scripts).toEqual([]);
+});
+
+test("the_letters_markdown_renderer_is_not_in_the_first_page_load", async ({ page }) => {
+  // Catches the reply box's move leaving the Markdown libraries in the main bundle.
+  const scripts = watchScripts(page);
+  fake.list([bg()]);
+  await page.goto("/work.html");
+  await expect(row(page, "beta")).toBeVisible();
+  expect(scripts.length).toBeGreaterThan(0);
+  expect(scripts.filter((s) => /^Letters/.test(s))).toEqual([]);
+  await row(page, "beta").click({ position: { x: 5, y: 5 } });
+  await expect.poll(() => scripts.some((s) => /^Letters/.test(s))).toBe(true);
+});
