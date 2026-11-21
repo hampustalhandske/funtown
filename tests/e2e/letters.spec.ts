@@ -260,7 +260,11 @@ for (const [how, socket, endLine] of [
   test(`send_while_the_terminal_socket_is_${how}_keeps_the_text_and_shows_an_alert`, async ({ page }) => {
     await socket(page);
     await openWith(page, true);
-    await openTerminalPanel(page, false);
+    if (endLine) {
+      // the socket closes at once, which ends the terminal and folds the sheet back by itself
+      await openPanel(page);
+      await showTerminal(panel(page, "alpha"));
+    } else await openTerminalPanel(page, false);
     const p = panel(page, "alpha");
     const notSent = p.getByRole("alert").filter({ hasText: "Not sent" });
     await expect(notSent).toHaveCount(0);
