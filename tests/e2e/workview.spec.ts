@@ -113,7 +113,7 @@ test.describe("with the e2e server and its fake claude", () => {
   });
   const row = (page: Page) => page.locator(`section[aria-label="${project}"] .character`).filter({ hasText: "beta" }).first();
 
-  test("the_terminal_and_its_socket_exist_only_while_shown_the_reply_box_is_inside_it_and_hiding_leaves_the_session_running", async ({ page }) => {
+  test("the_terminal_and_its_socket_start_on_show_the_reply_box_is_there_only_while_it_is_hidden_and_hiding_leaves_the_session_running", async ({ page }) => {
     const opened: string[] = [];
     const closed: string[] = [];
     page.on("websocket", (ws) => {
@@ -127,20 +127,24 @@ test.describe("with the e2e server and its fake claude", () => {
     const toggle = panel.getByRole("button", { name: /(show|hide) terminal/i });
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await expect(panel.locator(".xterm")).toHaveCount(0);
-    await expect(panel.getByRole("textbox", { name: "Reply" })).toHaveCount(0);
+    await expect(panel.getByRole("textbox", { name: "Reply" })).toBeVisible();
     await page.waitForTimeout(500); // a socket opened on mount would show by now
     expect(opened).toEqual([]);
 
     await showTerminal(panel);
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
     await expect(panel.locator(".xterm-rows")).toContainText("attached abcd1234");
-    await expect(panel.getByRole("textbox", { name: "Reply" })).toBeVisible();
+    await expect(panel.getByRole("textbox", { name: "Reply" })).toHaveCount(0);
     expect(opened).toHaveLength(1);
 
+    // hiding folds the sheet back to the narrow panel; the terminal keeps its socket, so the reply box can still send
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
-    await expect(panel.locator(".xterm")).toHaveCount(0);
-    await expect(panel.getByRole("textbox", { name: "Reply" })).toHaveCount(0);
+    await expect(panel.locator(".xterm-rows")).toBeHidden();
+    await expect(panel.getByRole("textbox", { name: "Reply" })).toBeVisible();
+    await page.waitForTimeout(300);
+    expect(closed).toEqual([]);
+    await panel.getByRole("button", { name: "Close", exact: true }).click();
     await expect.poll(() => closed).toHaveLength(1);
     await expect(row(page)).toBeVisible();
     expect(fake.stopCalls()).toEqual([]);

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_FAKE_DIR, E2E_URL, FakeClaude, listed, listedBg } from "../fake-claude.ts";
-import { addProjectFolder, fontOf, removeProjectFolder, scrollsBack, showTerminal } from "./stream.ts";
+import { addProjectFolder, fontOf, removeProjectFolder, scrollsBack, showTerminal, sizeShown, stubStream } from "./stream.ts";
 
 const fake = FakeClaude.at(E2E_FAKE_DIR);
 const sid = "abcd1234-0000-4000-8000-000000000000";
@@ -208,10 +208,10 @@ test("show_terminal_requests_no_script_so_no_click_waits_on_a_download", async (
   await expect(panel.getByRole("button", { name: /show terminal/i })).toBeVisible();
   // the panel's own lazy part (the letters) has finished loading, so only the click can add a script
   await expect.poll(() => scripts.some((s) => /^Letters/.test(s))).toBe(true);
+  await expect(panel.getByRole("textbox", { name: "Reply" })).toBeVisible();
   scripts.length = 0;
   await showTerminal(panel);
   await expect(screen(page)).toContainText("attached abcd1234");
-  await expect(panel.getByRole("textbox", { name: "Reply" })).toBeVisible();
   expect(scripts).toEqual([]);
 });
 
@@ -250,4 +250,97 @@ test("a_session_terminal_is_set_in_menlo_13_and_has_no_scrollback", async ({ pag
   expect(family).toMatch(/^"?Menlo"?(,|$)/);
   expect(size).toBe("13px");
   expect(await scrollsBack(page, terminal)).toBe(false);
+});
+
+test.describe("the terminal sheet at 1280 x 800", () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  /** Opens beta's panel and shows its terminal; gives the panel. */
+  async function openSheet(page: Page) {
+    fake.list([bg()]);
+    await page.goto("/work.html");
+    await row(page, "beta").click({ position: { x: 5, y: 5 } });
+    const panel = page.getByRole("dialog");
+    await showTerminal(panel);
+    await expect(screen(page)).toContainText("attached abcd1234");
+    return panel;
+  }
+
+  test("the_shown_terminal_is_at_least_100_by_40_with_the_header_still_visible", async ({ page }) => {
+    // Catches the wide panel coming back: 95 x 25 and a panel that runs off the window.
+    const panel = await openSheet(page);
+    const size = await sizeShown(screen(page));
+    expect(size!.cols).toBeGreaterThanOrEqual(100);
+    expect(size!.rows).toBeGreaterThanOrEqual(40);
+    console.log(`work view terminal: ${size!.cols}x${size!.rows}`);
+    const header = (await page.locator("header").boundingBox())!;
+    const sheet = (await panel.boundingBox())!;
+    expect(sheet.y).toBeGreaterThanOrEqual(header.y + header.height);
+    expect(sheet.y + sheet.height).toBeLessThanOrEqual(800);
+    await expect(page.getByRole("button", { name: /^(un)?mute$/i })).toBeInViewport();
+  });
+
+  test("claudes_prompt_box_is_visible_when_the_terminal_opens_with_no_scrolling", async ({ page }) => {
+    // Catches the terminal's last row sitting below the fold of the panel.
+    fake.promptAttach();
+    await openSheet(page);
+    await expect(screen(page)).toContainText("PROMPT-BOX");
+    await expect(screen(page).getByText("PROMPT-BOX")).toBeInViewport({ ratio: 1 });
+    expect(await page.evaluate(() => scrollY + (document.querySelector("[role=dialog]")?.scrollTop ?? 0))).toBe(0);
+  });
+
+  test("the_reply_box_is_hidden_while_the_sheet_shows_and_back_when_the_terminal_is_hidden", async ({ page }) => {
+    // Catches two places to type at once, and a narrow panel with no way to send a short reply.
+    const panel = await openSheet(page);
+    const reply = panel.getByRole("textbox", { name: "Reply" });
+    await expect(reply).toHaveCount(0);
+    await panel.getByRole("button", { name: /hide terminal/i }).click();
+    await expect(reply).toBeVisible();
+    await reply.fill("hello");
+    await panel.getByRole("button", { name: "Send" }).click();
+    // the hidden terminal kept its socket, so the short reply goes out
+    await expect(reply).toHaveValue("");
+    await expect(panel.getByRole("alert")).toHaveCount(0);
+    await panel.getByRole("button", { name: /show terminal/i }).click();
+    await expect.poll(() => echoed(page)).toBe("\\u001b[200~hello\\u001b[201~\\r");
+    await expect(page.locator(".xterm-helper-textarea")).toBeFocused();
+  });
+
+  test("the_terminal_refits_and_the_session_is_told_when_the_window_changes_size", async ({ page }) => {
+    // Catches a terminal that keeps its size when the window shrinks, so Claude draws to a size the user doesn't see.
+    await openSheet(page);
+    const before = (await sizeShown(screen(page)))!;
+    await page.setViewportSize({ width: 1000, height: 700 });
+    await expect.poll(async () => (await sizeShown(screen(page)))!.cols).toBeLessThan(before.cols);
+    const after = (await sizeShown(screen(page)))!;
+    expect(after.rows).toBeLessThan(before.rows);
+    expect(after.count).toBeGreaterThan(before.count);
+  });
+
+  test("a_card_shows_in_the_column_and_takes_no_rows_from_the_terminal", async ({ page }) => {
+    // Catches a card stacked above the terminal, as in the wide panel, which cost it eight rows.
+    fake.list([bg()]);
+    const state = (cards: unknown[]) => ({
+      claude: { version: "2.1.325", problems: [] },
+      cards,
+      houses: [
+        { project, cwd, leads: [{ id: sid, name: "beta", stage: "working", activity: null, step: null, tty: null, termProgram: null, kind: "background", shortId: sid.slice(0, 8), subagents: [] }] },
+      ],
+    });
+    const card = { id: "c1", lead: sid, agent: null, kind: "permission", tool: "Bash", input: { command: "rm -rf build" }, cwd, at: 1 };
+    const stream = await stubStream(page, state([]));
+    await page.goto("/work.html");
+    await row(page, "beta").click({ position: { x: 5, y: 5 } });
+    const panel = page.getByRole("dialog");
+    await showTerminal(panel);
+    await expect(screen(page)).toContainText("attached abcd1234");
+    const terminal = panel.getByLabel("Session terminal");
+    const before = (await terminal.boundingBox())!;
+    const size = (await sizeShown(screen(page)))!;
+    stream.send(state([card]));
+    await expect(panel.getByRole("button", { name: "Allow" })).toBeVisible({ timeout: 10_000 });
+    expect(await terminal.boundingBox()).toEqual(before);
+    expect((await panel.getByRole("button", { name: "Allow" }).boundingBox())!.x).toBeLessThan(before.x);
+    expect(await sizeShown(screen(page))).toEqual(size);
+  });
 });

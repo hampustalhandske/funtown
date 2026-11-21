@@ -316,6 +316,9 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [terminal, setTerminal] = useState(false);
+  // Once shown, the terminal stays mounted (hidden) while the panel lives, so its socket stays open for the reply box.
+  const [started, setStarted] = useState(false);
+  const screen = useRef<HTMLDivElement>(null);
   const reply = useRef<((text: string) => string | null) | null>(null);
   const stamp = [lead, ...lead.subagents].map((c) => c.letter ?? 0).join(",");
   useEffect(() => {
@@ -326,6 +329,10 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+  // Showing a terminal that was hidden gives it the keyboard again (a new one focuses itself).
+  useEffect(() => {
+    if (terminal) screen.current?.querySelector("textarea")?.focus();
+  }, [terminal]);
 
   async function jump() {
     setError(null);
@@ -355,61 +362,72 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
   }
 
   const background = character.id === lead.id && lead.kind === "background";
+  // A shown terminal opens the terminal sheet: the panel's lines in a column on the left, the terminal beside it.
+  const sheet = background && terminal;
   return (
-    <aside className={`panel${background && terminal ? " wide" : ""}`} role="dialog" aria-label={`${character.name} details`}>
-      <button type="button" className="close" aria-label="Close" onClick={onClose}>
-        ✕
-      </button>
-      <h2>{character.name}</h2>
-      <p><StageLabel stage={character.stage} /></p>
-      {character.stage === "needs_you" && character.needs && <p>waiting for you: {character.needs}</p>}
-      {(character.role || character.tags?.length) && (
-        <p>
-          {character.role && <span className="badge role">{character.role}</span>}
-          {character.tags?.map((tag) => <span key={tag} className="badge tag">{tag}</span>)}
-        </p>
-      )}
-      {character.id === lead.id && <Overlaps overlaps={lead.overlaps} />}
-      <Cards lead={lead} cards={cards} only={character.id} />
-      {character.id === lead.id && lead.subagents.length > 0 && (
-        <ul aria-label="Subagents">
-          {lead.subagents.map((sub) => (
-            <li key={sub.id}>
-              {sub.name} <StageLabel stage={sub.stage} />
-            </li>
-          ))}
-        </ul>
-      )}
-      <LazyBoundary>
-        <Suspense fallback={null}>
-          <Letters lead={lead.id} stamp={stamp} names={Object.fromEntries([lead, ...lead.subagents].map((c) => [c.id, c.name]))} only={character.id === lead.id ? undefined : character.id} />
-        </Suspense>
-      </LazyBoundary>
-      {background && (
-        <>
-          <button type="button" aria-expanded={terminal} onClick={() => setTerminal(!terminal)}>
-            {terminal ? "Hide terminal" : "Show terminal"}
-          </button>
-          <button type="button" onClick={stop} disabled={pending}>
-            Close session
-          </button>
-        </>
-      )}
-      {background && terminal && (
-        <LazyBoundary>
-          <ReplyBox send={(text) => (reply.current ? reply.current(text) : "Not sent: the terminal isn't connected.")} />
-          <SessionTerminal lead={lead.id} reply={reply} />
-        </LazyBoundary>
-      )}
-      {character.id === lead.id && lead.kind === "terminal" && (
-        <p className="hint">press ← or type /bg in its terminal to open it here</p>
-      )}
-      {lead.kind === "terminal" && (
-        <button type="button" onClick={jump} disabled={pending}>
-          Go to terminal
+    <aside className={`panel${sheet ? " sheet" : ""}`} role="dialog" aria-label={`${character.name} details`}>
+      <div className="column">
+        <button type="button" className="close" aria-label="Close" onClick={onClose}>
+          ✕
         </button>
+        <h2>{character.name}</h2>
+        <p><StageLabel stage={character.stage} /></p>
+        {character.stage === "needs_you" && character.needs && <p>waiting for you: {character.needs}</p>}
+        {(character.role || character.tags?.length) && (
+          <p>
+            {character.role && <span className="badge role">{character.role}</span>}
+            {character.tags?.map((tag) => <span key={tag} className="badge tag">{tag}</span>)}
+          </p>
+        )}
+        {character.id === lead.id && <Overlaps overlaps={lead.overlaps} />}
+        <Cards lead={lead} cards={cards} only={character.id} />
+        {character.id === lead.id && lead.subagents.length > 0 && (
+          <ul aria-label="Subagents">
+            {lead.subagents.map((sub) => (
+              <li key={sub.id}>
+                {sub.name} <StageLabel stage={sub.stage} />
+              </li>
+            ))}
+          </ul>
+        )}
+        <LazyBoundary>
+          <Suspense fallback={null}>
+            <Letters lead={lead.id} stamp={stamp} names={Object.fromEntries([lead, ...lead.subagents].map((c) => [c.id, c.name]))} only={character.id === lead.id ? undefined : character.id} />
+          </Suspense>
+        </LazyBoundary>
+        {background && (
+          <div className="actions">
+            <button type="button" aria-expanded={terminal} onClick={() => {
+              setTerminal(!terminal);
+              setStarted(true);
+            }}>
+              {terminal ? "Hide terminal" : "Show terminal"}
+            </button>
+            <button type="button" onClick={stop} disabled={pending}>
+              Close session
+            </button>
+          </div>
+        )}
+        {background && !terminal && (
+          <ReplyBox send={(text) => (reply.current ? reply.current(text) : "Not sent: the terminal isn't connected.")} />
+        )}
+        {character.id === lead.id && lead.kind === "terminal" && (
+          <p className="hint">press ← or type /bg in its terminal to open it here</p>
+        )}
+        {lead.kind === "terminal" && (
+          <button type="button" onClick={jump} disabled={pending}>
+            Go to terminal
+          </button>
+        )}
+        {error && <p role="alert" className="error">{error}</p>}
+      </div>
+      {background && started && (
+        <div className="screen" ref={screen} hidden={!terminal}>
+          <LazyBoundary>
+            <SessionTerminal lead={lead.id} reply={reply} />
+          </LazyBoundary>
+        </div>
       )}
-      {error && <p role="alert" className="error">{error}</p>}
     </aside>
   );
 }

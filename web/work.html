@@ -55,8 +55,14 @@
       .panel { position: fixed; top: 1rem; right: 1rem; width: 20rem; background: #fff; border: 2px solid #c8a97e;
         border-radius: 0.75rem; padding: 0.75rem 1rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); }
       .kind { margin-left: 0.4rem; font-size: 0.8rem; color: #666; }
-      .panel.wide { width: min(50rem, calc(100vw - 4rem)); }
       .terminal { height: 24rem; background: #000; margin-top: 0.5rem; }
+      /* The terminal sheet: a 19rem column of the panel's lines, the terminal taking the rest at full height. */
+      .panel.sheet { top: 5rem; right: 3rem; bottom: 1rem; left: 3rem; width: auto; max-width: 96rem; margin-inline: auto;
+        display: flex; gap: 1rem; padding: 0.75rem 1rem; box-sizing: border-box; overflow: hidden; }
+      .sheet .column { position: relative; flex: 0 0 19rem; box-sizing: border-box; min-width: 0; display: flex; flex-direction: column; overflow: auto; }
+      .sheet .column .actions { margin-top: auto; padding-top: 0.5rem; }
+      .sheet .screen { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+      .sheet .terminal { flex: 1; height: auto; min-height: 0; margin-top: 0; }
       .hint { font-weight: 600; }
       .panel h2 { margin: 0; font-size: 1.15rem; }
       .panel .close { position: absolute; top: 0.5rem; right: 0.5rem; cursor: pointer; }

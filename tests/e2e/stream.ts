@@ -83,3 +83,10 @@ export async function scrollsBack(page: Page, root: Locator) {
   await page.waitForTimeout(300);
   return (await first()) < before;
 }
+
+/** The columns and rows the session's client last printed as `size:<cols>x<rows>` (the fake prints it at start and on every resize). */
+export async function sizeShown(screen: Locator) {
+  const all = [...(await screen.innerText()).matchAll(/size:(\d+)x(\d+)/g)];
+  const last = all[all.length - 1];
+  return last ? { cols: Number(last[1]), rows: Number(last[2]), count: all.length } : null;
+}

@@ -102,7 +102,7 @@ export class FakeClaude {
   }
   /** Empties the list and the `--bg` and `stop` records and clears every failure switch. */
   reset(): this {
-    for (const n of ["started.json", "prs.json", "pr-calls.jsonl", "list-fail", "version-fail", "bg-fail", "bg-unlisted", "stop-fail", "stop-calls.jsonl", "attach-chatty", "attach-sticky", "attach-links", "list-delay", "list-asks", "agents.pids", "shell-starts.jsonl"]) rmSync(join(this.dir, n), { force: true });
+    for (const n of ["started.json", "prs.json", "pr-calls.jsonl", "list-fail", "version-fail", "bg-fail", "bg-unlisted", "stop-fail", "stop-calls.jsonl", "attach-chatty", "attach-sticky", "attach-links", "attach-prompt", "list-delay", "list-asks", "agents.pids", "shell-starts.jsonl"]) rmSync(join(this.dir, n), { force: true });
     return this.list([]);
   }
   /** Sets what `agents --json` prints. */
@@ -168,6 +168,11 @@ export class FakeClaude {
   /** Makes `attach` exit only a second after it is hung up on, as a slow terminal might. */
   stickyAttach(on = true): this {
     this.flag("attach-sticky", on);
+    return this;
+  }
+  /** Makes `attach` draw `PROMPT-BOX` on the screen's last row, where Claude's prompt box is. */
+  promptAttach(on = true): this {
+    this.flag("attach-prompt", on);
     return this;
   }
   /** Makes `attach` print a plain http link, an OSC 8 https link and an OSC 8 javascript: link, each on its own line. */
