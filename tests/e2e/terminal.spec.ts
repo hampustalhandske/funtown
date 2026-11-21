@@ -590,3 +590,65 @@ test.describe("early attach", () => {
     });
   });
 });
+
+test.describe("the waking line", () => {
+  const short = sid.slice(0, 8);
+  const waking = (page: Page) => page.getByText("Waking the session...");
+  /** Opens beta's panel with the page's clock paused and lets the early attach start its client; the terminal is not shown yet. */
+  async function openPanel(page: Page) {
+    const before = fake.attachPids(short).length;
+    fake.list([bg()]);
+    await page.clock.install();
+    await page.goto("/work.html");
+    await expect(row(page, "beta")).toBeVisible();
+    await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
+    await row(page, "beta").click({ position: { x: 5, y: 5 } });
+    await page.clock.runFor(300);
+    await expect.poll(() => fake.attachPids(short).length).toBe(before + 1);
+    return page.getByRole("dialog", { name: "beta details" });
+  }
+
+  test("a_silent_client_shows_the_waking_line_300_ms_after_show_not_after_the_connection", async ({ page }) => {
+    // Catches a line timed from the mount (long before Show, so it shows at once) or one that never shows.
+    fake.silentAttach();
+    const panel = await openPanel(page);
+    // the socket has been open since the early attach; the terminal is not shown yet
+    await page.clock.runFor(2000);
+    await expect(waking(page)).toHaveCount(0);
+    await showTerminal(panel);
+    await page.clock.runFor(299);
+    await expect(waking(page)).toHaveCount(0);
+    await page.clock.runFor(1);
+    await expect(waking(page)).toBeVisible();
+  });
+
+  test("the_first_output_removes_the_waking_line_and_the_terminal_does_not_move", async ({ page }) => {
+    // Catches a line written into the terminal (it would move Claude's screen) and one that stays after text arrives.
+    fake.silentAttach();
+    const panel = await openPanel(page);
+    await showTerminal(panel);
+    await page.clock.runFor(300);
+    await expect(waking(page)).toBeVisible();
+    const terminal = panel.getByLabel("Session terminal");
+    const before = (await terminal.boundingBox())!;
+    expect(await screen(page).innerText()).not.toContain("Waking");
+    // the silent fake prints once it is typed to
+    await page.keyboard.type("x");
+    await expect(waking(page)).toHaveCount(0);
+    expect(await terminal.boundingBox()).toEqual(before);
+    await page.clock.resume();
+    await expect(screen(page)).toContainText("got:");
+    expect(await screen(page).innerText()).not.toContain("Waking");
+  });
+
+  test("a_terminal_that_already_holds_text_when_shown_never_shows_the_waking_line", async ({ page }) => {
+    // Catches a line that shows on a terminal whose early attach has long since drawn Claude's screen.
+    const panel = await openPanel(page);
+    await page.clock.resume();
+    await expect(page.locator(".screen .xterm-rows")).toContainText("attached abcd1234");
+    await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
+    await showTerminal(panel);
+    await page.clock.runFor(2000);
+    await expect(waking(page)).toHaveCount(0);
+  });
+});

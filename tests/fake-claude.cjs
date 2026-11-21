@@ -6,7 +6,7 @@
 //   call; its pid goes to agents.pids). `--bg` appends (cwd, argv, CLAUDE*/AI_AGENT variable names) to started.json and lists a new background session (none
 //   with bg-unlisted); `attach <id>` prints its TERM, COLORTERM, TERM_PROGRAM and the names of the terminal-program variables it got, echoes every input chunk as `got:<JSON string>` and appends it to attach-<id>.input, and
 //   with attach-chatty also prints a dot every 100 ms, so its output never pauses, and with
-//   attach-sticky outlives a hangup by a second, with attach-prompt draws `PROMPT-BOX` on the screen's last row (again after each resize), as Claude draws its prompt box there, and with attach-modes turns on bracketed paste and mouse mode (button tracking, SGR encoding) the way Claude does, and with attach-links prints three links after its first line, each
+//   attach-sticky outlives a hangup by a second, with attach-prompt draws `PROMPT-BOX` on the screen's last row (again after each resize), as Claude draws its prompt box there, and with attach-modes turns on bracketed paste and mouse mode (button tracking, SGR encoding) the way Claude does, and with attach-silent prints nothing of its own (no first line, no size lines, so a client that hasn't woken yet) until it is typed to, when it echoes `got:` like any attach, and with attach-links prints three links after its first line, each
 //   alone on a line from column 0: a plain http URL, an OSC 8 https link and an OSC 8 javascript: link. `stop <id>` appends its argv to stop-calls.jsonl and removes the
 //   listed session whose short id is <id> (exit 1 with a message when none is listed, or always with stop-fail).
 // It also stands in for `gh`: `pr list ...` appends (cwd, argv) to pr-calls.jsonl and prints
@@ -81,15 +81,17 @@ if (argv[0] === "--version") {
   const size = () => `${process.stdout.columns}x${process.stdout.rows}`;
   // the terminal-program variables a real terminal sets, which Funtown must not pass on
   const termVars = Object.keys(process.env).filter((k) => /^(TERM_PROGRAM|TERM_PROGRAM_VERSION|TERM_SESSION_ID|LC_TERMINAL|LC_TERMINAL_VERSION|TMUX|TMUX_PANE|STY|VTE_VERSION|WT_SESSION|TERMINAL_EMULATOR)$|^(ITERM_|KITTY_|GHOSTTY_|WEZTERM_|ALACRITTY_|KONSOLE_)/.test(k));
-  out(`attached ${id} TERM=${process.env.TERM} size:${size()} env:[${leaked.sort().join(",")}] COLORTERM=${process.env.COLORTERM} TERM_PROGRAM=${process.env.TERM_PROGRAM} terminal-vars:[${termVars.join(",")}]\r\n`);
+  const silent = fs.existsSync(file("attach-silent"));
+  if (!silent) out(`attached ${id} TERM=${process.env.TERM} size:${size()} env:[${leaked.sort().join(",")}] COLORTERM=${process.env.COLORTERM} TERM_PROGRAM=${process.env.TERM_PROGRAM} terminal-vars:[${termVars.join(",")}]\r\n`);
   if (fs.existsSync(file("attach-links"))) {
     const osc = (url, text) => `\x1b]8;;${url}\x1b\\${text}\x1b]8;;\x1b\\\r\n`;
     out("http://example.test/plain\r\n" + osc("https://example.test/osc", "osc-link") + osc("javascript:alert(1)", "js-link"));
   }
   if (fs.existsSync(file("attach-modes"))) out("\x1b[?2004h\x1b[?1000h\x1b[?1006h");
   const prompt = () => fs.existsSync(file("attach-prompt")) && out(`\x1b7\x1b[${process.stdout.rows};1HPROMPT-BOX\x1b8`);
-  prompt();
+  if (!silent) prompt();
   process.stdout.on("resize", () => {
+    if (silent) return;
     out(`size:${size()}\r\n`);
     prompt();
   });

@@ -102,7 +102,7 @@ export class FakeClaude {
   }
   /** Empties the list and the `--bg` and `stop` records and clears every failure switch. */
   reset(): this {
-    for (const n of ["started.json", "prs.json", "pr-calls.jsonl", "list-fail", "version-fail", "bg-fail", "bg-unlisted", "stop-fail", "stop-calls.jsonl", "attach-chatty", "attach-sticky", "attach-links", "attach-modes", "attach-prompt", "list-delay", "list-asks", "agents.pids", "shell-starts.jsonl"]) rmSync(join(this.dir, n), { force: true });
+    for (const n of ["started.json", "prs.json", "pr-calls.jsonl", "list-fail", "version-fail", "bg-fail", "bg-unlisted", "stop-fail", "stop-calls.jsonl", "attach-chatty", "attach-silent", "attach-sticky", "attach-links", "attach-modes", "attach-prompt", "list-delay", "list-asks", "agents.pids", "shell-starts.jsonl"]) rmSync(join(this.dir, n), { force: true });
     return this.list([]);
   }
   /** Sets what `agents --json` prints. */
@@ -163,6 +163,11 @@ export class FakeClaude {
   /** Makes `attach` print something every 100 ms, so its output never pauses. */
   chattyAttach(on = true): this {
     this.flag("attach-chatty", on);
+    return this;
+  }
+  /** Makes `attach` print nothing until it is typed to (then it echoes the input like any attach), as a session that is slow to wake. */
+  silentAttach(on = true): this {
+    this.flag("attach-silent", on);
     return this;
   }
   /** Makes `attach` exit only a second after it is hung up on, as a slow terminal might. */

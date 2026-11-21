@@ -19,27 +19,46 @@ function plainLinks(term: XTerm, line: number): ILink[] {
   });
 }
 
+/** How long a shown session terminal may stay empty before "Waking the session..." appears (ms). */
+const WAKING_AFTER = 300;
+
 /**
  * Live terminal of one background session: an xterm.js view over the `/term` WebSocket; closing it
  * closes the socket. `reply` is set to a function that types a text into the session
  * as one prompt (bracketed paste, then Enter); it gives null when both frames were sent, else the reason it wasn't.
  * With `shell` (a house's folder) instead of `lead`, it shows that project's lasting shell; closing the view leaves the shell running.
+ * `shown` says whether the page is showing it (the panel keeps a hidden one connected); a session's terminal that has had
+ * no output 300 ms after it is shown gets "Waking the session..." drawn over it (not written into it) until the first output.
  * Cmd+Esc calls `onLeave` (the page moves the keyboard elsewhere) and sends the session nothing.
  */
 export function SessionTerminal({
   lead,
   shell,
+  shown = true,
   reply,
   onLeave,
 }: {
   lead?: string;
   shell?: string;
+  shown?: boolean;
   reply?: MutableRefObject<((text: string) => string | null) | null>;
   onLeave?: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [shared, setShared] = useState(1);
   const [closed, setClosed] = useState(false);
+  const [output, setOutput] = useState(false);
+  const [waking, setWaking] = useState(false);
+
+  // The wait is counted from when the terminal is shown, not from when it connected.
+  useEffect(() => {
+    if (!shown || output || shell !== undefined) return;
+    const timer = setTimeout(() => setWaking(true), WAKING_AFTER);
+    return () => {
+      clearTimeout(timer);
+      setWaking(false);
+    };
+  }, [shown, output, shell]);
 
   useEffect(() => {
     // Menlo so Claude's box lines draw in one font. A session draws on the alternate screen and never
@@ -85,7 +104,10 @@ export function SessionTerminal({
 
     socket.onmessage = (event) => {
       const frame = JSON.parse(String(event.data)) as { t: string; d?: string; n?: number };
-      if (frame.t === "out") term.write(frame.d ?? "");
+      if (frame.t === "out") {
+        term.write(frame.d ?? "");
+        setOutput(true);
+      }
       else if (frame.t === "shared") setShared(frame.n ?? 1);
     };
     socket.onclose = () => setClosed(true);
@@ -123,6 +145,7 @@ export function SessionTerminal({
         </p>
       )}
       {closed && <p className="activity">Terminal closed.</p>}
+      {waking && <p role="status" className="waking">Waking the session...</p>}
       <div className="terminal" ref={host} aria-label={shell === undefined ? "Session terminal" : "Shell terminal"} />
     </>
   );

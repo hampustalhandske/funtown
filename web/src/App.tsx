@@ -439,7 +439,7 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
         // Hidden, it is inert: out of the tab order and unfocusable, and the page's CSS keeps it out of view at the sheet's size.
         <div className="screen" ref={screen} inert={!terminal}>
           <LazyBoundary>
-            <SessionTerminal lead={lead.id} reply={reply} onLeave={leaveTerminal} />
+            <SessionTerminal lead={lead.id} shown={terminal} reply={reply} onLeave={leaveTerminal} />
           </LazyBoundary>
         </div>
       )}
