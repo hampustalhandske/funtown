@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { alive, connect as open, listed, listedBg, leadsOf, realDir, start, tokenOf, townWhere, until } from "./helpers.ts";
+import { alive, connect as open, inTerminal, listed, listedBg, leadsOf, realDir, start, tokenOf, townWhere, until } from "./helpers.ts";
 
 const SID = "abcd1234-0000-4000-8000-000000000000";
 const SHORT = "abcd1234";
@@ -40,7 +40,7 @@ it("term_attaches_by_short_id_in_xterm_256color_at_the_pages_size_with_no_claude
     const s = await withSessions();
     const c = await connect(s, { cols: 97, rows: 31 });
     await until(() => c.out().includes("attached"));
-    expect(c.out()).toContain(`attached ${SHORT} TERM=xterm-256color size:97x31 env:[]`);
+    expect(c.out()).toContain(`attached ${SHORT} TERM=xterm-256color size:97x31 env:[CLAUDE_CODE_ENABLE_AWAY_SUMMARY]`);
   } finally {
     delete process.env.CLAUDE_CODE_ENTRYPOINT;
     delete process.env.AI_AGENT;
@@ -54,11 +54,22 @@ it("term_passes_claude_config_dir_through_and_no_other_claude_variable", async (
     const s = await withSessions();
     const c = await connect(s);
     await until(() => c.out().includes("attached"));
-    expect(c.out()).toContain("env:[CLAUDE_CONFIG_DIR]");
+    expect(c.out()).toContain("env:[CLAUDE_CODE_ENABLE_AWAY_SUMMARY,CLAUDE_CONFIG_DIR]");
   } finally {
     delete process.env.CLAUDE_CONFIG_DIR;
     delete process.env.CLAUDE_CODE_ENTRYPOINT;
   }
+});
+
+it("term_tells_claude_one_terminal_whatever_terminal_the_server_was_started_from", async () => {
+  // Breaks if the attach client inherits the starting terminal's identity: Claude would act as if it ran there.
+  await inTerminal(async () => {
+    const s = await withSessions();
+    const c = await connect(s);
+    await until(() => c.out().includes("attached"));
+    expect(c.out()).toContain("TERM=xterm-256color");
+    expect(c.out()).toContain("COLORTERM=truecolor TERM_PROGRAM=undefined terminal-vars:[]");
+  });
 });
 
 it("a_frame_over_1_mb_closes_that_socket_and_the_server_keeps_serving", async () => {

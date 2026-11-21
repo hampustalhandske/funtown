@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { alive, connect as open, errorLines, houseAt, listed, postPage, projectsPath, realDir, start, tokenOf, townWhere, until } from "./helpers.ts";
+import { alive, connect as open, errorLines, inTerminal, houseAt, leadsOf, listed, postPage, projectsPath, realDir, start, tokenOf, townWhere, until } from "./helpers.ts";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -22,6 +22,18 @@ async function withHouses() {
 
 /** Opens /term?shell=<cwd>. */
 const connect = (s: { url: string; token: string }, cwd: string, q: Parameters<typeof open>[2] = {}) => open(s, { shell: cwd }, q);
+
+it("sessions_keeps_the_servers_terminal_variables_for_claude_bg_which_is_not_a_pty", async () => {
+  // Breaks if the terminal identity is applied to the non-pty runs, which keep today's env.
+  await inTerminal(async () => {
+    const cwd = realDir();
+    const s = await start();
+    s.fake.list([listed("s1", cwd)]);
+    await townWhere(s.url, (t) => leadsOf(t).length === 1);
+    await postPage(s, "/sessions", { cwd });
+    expect(s.fake.started().map((c) => c.termProgram)).toEqual(["iTerm.app"]);
+  });
+});
 
 it("shell_is_refused_without_the_token_or_origin_and_404_outside_a_house_and_starts_nothing", async () => {
   const s = await withHouses();
@@ -54,6 +66,16 @@ it("shell_starts_the_login_shell_in_the_projects_folder_at_the_pages_size_with_n
     delete process.env.AI_AGENT;
     delete process.env.CLAUDE_CONFIG_DIR;
   }
+});
+
+it("shell_gets_the_same_terminal_identity_and_no_recap_variable", async () => {
+  // Breaks if the shell inherits the starting terminal's identity, or gets the attach-only recap guard.
+  await inTerminal(async () => {
+    const s = await withHouses();
+    const c = await connect(s, s.project);
+    await until(() => c.out().includes("shell args:"), SLOW);
+    expect(c.out()).toContain("env:[] TERM=xterm-256color COLORTERM=truecolor TERM_PROGRAM=undefined terminal-vars:[]");
+  });
 });
 
 it("one_shell_per_project_outlives_its_socket_and_a_reconnect_replays_its_output", async () => {

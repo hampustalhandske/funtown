@@ -41,7 +41,9 @@ Contracts (source of truth: this list)
   `~/.funtown/steward.md`, empty = off), pasted only with no card and not working; a reply counts as a review only with its three labelled parts; the user's own prompt to it pauses requests until the next ask; `Parcel.review.state` is idle until asked.
 - `claude`: `--version` (min 2.1.325), `agents --json` (failed: keep the last list), `--bg`
   (`bgIsolation: "none"`), `--bg <prompt>` (a run, own worktree), `attach`, `stop <id>` (Close session; the conversation is kept); `gh` only `pr list`; env drops `CLAUDE*`/`AI_AGENT`
-  but `CLAUDE_CONFIG_DIR`. Page token in `<meta name="funtown-token">`: with the Origin for
+  but `CLAUDE_CONFIG_DIR`; the ptys Funtown starts also drop the starting terminal's own variables
+  (`TERM_PROGRAM`, `TERM_PROGRAM_VERSION` and the like) and get `TERM=xterm-256color`,
+  `COLORTERM=truecolor`; its attach clients also get `CLAUDE_CODE_ENABLE_AWAY_SUMMARY=0`. Page token in `<meta name="funtown-token">`: with the Origin for
   `/jump`, `/sessions`, `/runs`, `/projects`, `/projects/remove`, `/sessions/stop`, `/shells/close`, `/answer`, `/avatar`, `/review`, `/switch`,
   `/term`; alone for `/letters`, `/morning`.
 - Avatar: `Town.avatar` = the chosen preset's id (absent = the king); `POST /avatar { id }` (id `^[a-z0-9-]{1,32}$`) writes `avatar.json` `{ id }`; the server stores any such id, the page falls back to the king for one it doesn't know; an unreadable file is logged and means none.

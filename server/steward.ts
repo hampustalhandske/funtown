@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { basename } from "node:path";
 import { spawn, type IPty } from "node-pty";
-import { claudeEnv, startBackground } from "./agents.ts";
+import { ptyEnv, startBackground } from "./agents.ts";
 import type { LogError } from "./errors.ts";
 import type { Journal } from "./journal.ts";
 import type { HookEvent, TownState } from "./town.ts";
@@ -118,7 +118,7 @@ export function createSteward(opts: {
       .replace(/\p{Cc}/gu, (c) => (c === "\n" || c === "\t" ? c : ""));
     let pty: IPty;
     try {
-      pty = spawn(claude, ["attach", steward.shortId!], { name: "xterm-256color", cols: 120, rows: 40, env: claudeEnv() });
+      pty = spawn(claude, ["attach", steward.shortId!], { name: "xterm-256color", cols: 120, rows: 40, env: ptyEnv(true) });
     } catch (err) {
       busy = false;
       fail("attach", err);

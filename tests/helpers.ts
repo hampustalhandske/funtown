@@ -19,6 +19,26 @@ const dirs: string[] = [];
 const holds: AbortController[] = [];
 const sockets: WebSocket[] = [];
 
+/** Sets the variables a real terminal gives the server, runs `body`, and puts the old values back. */
+export async function inTerminal(body: () => Promise<void>): Promise<void> {
+  const set = {
+    TERM: "screen", COLORTERM: "24bit", TERM_PROGRAM: "iTerm.app", TERM_PROGRAM_VERSION: "3.5", TERM_SESSION_ID: "w0t0p0",
+    LC_TERMINAL: "iTerm2", LC_TERMINAL_VERSION: "3.5", TMUX: "/tmp/tmux-1/default,1,0", TMUX_PANE: "%1", STY: "123.pts-0",
+    VTE_VERSION: "7000", WT_SESSION: "abc", TERMINAL_EMULATOR: "JetBrains", ITERM_SESSION_ID: "w0t0p0", KITTY_WINDOW_ID: "1",
+    GHOSTTY_RESOURCES_DIR: "/x", WEZTERM_PANE: "1", ALACRITTY_LOG: "/x", KONSOLE_VERSION: "1",
+  };
+  const before = Object.fromEntries(Object.keys(set).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, set);
+  try {
+    await body();
+  } finally {
+    for (const [k, v] of Object.entries(before)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
 /** A folder that exists, with symlinks resolved so a child process reports the same path. */
 export function realDir(): string {
   const d = realpathSync(mkdtempSync(join(tmpdir(), "funtown-proj-")));

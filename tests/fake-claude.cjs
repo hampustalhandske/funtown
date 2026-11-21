@@ -4,7 +4,7 @@
 //   list-fail, version-fail, bg-fail; list-delay (ms `agents --json` waits before printing
 //   what list.json held when it was asked) and list-asks (one character per `agents --json`
 //   call; its pid goes to agents.pids). `--bg` appends (cwd, argv, CLAUDE*/AI_AGENT variable names) to started.json and lists a new background session (none
-//   with bg-unlisted); `attach <id>` echoes every input chunk as `got:<JSON string>` and appends it to attach-<id>.input, and
+//   with bg-unlisted); `attach <id>` prints its TERM, COLORTERM, TERM_PROGRAM and the names of the terminal-program variables it got, echoes every input chunk as `got:<JSON string>` and appends it to attach-<id>.input, and
 //   with attach-chatty also prints a dot every 100 ms, so its output never pauses, and with
 //   attach-sticky outlives a hangup by a second. `stop <id>` appends its argv to stop-calls.jsonl and removes the
 //   listed session whose short id is <id> (exit 1 with a message when none is listed, or always with stop-fail).
@@ -42,7 +42,7 @@ if (argv[0] === "--version") {
   const id = crypto.randomBytes(4).toString("hex");
   const started = JSON.parse(read("started.json", "[]"));
   const leaked = Object.keys(process.env).filter((k) => /^(CLAUDE|AI_AGENT)/.test(k));
-  started.push({ cwd: process.cwd(), argv, env: leaked });
+  started.push({ cwd: process.cwd(), argv, env: leaked, termProgram: process.env.TERM_PROGRAM });
   fs.writeFileSync(file("started.json"), JSON.stringify(started));
   if (!fs.existsSync(file("bg-unlisted"))) {
     const list = JSON.parse(read("list.json", "[]"));
@@ -78,7 +78,9 @@ if (argv[0] === "--version") {
   fs.appendFileSync(file(`attach-${id}.pids`), `${process.pid}\n`);
   const leaked = Object.keys(process.env).filter((k) => /^(CLAUDE|AI_AGENT)/.test(k));
   const size = () => `${process.stdout.columns}x${process.stdout.rows}`;
-  out(`attached ${id} TERM=${process.env.TERM} size:${size()} env:[${leaked.join(",")}]\r\n`);
+  // the terminal-program variables a real terminal sets, which Funtown must not pass on
+  const termVars = Object.keys(process.env).filter((k) => /^(TERM_PROGRAM|TERM_PROGRAM_VERSION|TERM_SESSION_ID|LC_TERMINAL|LC_TERMINAL_VERSION|TMUX|TMUX_PANE|STY|VTE_VERSION|WT_SESSION|TERMINAL_EMULATOR)$|^(ITERM_|KITTY_|GHOSTTY_|WEZTERM_|ALACRITTY_|KONSOLE_)/.test(k));
+  out(`attached ${id} TERM=${process.env.TERM} size:${size()} env:[${leaked.sort().join(",")}] COLORTERM=${process.env.COLORTERM} TERM_PROGRAM=${process.env.TERM_PROGRAM} terminal-vars:[${termVars.join(",")}]\r\n`);
   process.stdout.on("resize", () => out(`size:${size()}\r\n`));
   if (fs.existsSync(file("attach-chatty"))) setInterval(() => out("."), 100);
   if (fs.existsSync(file("attach-sticky"))) process.on("SIGHUP", () => setTimeout(() => process.exit(0), 1000));
