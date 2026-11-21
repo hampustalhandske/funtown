@@ -652,3 +652,46 @@ test.describe("the waking line", () => {
     await expect(waking(page)).toHaveCount(0);
   });
 });
+
+test.describe("the client's end", () => {
+  const short = sid.slice(0, 8);
+  const starts = () => fake.attachPids(short).length;
+
+  test("exit_0_folds_the_sheet_and_says_detached_and_only_show_terminal_attaches_again", async ({ page }) => {
+    // Catches a detach that leaves the sheet open, or a panel that starts a new client on its own.
+    fake.list([bg()]);
+    fake.exitAttach({ code: 0, line: "Detached." });
+    const before = starts();
+    await page.goto("/work.html");
+    await row(page, "beta").click({ position: { x: 5, y: 5 } });
+    const panel = page.getByRole("dialog", { name: "beta details" });
+    await showTerminal(panel);
+    await expect(panel).toContainText("Detached; the session keeps running.");
+    await expect(panel).not.toHaveClass(/sheet/);
+    await expect(panel.getByRole("button", { name: "Show terminal" })).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Close session" })).toBeVisible();
+    await page.waitForTimeout(1500);
+    expect(starts()).toBe(before + 1);
+
+    fake.exitAttach(null);
+    await showTerminal(panel);
+    await expect(screen(page)).toContainText("attached abcd1234");
+    await expect(panel).toHaveClass(/sheet/);
+    await expect(panel).not.toContainText("Detached");
+    expect(starts()).toBe(before + 2);
+  });
+
+  test("a_non_zero_exit_shows_the_clients_last_line_in_the_narrow_panel", async ({ page }) => {
+    // Catches a failed attach that looks like a detach, or one that says nothing.
+    fake.list([bg()]);
+    fake.exitAttach({ code: 2, line: "Error: no such session" });
+    await page.goto("/work.html");
+    await row(page, "beta").click({ position: { x: 5, y: 5 } });
+    const panel = page.getByRole("dialog", { name: "beta details" });
+    await showTerminal(panel);
+    await expect(panel.getByRole("alert")).toContainText("Error: no such session");
+    await expect(panel).not.toContainText("Detached");
+    await expect(panel).not.toHaveClass(/sheet/);
+    await expect(panel.getByRole("button", { name: "Show terminal" })).toBeVisible();
+  });
+});

@@ -9,6 +9,7 @@
 //   attach-sticky outlives a hangup by a second, with attach-prompt draws `PROMPT-BOX` on the screen's last row (again after each resize), as Claude draws its prompt box there, and with attach-modes turns on bracketed paste and mouse mode (button tracking, SGR encoding) the way Claude does, and with attach-silent prints nothing of its own (no first line, no size lines, so a client that hasn't woken yet) until it is typed to, when it echoes `got:` like any attach, and with attach-links prints three links after its first line, each
 //   alone on a line from column 0: a plain http URL, an OSC 8 https link and an OSC 8 javascript: link. `stop <id>` appends its argv to stop-calls.jsonl and removes the
 //   listed session whose short id is <id> (exit 1 with a message when none is listed, or always with stop-fail).
+//   With attach-exit (its first line the exit code, the rest a line to print) `attach` prints that line after its first and exits with that code.
 // It also stands in for `gh`: `pr list ...` appends (cwd, argv) to pr-calls.jsonl and prints
 //   prs.json's list for its cwd (`[]` when none is set; a null entry fails like gh outside a repo).
 const fs = process.getBuiltinModule("fs");
@@ -83,6 +84,11 @@ if (argv[0] === "--version") {
   const termVars = Object.keys(process.env).filter((k) => /^(TERM_PROGRAM|TERM_PROGRAM_VERSION|TERM_SESSION_ID|LC_TERMINAL|LC_TERMINAL_VERSION|TMUX|TMUX_PANE|STY|VTE_VERSION|WT_SESSION|TERMINAL_EMULATOR)$|^(ITERM_|KITTY_|GHOSTTY_|WEZTERM_|ALACRITTY_|KONSOLE_)/.test(k));
   const silent = fs.existsSync(file("attach-silent"));
   if (!silent) out(`attached ${id} TERM=${process.env.TERM} size:${size()} env:[${leaked.sort().join(",")}] COLORTERM=${process.env.COLORTERM} TERM_PROGRAM=${process.env.TERM_PROGRAM} terminal-vars:[${termVars.join(",")}]\r\n`);
+  if (fs.existsSync(file("attach-exit"))) {
+    const [code, ...line] = read("attach-exit", "0").split("\n");
+    out(line.join("\n") + "\r\n");
+    setTimeout(() => process.exit(Number(code)), 50);
+  }
   if (fs.existsSync(file("attach-links"))) {
     const osc = (url, text) => `\x1b]8;;${url}\x1b\\${text}\x1b]8;;\x1b\\\r\n`;
     out("http://example.test/plain\r\n" + osc("https://example.test/osc", "osc-link") + osc("javascript:alert(1)", "js-link"));

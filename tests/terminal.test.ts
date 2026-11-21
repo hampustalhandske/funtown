@@ -110,6 +110,36 @@ it("closing_the_socket_kills_the_pty_and_the_pty_exiting_closes_the_socket", asy
   await until(() => b.closed(), 5000);
 });
 
+it("the_clients_exit_code_n_closes_the_socket_with_4000_plus_n", async () => {
+  for (const n of [0, 3, 255]) {
+    const s = await withSessions();
+    s.fake.exitAttach({ code: n, line: "bye" });
+    const c = await connect(s);
+    await until(() => c.closed(), 5000);
+    expect(c.code()).toBe(4000 + n);
+    expect(c.out()).toContain("bye");
+  }
+});
+
+it("a_client_killed_by_a_signal_closes_the_socket_with_4000_plus_128_plus_the_signal", async () => {
+  const s = await withSessions();
+  const c = await connect(s);
+  await until(() => s.fake.attachPids(SHORT).length === 1);
+  await until(() => c.out().includes("attached"));
+  process.kill(s.fake.attachPids(SHORT)[0], "SIGTERM");
+  await until(() => c.closed(), 5000);
+  expect(c.code()).toBe(4000 + 128 + 15);
+});
+
+it("a_socket_closed_by_the_page_is_not_an_exit_code_and_still_kills_the_client", async () => {
+  const s = await withSessions();
+  const c = await connect(s);
+  await until(() => s.fake.attachPids(SHORT).length === 1);
+  const [pid] = s.fake.attachPids(SHORT);
+  c.ws.close(1000);
+  await until(() => !alive(pid), 5000);
+});
+
 it("shared_reports_the_number_of_funtown_sockets_on_a_session_as_it_changes", async () => {
   const s = await withSessions();
   const a = await connect(s);

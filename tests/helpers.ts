@@ -284,7 +284,8 @@ export async function postPage(s: { url: string }, path: string, body: unknown, 
 export const projectsPath = () => join(realDir(), "projects.json");
 
 /** An open /term socket: the output so far, the `shared` counts heard, whether it closed, and a frame sender. */
-export type Conn = { ws: WebSocket; out: () => string; shared: number[]; closed: () => boolean; send: (f: object) => void };
+/** An open /term socket: `closed` says whether it has closed, and `code` the close code it got (null until then). */
+export type Conn = { ws: WebSocket; out: () => string; shared: number[]; closed: () => boolean; code: () => number | null; send: (f: object) => void };
 
 /**
  * Opens /term for a session (`{ lead }`) or a project's shell (`{ shell }` a cwd) at 100x30
@@ -303,15 +304,15 @@ export function connect(
     const ws = new WebSocket(`${s.url.replace("http", "ws")}/term?${params}`, { headers });
     sockets.push(ws);
     let out = "";
-    let closed = false;
+    let closed: number | null = null;
     const shared: number[] = [];
     ws.on("message", (m) => {
       const f = JSON.parse(m.toString());
       if (f.t === "out") out += f.d;
       if (f.t === "shared") shared.push(f.n);
     });
-    ws.on("close", () => (closed = true));
-    ws.on("open", () => resolve({ ws, out: () => out, shared, closed: () => closed, send: (f) => ws.send(JSON.stringify(f)) }));
+    ws.on("close", (code) => (closed = code));
+    ws.on("open", () => resolve({ ws, out: () => out, shared, closed: () => closed !== null, code: () => closed, send: (f) => ws.send(JSON.stringify(f)) }));
     ws.on("unexpected-response", (_req, res) => reject(new Error(`status ${res.statusCode}`)));
     ws.on("error", () => {});
   });

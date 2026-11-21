@@ -84,6 +84,17 @@ test("the_shell_tab_echoes_input_survives_a_reload_replays_its_output_and_close_
   await expect.poll(() => { try { process.kill(pid, 0); return true; } catch { return false; } }).toBe(false);
 });
 
+test("the_shell_tab_says_terminal_closed_when_its_shell_ends", async ({ page }) => {
+  await page.goto("/work.html");
+  await addProject(page, cwd);
+  await house(page).getByRole("tab", { name: "Shell" }).click();
+  await expect(screen(page)).toContainText(`shell args:-l cwd:${cwd}`, { timeout: 10_000 });
+  await page.locator(".xterm").click();
+  // the fake shell exits on an input chunk that holds "exit", so it goes in as one chunk
+  await page.keyboard.insertText("exit");
+  await expect(house(page)).toContainText("Terminal closed.");
+});
+
 test("the_shell_tab_is_set_in_menlo_13_and_keeps_its_scrollback", async ({ page }) => {
   await page.goto("/work.html");
   await addProject(page, cwd);

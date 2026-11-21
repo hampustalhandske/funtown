@@ -324,13 +324,22 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
   const [terminal, setTerminal] = useState(false);
   // Once started (early attach, or the first Show), the terminal stays mounted while the panel lives, hidden out of view
   // whenever it isn't shown, so its socket stays open for the reply box. Closing the panel closes the socket.
+  // When the client ends, the terminal goes and `end` says how: null, "detached" (close code 4000) or
+  // a failed attach with the client's last line. Only Show terminal starts a client again.
   const [started, setStarted] = useState(false);
+  const [end, setEnd] = useState<{ failed: string } | "detached" | null>(null);
+  const onEnd = useCallback((code: number, lastLine: string) => {
+    setEnd(code === 4000 ? "detached" : { failed: lastLine || "Couldn't attach to the session." });
+    setTerminal(false);
+    setStarted(false);
+  }, []);
   const background = character.id === lead.id && lead.kind === "background";
   useEffect(() => {
-    if (!background || EARLY_ATTACH === false) return;
+    // A client that ends before the timer does leaves it no say: only Show terminal attaches again.
+    if (!background || EARLY_ATTACH === false || end) return;
     const timer = setTimeout(() => setStarted(true), EARLY_ATTACH);
     return () => clearTimeout(timer);
-  }, [background]);
+  }, [background, end]);
   const screen = useRef<HTMLDivElement>(null);
   const column = useRef<HTMLDivElement>(null);
   const leaveTerminal = useCallback(() => column.current?.focus(), []);
@@ -409,11 +418,14 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
             <Letters lead={lead.id} stamp={stamp} names={Object.fromEntries([lead, ...lead.subagents].map((c) => [c.id, c.name]))} only={character.id === lead.id ? undefined : character.id} />
           </Suspense>
         </LazyBoundary>
+        {background && end === "detached" && <p className="activity">Detached; the session keeps running.</p>}
+        {background && end && end !== "detached" && <p role="alert" className="error">{end.failed}</p>}
         {background && (
           <div className="actions">
             <button type="button" aria-expanded={terminal} onClick={() => {
               setTerminal(!terminal);
               setStarted(true);
+              setEnd(null);
             }}>
               {terminal ? "Hide terminal" : "Show terminal"}
             </button>
@@ -439,7 +451,7 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
         // Hidden, it is inert: out of the tab order and unfocusable, and the page's CSS keeps it out of view at the sheet's size.
         <div className="screen" ref={screen} inert={!terminal}>
           <LazyBoundary>
-            <SessionTerminal lead={lead.id} shown={terminal} reply={reply} onLeave={leaveTerminal} />
+            <SessionTerminal lead={lead.id} shown={terminal} reply={reply} onLeave={leaveTerminal} onEnd={onEnd} />
           </LazyBoundary>
         </div>
       )}

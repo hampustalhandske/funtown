@@ -19,6 +19,16 @@ function plainLinks(term: XTerm, line: number): ILink[] {
   });
 }
 
+/** The last line of `term` with any text, trimmed; empty when it has none. */
+function lastPrintedLine(term: XTerm): string {
+  const buffer = term.buffer.active;
+  for (let y = buffer.length - 1; y >= 0; y--) {
+    const text = buffer.getLine(y)?.translateToString(true).trim();
+    if (text) return text;
+  }
+  return "";
+}
+
 /** How long a shown session terminal may stay empty before "Waking the session..." appears (ms). */
 const WAKING_AFTER = 300;
 
@@ -30,6 +40,8 @@ const WAKING_AFTER = 300;
  * `shown` says whether the page is showing it (the panel keeps a hidden one connected); a session's terminal that has had
  * no output 300 ms after it is shown gets "Waking the session..." drawn over it (not written into it) until the first output.
  * Cmd+Esc calls `onLeave` (the page moves the keyboard elsewhere) and sends the session nothing.
+ * When a session's socket closes on its own, `onEnd` gets the close code (4000 + the client's exit
+ * code, so 4000 is a detach) and the last line the client printed; the shell says "Terminal closed." instead.
  */
 export function SessionTerminal({
   lead,
@@ -37,16 +49,21 @@ export function SessionTerminal({
   shown = true,
   reply,
   onLeave,
+  onEnd,
 }: {
   lead?: string;
   shell?: string;
   shown?: boolean;
   reply?: MutableRefObject<((text: string) => string | null) | null>;
   onLeave?: () => void;
+  onEnd?: (code: number, lastLine: string) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [shared, setShared] = useState(1);
   const [closed, setClosed] = useState(false);
+  // the latest onEnd, so a new function from the page doesn't reconnect the terminal
+  const ended = useRef(onEnd);
+  ended.current = onEnd;
   const [output, setOutput] = useState(false);
   const [waking, setWaking] = useState(false);
 
@@ -110,7 +127,12 @@ export function SessionTerminal({
       }
       else if (frame.t === "shared") setShared(frame.n ?? 1);
     };
-    socket.onclose = () => setClosed(true);
+    let disposed = false;
+    socket.onclose = (event) => {
+      if (shell !== undefined) return setClosed(true);
+      // the last line is read once the terminal has drawn everything the client sent
+      term.write("", () => !disposed && ended.current?.(event.code, lastPrintedLine(term)));
+    };
     // A resize while the socket was connecting was dropped, so send the size it has now.
     socket.onopen = () => send({ t: "resize", c: term.cols, r: term.rows });
 
@@ -130,6 +152,7 @@ export function SessionTerminal({
     term.focus();
 
     return () => {
+      disposed = true;
       if (reply) reply.current = null;
       observer.disconnect();
       socket.close();

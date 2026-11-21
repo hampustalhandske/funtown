@@ -34,6 +34,8 @@ Contracts (source of truth: this list)
 - Holds: `/hold` 200 with the hook output, 204 when released (no page or listing for `unlistedMs`);
   `/answer { card, decision, answers?, feedback? }`; log `by` funtown, elsewhere or dropped.
 - Logs: `<ISO> <hook|hold|server> <step>: <message>`; a dead run-file pid: `server unclean-exit`.
+- Terminal: `/term?lead=` runs `claude attach` in a pty per socket; closing the socket kills it, and the client's exit
+  closes the socket with code 4000 + its exit code (4000 + 128 + the signal when killed).
 - Workflow: `<cwd>/.claude/phase.json` `{ phase, note?, steps?: string[], tags?: { roleOrName: [] } }` (`steps` = the
   workflow's ordered phases, at most 24, the classroom whiteboard marks done/now/next/later); role = a
   subagent's `agent_type`; parcels from `gh pr list --author @me` every 60 s; overlaps: files two runs edit. One

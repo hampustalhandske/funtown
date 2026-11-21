@@ -15,7 +15,8 @@ export const isSize = (n: unknown): n is number => Number.isInteger(n) && (n as 
 
 /**
  * Live terminals over WebSocket. Each socket on a session gets its own pty running `<claude>
- * attach <shortId>`; closing the socket kills the pty, and the pty exiting closes the socket.
+ * attach <shortId>`; closing the socket kills the pty, and the pty exiting closes the socket with
+ * code 4000 + the client's exit code (4000 + 128 + the signal when a signal killed it).
  * Each project folder has at most one shell, `<shell> -l` in a pty, which every socket on that
  * folder shares: it starts with the first socket, outlives its sockets, and closes them all when
  * it exits. Frames are JSON text of at most 1 MB: `{"t":"in","d"}` and `{"t":"resize","c","r"}`
@@ -107,9 +108,9 @@ export function createTerminals(claude: string, shell: string | undefined, logEr
         pty.onData((d) => {
           if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ t: "out", d }));
         });
-        pty.onExit(() => {
+        pty.onExit(({ exitCode, signal }) => {
           ptys.delete(pty);
-          ws.close();
+          ws.close(4000 + (signal ? 128 + signal : exitCode));
         });
         const sockets = bySession.get(sessionId) ?? new Set<WebSocket>();
         bySession.set(sessionId, sockets);
