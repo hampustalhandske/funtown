@@ -191,6 +191,120 @@ test.describe("links", () => {
   });
 });
 
+test.describe("keys, copy, paste and scrolling", () => {
+  test.use({ permissions: ["clipboard-read", "clipboard-write"] });
+
+  /** Opens beta's terminal and gives its typing place the keyboard. */
+  async function openTerminal(page: Page, modes = false) {
+    fake.modesAttach(modes).list([bg()]);
+    await page.goto("/work.html");
+    await row(page, "beta").click({ position: { x: 5, y: 5 } });
+    await showTerminal(page.getByRole("dialog"));
+    await expect(screen(page)).toContainText("attached abcd1234");
+    // focus, not a click: in mouse mode a click would reach the session as a report
+    await page.locator(".xterm-helper-textarea").focus();
+  }
+  /** The box of the terminal's row showing `text`, found by mouse position (the rows sit under xterm's overlay). */
+  const rowBox = async (page: Page, text: string) =>
+    (await screen(page).locator(":scope > div").filter({ hasText: text }).first().boundingBox())!;
+
+  test("a_character_typed_with_option_held_reaches_the_session_as_itself", async ({ page }) => {
+    // Catches Option as Meta: a Swedish layout's @, | and brackets would arrive as Esc plus a letter.
+    await openTerminal(page);
+    // Playwright leaves the character off a key pressed with Alt held, so send the events Chrome sends on a Mac: Option held, the key and its character.
+    const cdp = await page.context().newCDPSession(page);
+    for (const char of ["@", "|", "["]) {
+      const key = { key: char, text: char, modifiers: 1 };
+      await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", ...key });
+      await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: char, modifiers: 1 });
+    }
+    await expect.poll(() => echoed(page)).toBe("@|[");
+  });
+
+  test("escape_in_the_terminal_reaches_the_session_and_leaves_the_panel_open", async ({ page }) => {
+    // Catches Escape closing the panel while the user is typing to Claude.
+    await openTerminal(page);
+    await page.keyboard.press("Escape");
+    await expect.poll(() => echoed(page)).toBe("\\u001b");
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(screen(page)).toBeVisible();
+  });
+
+  test("cmd_esc_moves_focus_to_the_sheets_column_leaves_the_terminal_shown_and_sends_nothing", async ({ page }) => {
+    // Catches Cmd+Esc reaching Claude as an Esc (which interrupts it), or leaving the keyboard trapped in the terminal.
+    await openTerminal(page);
+    await page.keyboard.type("a");
+    await expect.poll(() => echoed(page)).toBe("a");
+    await page.keyboard.press("Meta+Escape");
+    await expect(page.getByRole("dialog").locator(".column")).toBeFocused();
+    await expect(screen(page)).toBeVisible();
+    await page.locator(".xterm-helper-textarea").focus();
+    await page.keyboard.type("b");
+    // an Esc sent by the Cmd+Esc would show between the two letters
+    await expect.poll(() => echoed(page)).toBe("ab");
+  });
+
+  test("ctrl_v_reaches_the_session_so_claude_can_read_an_image", async ({ page }) => {
+    // Catches Ctrl+V being taken as a paste by the page, so Claude never sees it.
+    await openTerminal(page);
+    await page.keyboard.press("Control+v");
+    await expect.poll(() => echoed(page)).toBe("\\u0016");
+  });
+
+  test("cmd_v_sends_the_clipboards_text_as_one_bracketed_paste", async ({ page }) => {
+    // Catches a paste typed key by key (each line submitting itself) instead of one bracketed paste.
+    await openTerminal(page, true);
+    await page.evaluate(() => navigator.clipboard.writeText("one\ntwo"));
+    await page.keyboard.press("Meta+v");
+    await expect.poll(() => echoed(page)).toBe("\\u001b[200~one\\rtwo\\u001b[201~");
+    expect((await screen(page).innerText()).match(/got:/g)).toHaveLength(1);
+  });
+
+  test("option_drag_makes_a_terminal_selection_that_cmd_c_copies_and_a_plain_drag_goes_to_the_session", async ({ page }) => {
+    // Catches a drag that can never select in xterm's own layer once Claude has turned mouse mode on.
+    await openTerminal(page, true);
+    const box = await rowBox(page, "attached abcd1234");
+    const y = box.y + box.height / 2;
+    const drag = async (modifier?: "Alt") => {
+      await page.mouse.move(box.x + 4, y);
+      if (modifier) await page.keyboard.down(modifier);
+      await page.mouse.down();
+      await page.mouse.move(box.x + 60, y, { steps: 4 });
+      await page.mouse.up();
+      if (modifier) await page.keyboard.up(modifier);
+    };
+    await drag();
+    // a plain drag goes to Claude as mouse reports, and selects nothing in xterm
+    await expect.poll(() => echoed(page)).toMatch(/\\u001b\[<0;\d+;\d+M\\u001b\[<0;\d+;\d+m$/);
+    await expect(page.locator(".xterm-selection div")).toHaveCount(0);
+    const before = (await echoed(page)).length;
+    await drag("Alt");
+    await expect(page.locator(".xterm-selection div").first()).toBeVisible();
+    expect((await echoed(page)).length).toBe(before);
+    await page.keyboard.press("Meta+c");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("ttach");
+  });
+
+  test("the_wheel_sends_wheel_sequences_once_the_session_turns_mouse_mode_on", async ({ page }) => {
+    // Catches the wheel turning into arrow keys (which scroll Claude's prompt history) in a session that wants wheel reports.
+    await openTerminal(page, true);
+    const box = await rowBox(page, "attached abcd1234");
+    await page.mouse.move(box.x + 10, box.y + 4);
+    await page.mouse.wheel(0, -100);
+    await expect.poll(() => echoed(page)).toContain("\\u001b[<64;");
+    await page.mouse.wheel(0, 100);
+    await expect.poll(() => echoed(page)).toContain("\\u001b[<65;");
+  });
+
+  test("pgup_and_pgdn_reach_the_session", async ({ page }) => {
+    // Catches the terminal keeping the page keys for a scrollback it doesn't have.
+    await openTerminal(page);
+    await page.keyboard.press("PageUp");
+    await page.keyboard.press("PageDown");
+    await expect.poll(() => echoed(page)).toBe("\\u001b[5~\\u001b[6~");
+  });
+});
+
 /** The names of the scripts the page asks for from now on. */
 const watchScripts = (page: Page) => {
   const names: string[] = [];

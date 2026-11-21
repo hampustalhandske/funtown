@@ -102,7 +102,7 @@ export class FakeClaude {
   }
   /** Empties the list and the `--bg` and `stop` records and clears every failure switch. */
   reset(): this {
-    for (const n of ["started.json", "prs.json", "pr-calls.jsonl", "list-fail", "version-fail", "bg-fail", "bg-unlisted", "stop-fail", "stop-calls.jsonl", "attach-chatty", "attach-sticky", "attach-links", "attach-prompt", "list-delay", "list-asks", "agents.pids", "shell-starts.jsonl"]) rmSync(join(this.dir, n), { force: true });
+    for (const n of ["started.json", "prs.json", "pr-calls.jsonl", "list-fail", "version-fail", "bg-fail", "bg-unlisted", "stop-fail", "stop-calls.jsonl", "attach-chatty", "attach-sticky", "attach-links", "attach-modes", "attach-prompt", "list-delay", "list-asks", "agents.pids", "shell-starts.jsonl"]) rmSync(join(this.dir, n), { force: true });
     return this.list([]);
   }
   /** Sets what `agents --json` prints. */
@@ -178,6 +178,11 @@ export class FakeClaude {
   /** Makes `attach` print a plain http link, an OSC 8 https link and an OSC 8 javascript: link, each on its own line. */
   linksAttach(on = true): this {
     this.flag("attach-links", on);
+    return this;
+  }
+  /** Makes `attach` turn on bracketed paste and mouse mode, as Claude does. */
+  modesAttach(on = true): this {
+    this.flag("attach-modes", on);
     return this;
   }
   /** The `--bg` calls so far: cwd, argv, the names of the Claude and AI_AGENT variables each saw and its TERM_PROGRAM. */

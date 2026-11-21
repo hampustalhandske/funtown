@@ -24,15 +24,18 @@ function plainLinks(term: XTerm, line: number): ILink[] {
  * closes the socket. `reply` is set to a function that types a text into the session
  * as one prompt (bracketed paste, then Enter); it gives null when both frames were sent, else the reason it wasn't.
  * With `shell` (a house's folder) instead of `lead`, it shows that project's lasting shell; closing the view leaves the shell running.
+ * Cmd+Esc calls `onLeave` (the page moves the keyboard elsewhere) and sends the session nothing.
  */
 export function SessionTerminal({
   lead,
   shell,
   reply,
+  onLeave,
 }: {
   lead?: string;
   shell?: string;
   reply?: MutableRefObject<((text: string) => string | null) | null>;
+  onLeave?: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [shared, setShared] = useState(1);
@@ -45,6 +48,8 @@ export function SessionTerminal({
       cursorBlink: true,
       fontSize: 13,
       fontFamily: "Menlo, monospace",
+      // Option stays a typing key (macOptionIsMeta is off by default), and Option+drag selects in xterm even while the session has the mouse.
+      macOptionClickForcesSelection: true,
       ...(shell === undefined && { scrollback: 0 }),
       // OSC 8 hyperlinks come to openLink instead of xterm.js's default confirm() prompt.
       linkHandler: { activate: openLink },
@@ -88,6 +93,10 @@ export function SessionTerminal({
     socket.onopen = () => send({ t: "resize", c: term.cols, r: term.rows });
 
     term.attachCustomKeyEventHandler((event) => {
+      if (event.key === "Escape" && event.metaKey) {
+        if (event.type === "keydown") onLeave?.();
+        return false;
+      }
       if (event.key !== "Enter" || !event.shiftKey) return true;
       if (event.type === "keydown") send({ t: "in", d: "\x1b\r" });
       return false;
@@ -104,7 +113,7 @@ export function SessionTerminal({
       socket.close();
       term.dispose();
     };
-  }, [lead, shell, reply]);
+  }, [lead, shell, reply, onLeave]);
 
   return (
     <>

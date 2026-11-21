@@ -319,6 +319,8 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
   // Once shown, the terminal stays mounted (hidden) while the panel lives, so its socket stays open for the reply box.
   const [started, setStarted] = useState(false);
   const screen = useRef<HTMLDivElement>(null);
+  const column = useRef<HTMLDivElement>(null);
+  const leaveTerminal = useCallback(() => column.current?.focus(), []);
   const reply = useRef<((text: string) => string | null) | null>(null);
   const stamp = [lead, ...lead.subagents].map((c) => c.letter ?? 0).join(",");
   useEffect(() => {
@@ -366,7 +368,7 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
   const sheet = background && terminal;
   return (
     <aside className={`panel${sheet ? " sheet" : ""}`} role="dialog" aria-label={`${character.name} details`}>
-      <div className="column">
+      <div className="column" ref={column} tabIndex={-1}>
         <button type="button" className="close" aria-label="Close" onClick={onClose}>
           ✕
         </button>
@@ -424,7 +426,7 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
       {background && started && (
         <div className="screen" ref={screen} hidden={!terminal}>
           <LazyBoundary>
-            <SessionTerminal lead={lead.id} reply={reply} />
+            <SessionTerminal lead={lead.id} reply={reply} onLeave={leaveTerminal} />
           </LazyBoundary>
         </div>
       )}
