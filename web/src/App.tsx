@@ -6,11 +6,12 @@ import { LazyBoundary } from "./LazyBoundary.tsx";
 import { NeedsList, NotifyButton, Toasts, useAlerts, useMute, useNextKey, waitingList, type Waiting } from "./needs.tsx";
 import { funtownToken } from "./token.ts";
 import { SwitchButton } from "./Switch.tsx";
+import { ReplyBox } from "./ReplyBox.tsx";
+import { SessionTerminal } from "./Terminal.tsx";
 
-// The Markdown renderer and the terminal load only when a panel shows them, keeping them out of the first page load.
+// The terminal and the reply box load with the page, so Show terminal never waits on a download.
+// Only the letters' Markdown renderer is lazy, which keeps it out of the first page load.
 const Letters = lazy(() => import("./Letters.tsx").then((m) => ({ default: m.Letters })));
-const ReplyBox = lazy(() => import("./Letters.tsx").then((m) => ({ default: m.ReplyBox })));
-const SessionTerminal = lazy(() => import("./Terminal.tsx").then((m) => ({ default: m.SessionTerminal })));
 
 const STAGE_LABEL: Record<Stage, string> = {
   working: "working",
@@ -29,6 +30,12 @@ function StageLabel({ stage }: { stage: Stage }) {
 }
 
 const OPENING_TIMEOUT_MS = 30_000;
+
+/**
+ * The switch for early attach: on, a background lead's panel open this long starts the session's `claude attach`
+ * out of view, so Show terminal has its screen at once. Off (false), the terminal connects on Show terminal.
+ */
+const EARLY_ATTACH: number | false = 300;
 
 /**
  * Subscribes to the server's Town stream; gives the latest Town (null before the first) and
@@ -300,9 +307,7 @@ function HouseCard({
         <div role="tabpanel" aria-label="Shell">
           <button type="button" onClick={closeShell}>Close shell</button>
           <LazyBoundary>
-            <Suspense fallback={null}>
-              <SessionTerminal shell={house.cwd} />
-            </Suspense>
+            <SessionTerminal shell={house.cwd} />
           </LazyBoundary>
         </div>
       )}
@@ -312,11 +317,48 @@ function HouseCard({
   );
 }
 
+/**
+ * What the narrow panel says when a session's terminal closes with `code`: a detach (4000), the client's own
+ * non-zero exit (4001 to 4255: the last line it printed), or Funtown's own close, in words.
+ */
+function endOf(code: number, lastLine: string): { failed: string } | "detached" {
+  if (code === 4000) return "detached";
+  const unknown = "Couldn't attach to the session.";
+  if (code > 4000 && code <= 4255) return { failed: lastLine || unknown };
+  if (code === 1006) return { failed: "Lost the connection to Funtown." };
+  if (code === 1011) return { failed: "Couldn't start the session's client." };
+  return { failed: unknown };
+}
+
 /** Details of one character: stage, need, its subagents (for a lead) and a button that focuses its terminal. */
 export function Panel({ character, lead, cards, onClose }: { character: Character; lead: Lead; cards: Card[]; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [terminal, setTerminal] = useState(false);
+  // Once started (early attach, or the first Show), the terminal stays mounted while the panel lives, hidden out of view
+  // whenever it isn't shown, so its socket stays open for the reply box. Closing the panel closes the socket.
+  // When the client ends, the terminal goes and `end` says how: null, "detached" (close code 4000) or a line saying
+  // why the attach failed. Only Show terminal starts a client again.
+  const [started, setStarted] = useState(false);
+  const [end, setEnd] = useState<{ failed: string } | "detached" | null>(null);
+  const screen = useRef<HTMLDivElement>(null);
+  const toggle = useRef<HTMLButtonElement>(null);
+  const onEnd = useCallback((code: number, lastLine: string) => {
+    // the terminal that held the keyboard is about to go, so Show terminal takes it
+    if (screen.current?.contains(document.activeElement)) toggle.current?.focus();
+    setEnd(endOf(code, lastLine));
+    setTerminal(false);
+    setStarted(false);
+  }, []);
+  const background = character.id === lead.id && lead.kind === "background";
+  useEffect(() => {
+    // A client that ends before the timer does leaves it no say: only Show terminal attaches again.
+    if (!background || EARLY_ATTACH === false || end) return;
+    const timer = setTimeout(() => setStarted(true), EARLY_ATTACH);
+    return () => clearTimeout(timer);
+  }, [background, end]);
+  const column = useRef<HTMLDivElement>(null);
+  const leaveTerminal = useCallback(() => column.current?.focus(), []);
   const reply = useRef<((text: string) => string | null) | null>(null);
   const stamp = [lead, ...lead.subagents].map((c) => c.letter ?? 0).join(",");
   useEffect(() => {
@@ -327,6 +369,10 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+  // Showing a terminal that was hidden gives it the keyboard again (a new one focuses itself).
+  useEffect(() => {
+    if (terminal) screen.current?.querySelector("textarea")?.focus();
+  }, [terminal]);
 
   async function jump() {
     setError(null);
@@ -355,64 +401,80 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
     else onClose();
   }
 
-  const background = character.id === lead.id && lead.kind === "background";
+  // A shown terminal opens the terminal sheet: the panel's lines in a column on the left, the terminal beside it.
+  const sheet = background && terminal;
   return (
-    <aside className={`panel${background && terminal ? " wide" : ""}`} role="dialog" aria-label={`${character.name} details`}>
-      <button type="button" className="close" aria-label="Close" onClick={onClose}>
-        ✕
-      </button>
-      <h2>{character.name}</h2>
-      <p><StageLabel stage={character.stage} /></p>
-      {character.stage === "needs_you" && character.needs && <p>waiting for you: {character.needs}</p>}
-      {(character.role || character.tags?.length) && (
-        <p>
-          {character.role && <span className="badge role">{character.role}</span>}
-          {character.tags?.map((tag) => <span key={tag} className="badge tag">{tag}</span>)}
-        </p>
-      )}
-      {character.id === lead.id && <Overlaps overlaps={lead.overlaps} />}
-      <Cards lead={lead} cards={cards} only={character.id} />
-      {character.id === lead.id && lead.subagents.length > 0 && (
-        <ul aria-label="Subagents">
-          {lead.subagents.map((sub) => (
-            <li key={sub.id}>
-              {sub.name} <StageLabel stage={sub.stage} />
-            </li>
-          ))}
-        </ul>
-      )}
-      <LazyBoundary>
-        <Suspense fallback={null}>
-          <Letters lead={lead.id} stamp={stamp} names={Object.fromEntries([lead, ...lead.subagents].map((c) => [c.id, c.name]))} only={character.id === lead.id ? undefined : character.id} />
-        </Suspense>
-      </LazyBoundary>
-      {background && (
-        <>
-          <button type="button" aria-expanded={terminal} onClick={() => setTerminal(!terminal)}>
-            {terminal ? "Hide terminal" : "Show terminal"}
-          </button>
-          <button type="button" onClick={stop} disabled={pending}>
-            Close session
-          </button>
-        </>
-      )}
-      {background && terminal && (
-        <LazyBoundary>
-          <Suspense fallback={null}>
-            <ReplyBox send={(text) => (reply.current ? reply.current(text) : "Not sent: the terminal isn't connected.")} />
-            <SessionTerminal lead={lead.id} reply={reply} />
-          </Suspense>
-        </LazyBoundary>
-      )}
-      {character.id === lead.id && lead.kind === "terminal" && (
-        <p className="hint">press ← or type /bg in its terminal to open it here</p>
-      )}
-      {lead.kind === "terminal" && (
-        <button type="button" onClick={jump} disabled={pending}>
-          Go to terminal
+    <aside className={`panel${sheet ? " sheet" : ""}`} role="dialog" aria-label={`${character.name} details`}>
+      <div className="column" ref={column} tabIndex={-1}>
+        <button type="button" className="close" aria-label="Close" onClick={onClose}>
+          ✕
         </button>
+        {/* the lines scroll above the buttons, which stay at the column's bottom */}
+        <div className="lines">
+          <h2>{character.name}</h2>
+          <p><StageLabel stage={character.stage} /></p>
+          {character.stage === "needs_you" && character.needs && <p>waiting for you: {character.needs}</p>}
+          {(character.role || character.tags?.length) && (
+            <p>
+              {character.role && <span className="badge role">{character.role}</span>}
+              {character.tags?.map((tag) => <span key={tag} className="badge tag">{tag}</span>)}
+            </p>
+          )}
+          {character.id === lead.id && <Overlaps overlaps={lead.overlaps} />}
+          <Cards lead={lead} cards={cards} only={character.id} />
+          {character.id === lead.id && lead.subagents.length > 0 && (
+            <ul aria-label="Subagents">
+              {lead.subagents.map((sub) => (
+                <li key={sub.id}>
+                  {sub.name} <StageLabel stage={sub.stage} />
+                </li>
+              ))}
+            </ul>
+          )}
+          <LazyBoundary>
+            <Suspense fallback={null}>
+              <Letters lead={lead.id} stamp={stamp} names={Object.fromEntries([lead, ...lead.subagents].map((c) => [c.id, c.name]))} only={character.id === lead.id ? undefined : character.id} />
+            </Suspense>
+          </LazyBoundary>
+          {background && !terminal && (
+            <ReplyBox send={(text) => (reply.current ? reply.current(text) : "Not sent: the terminal isn't connected.")} />
+          )}
+          {character.id === lead.id && lead.kind === "terminal" && (
+            <p className="hint">press ← or type /bg in its terminal to open it here</p>
+          )}
+          {lead.kind === "terminal" && (
+            <button type="button" onClick={jump} disabled={pending}>
+              Go to terminal
+            </button>
+          )}
+        </div>
+        {/* Close session stops the session, so the client's exit after it says nothing */}
+        {background && !pending && end === "detached" && <p className="activity">Detached; the session keeps running.</p>}
+        {background && !pending && end && end !== "detached" && <p role="alert" className="error">{end.failed}</p>}
+        {error && <p role="alert" className="error">{error}</p>}
+        {background && (
+          <div className="actions">
+            <button type="button" ref={toggle} aria-expanded={terminal} onClick={() => {
+              setTerminal(!terminal);
+              setStarted(true);
+              setEnd(null);
+            }}>
+              {terminal ? "Hide terminal" : "Show terminal"}
+            </button>
+            <button type="button" onClick={stop} disabled={pending}>
+              Close session
+            </button>
+          </div>
+        )}
+      </div>
+      {background && started && (
+        // Hidden, it is inert: out of the tab order and unfocusable, and the page's CSS keeps it out of view at the sheet's size.
+        <div className="screen" ref={screen} inert={!terminal}>
+          <LazyBoundary>
+            <SessionTerminal lead={lead.id} shown={terminal} reply={reply} onLeave={leaveTerminal} onEnd={onEnd} />
+          </LazyBoundary>
+        </div>
       )}
-      {error && <p role="alert" className="error">{error}</p>}
     </aside>
   );
 }

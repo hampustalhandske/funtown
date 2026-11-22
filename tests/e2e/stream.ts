@@ -24,6 +24,25 @@ export async function hook(sid: string, cwd: string, name: string, extra: Record
   expect(res.status).toBe(204);
 }
 
+/** The stream state with a working background session `sid` named beta in `cwd` (a folder named `project`), and `cards` waiting. */
+export const betaState = (project: string, cwd: string, sid: string, cards: unknown[]) => ({
+  claude: { version: "2.1.325", problems: [] },
+  cards,
+  houses: [
+    { project, cwd, leads: [{ id: sid, name: "beta", stage: "working", activity: null, step: null, tty: null, termProgram: null, kind: "background", shortId: sid.slice(0, 8), subagents: [] }] },
+  ],
+});
+
+/** A question card of `sid`'s, tall enough to fill a column on its own. */
+export const questionCard = (sid: string, cwd: string) => ({
+  id: "c2", lead: sid, agent: null, kind: "question", tool: "AskUserQuestion", cwd, at: 1,
+  input: {
+    questions: ["Which database?", "Which cache?", "Which queue?"].map((question) => ({
+      question, header: "Q", multiSelect: false, options: ["Postgres", "SQLite", "Redis"].map((label) => ({ label, description: "" })),
+    })),
+  },
+});
+
 /** Runs a page-authenticated POST (the page's token and Origin) against the e2e server. */
 async function pagePost(path: string, body: unknown) {
   const html = await (await fetch(`${E2E_URL}/work.html`)).text();
@@ -41,7 +60,7 @@ export const addProjectFolder = (cwd: string) => pagePost("/projects", { cwd });
 /** Takes `cwd` off the project list again. */
 export const removeProjectFolder = (cwd: string) => pagePost("/projects/remove", { cwd });
 
-/** Presses "Show terminal" in a background lead's panel, which is what mounts its live terminal and reply box. */
+/** Presses "Show terminal" in a background lead's panel, which reveals its live terminal (and connects it, if the panel was open under 300 ms). */
 export const showTerminal = (panel: Locator) => panel.getByRole("button", { name: /show terminal/i }).click();
 
 /** The text a viewer can see on the page: text nodes of at least 3 px that are not clipped, transparent or hidden. */
@@ -62,4 +81,31 @@ export function visibleWords(page: Page): Promise<string[]> {
     }
     return seen;
   });
+}
+
+/** The font a terminal draws in, as the page computes it. */
+export const fontOf = (root: Locator) =>
+  root.locator(".xterm-rows").evaluate((rows) => {
+    const style = getComputedStyle(rows);
+    return { family: style.fontFamily, size: style.fontSize };
+  });
+
+/** Whether the wheel scrolls back: after it turns up over a terminal full of `line-<n>` lines, an earlier line shows. */
+export async function scrollsBack(page: Page, root: Locator) {
+  const first = async () => {
+    const numbers = [...(await root.locator(".xterm-rows").innerText()).matchAll(/line-(\d+)/g)].map((m) => Number(m[1]));
+    return Math.min(...numbers);
+  };
+  const before = await first();
+  await root.hover();
+  await page.mouse.wheel(0, -2000);
+  await page.waitForTimeout(300);
+  return (await first()) < before;
+}
+
+/** The columns and rows the session's client last printed as `size:<cols>x<rows>` (the fake prints it at start and on every resize). */
+export async function sizeShown(screen: Locator) {
+  const all = [...(await screen.innerText()).matchAll(/size:(\d+)x(\d+)/g)];
+  const last = all[all.length - 1];
+  return last ? { cols: Number(last[1]), rows: Number(last[2]), count: all.length } : null;
 }

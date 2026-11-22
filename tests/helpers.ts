@@ -19,6 +19,26 @@ const dirs: string[] = [];
 const holds: AbortController[] = [];
 const sockets: WebSocket[] = [];
 
+/** Sets the variables a real terminal gives the server, runs `body`, and puts the old values back. */
+export async function inTerminal(body: () => Promise<void>): Promise<void> {
+  const set = {
+    TERM: "screen", COLORTERM: "24bit", TERM_PROGRAM: "iTerm.app", TERM_PROGRAM_VERSION: "3.5", TERM_SESSION_ID: "w0t0p0",
+    LC_TERMINAL: "iTerm2", LC_TERMINAL_VERSION: "3.5", TMUX: "/tmp/tmux-1/default,1,0", TMUX_PANE: "%1", STY: "123.pts-0",
+    VTE_VERSION: "7000", WT_SESSION: "abc", TERMINAL_EMULATOR: "JetBrains", ITERM_SESSION_ID: "w0t0p0", KITTY_WINDOW_ID: "1",
+    GHOSTTY_RESOURCES_DIR: "/x", WEZTERM_PANE: "1", ALACRITTY_LOG: "/x", KONSOLE_VERSION: "1",
+  };
+  const before = Object.fromEntries(Object.keys(set).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, set);
+  try {
+    await body();
+  } finally {
+    for (const [k, v] of Object.entries(before)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
 /** A folder that exists, with symlinks resolved so a child process reports the same path. */
 export function realDir(): string {
   const d = realpathSync(mkdtempSync(join(tmpdir(), "funtown-proj-")));
@@ -264,7 +284,8 @@ export async function postPage(s: { url: string }, path: string, body: unknown, 
 export const projectsPath = () => join(realDir(), "projects.json");
 
 /** An open /term socket: the output so far, the `shared` counts heard, whether it closed, and a frame sender. */
-export type Conn = { ws: WebSocket; out: () => string; shared: number[]; closed: () => boolean; send: (f: object) => void };
+/** An open /term socket: `closed` says whether it has closed, and `code` the close code it got (null until then). */
+export type Conn = { ws: WebSocket; out: () => string; shared: number[]; closed: () => boolean; code: () => number | null; send: (f: object) => void };
 
 /**
  * Opens /term for a session (`{ lead }`) or a project's shell (`{ shell }` a cwd) at 100x30
@@ -283,19 +304,18 @@ export function connect(
     const ws = new WebSocket(`${s.url.replace("http", "ws")}/term?${params}`, { headers });
     sockets.push(ws);
     let out = "";
-    let closed = false;
+    let closed: number | null = null;
     const shared: number[] = [];
     ws.on("message", (m) => {
       const f = JSON.parse(m.toString());
       if (f.t === "out") out += f.d;
       if (f.t === "shared") shared.push(f.n);
     });
-    ws.on("close", () => (closed = true));
-    ws.on("open", () => resolve({ ws, out: () => out, shared, closed: () => closed, send: (f) => ws.send(JSON.stringify(f)) }));
+    ws.on("close", (code) => (closed = code));
+    ws.on("open", () => resolve({ ws, out: () => out, shared, closed: () => closed !== null, code: () => closed, send: (f) => ws.send(JSON.stringify(f)) }));
     ws.on("unexpected-response", (_req, res) => reject(new Error(`status ${res.statusCode}`)));
     ws.on("error", () => {});
   });
 }
 
-/** True while a process with `pid` exists. */
-export const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+export { alive } from "./fake-claude.ts";

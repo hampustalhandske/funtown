@@ -43,10 +43,14 @@ async function openPanel(page: Page, name = "alpha") {
   await row(page, name).click({ position: { x: 5, y: 5 } });
   await expect(panel(page, name)).toBeVisible();
 }
-/** Opens `alpha`'s panel and shows its terminal, where the reply box is. */
-async function openTerminalPanel(page: Page) {
+/** Opens `alpha`'s panel, connects its terminal and hides it again: the reply box is in the narrow panel, the session's socket stays open. */
+async function openTerminalPanel(page: Page, attached = true) {
   await openPanel(page);
-  await showTerminal(panel(page, "alpha"));
+  const p = panel(page, "alpha");
+  await showTerminal(p);
+  // a hidden terminal draws nothing, so let the banner arrive first
+  if (attached) await expect(p.locator(".xterm-rows")).toContainText(`attached ${sid.slice(0, 8)}`);
+  await p.getByRole("button", { name: /hide terminal/i }).click();
 }
 
 /** Passes the page's `/term` socket through to the server, returning every frame the page sends. */
@@ -184,8 +188,10 @@ for (const how of ["the Send button", "Meta+Enter"] as const) {
 
     const paste = { t: "in", d: "\x1b[200~use main\nand rebase first\x1b[201~" };
     await expect.poll(() => frames.filter((f) => (f as { t: string }).t === "in")).toEqual([paste, { t: "in", d: "\r" }]);
-    await expect.poll(echoed(page)).toBe(JSON.stringify(paste.d + "\r").slice(1, -1));
     await expect(reply).toHaveValue("");
+    // a hidden terminal draws nothing, so show it to read what the session echoed
+    await showTerminal(p);
+    await expect.poll(echoed(page)).toBe(JSON.stringify(paste.d + "\r").slice(1, -1));
   });
 }
 
@@ -223,6 +229,7 @@ test("a_reply_containing_the_paste_end_sequence_reaches_attach_as_one_bracketed_
 
   const paste = { t: "in", d: "\x1b[200~yesls\nthen stop\x1b[201~" };
   await expect.poll(() => frames.filter((f) => (f as { t: string }).t === "in")).toEqual([paste, { t: "in", d: "\r" }]);
+  await showTerminal(p);
   await expect.poll(echoed(page)).toBe(JSON.stringify(paste.d + "\r").slice(1, -1));
 });
 
@@ -246,18 +253,27 @@ const neverConnects = (page: Page) =>
 /** Answers every `/term` socket the page opens by closing it at once. */
 const closesAtOnce = (page: Page) => page.routeWebSocket(/\/term/, (ws) => ws.close());
 
-for (const [how, socket] of [["not_yet_connected", neverConnects], ["closed", closesAtOnce]] as const) {
+for (const [how, socket, endLine] of [
+  ["not_yet_connected", neverConnects, null],
+  ["closed", closesAtOnce, "Couldn't attach to the session."],
+] as const) {
   test(`send_while_the_terminal_socket_is_${how}_keeps_the_text_and_shows_an_alert`, async ({ page }) => {
     await socket(page);
     await openWith(page, true);
-    await openTerminalPanel(page);
+    if (endLine) {
+      // the socket closes at once, which ends the terminal and folds the sheet back by itself
+      await openPanel(page);
+      await showTerminal(panel(page, "alpha"));
+    } else await openTerminalPanel(page, false);
     const p = panel(page, "alpha");
-    await expect(p.getByRole("alert")).toHaveCount(0);
+    const notSent = p.getByRole("alert").filter({ hasText: "Not sent" });
+    await expect(notSent).toHaveCount(0);
+    // a closed socket has ended the terminal, and the panel says so before the reply goes
+    if (endLine) await expect(p.getByRole("alert")).toHaveText(endLine);
     const reply = p.getByRole("textbox", { name: "Reply" });
     await reply.fill("use main");
-    await page.waitForTimeout(200); // let a closing socket finish closing before Send
     await p.getByRole("button", { name: "Send" }).click();
-    await expect(p.getByRole("alert")).toBeVisible();
+    await expect(notSent).toHaveText("Not sent: the terminal isn't connected.");
     await expect(reply).toHaveValue("use main");
   });
 }

@@ -19,7 +19,7 @@ note's Reproduce before relying on it.
   town). A building opens its classroom at `#in=<cwd>`: `interior.ts` pure places and the whiteboard model,
   `Classroom.tsx` the room, the lead at the front, you the observer at the back, wearing the chosen avatar; words only on the board;
   `drawn()` keeps a departed figure at the door for 2.5 s so it walks out.
-  `/work.html` the work view (`App.tsx`: list, panels; a background lead's terminal mounts only after Show terminal; no command text on rows; `AnswerCard`, `Letters`, `Morning`,
+  `/work.html` the work view (`App.tsx`: list, panels; a background lead's terminal connects when its panel has been open 300 ms and shows on Show terminal, and a shown terminal opens the terminal sheet (the panel's lines in a 19rem column, the terminal beside it); no command text on rows; `AnswerCard`, `Letters` (the only lazy part: the Markdown renderer), `ReplyBox`, `Morning`,
   `Switch`, `needs.tsx`: `waitingList`, the desk order, card kinds first then oldest). Font Recursive (OFL, bundled, licence emitted next to it).
   `tests/`: Vitest; Playwright in `tests/e2e/`, one spec at a time; the fake `claude` is also `gh`.
 Contracts (source of truth: this list)
@@ -34,6 +34,8 @@ Contracts (source of truth: this list)
 - Holds: `/hold` 200 with the hook output, 204 when released (no page or listing for `unlistedMs`);
   `/answer { card, decision, answers?, feedback? }`; log `by` funtown, elsewhere or dropped.
 - Logs: `<ISO> <hook|hold|server> <step>: <message>`; a dead run-file pid: `server unclean-exit`.
+- Terminal: `/term?lead=` runs `claude attach` in a pty per socket; closing the socket kills it, and the client's exit
+  closes the socket with code 4000 + its exit code (4000 + 128 + the signal when killed).
 - Workflow: `<cwd>/.claude/phase.json` `{ phase, note?, steps?: string[], tags?: { roleOrName: [] } }` (`steps` = the
   workflow's ordered phases, at most 24, the classroom whiteboard marks done/now/next/later); role = a
   subagent's `agent_type`; parcels from `gh pr list --author @me` every 60 s; overlaps: files two runs edit. One
@@ -41,7 +43,9 @@ Contracts (source of truth: this list)
   `~/.funtown/steward.md`, empty = off), pasted only with no card and not working; a reply counts as a review only with its three labelled parts; the user's own prompt to it pauses requests until the next ask; `Parcel.review.state` is idle until asked.
 - `claude`: `--version` (min 2.1.325), `agents --json` (failed: keep the last list), `--bg`
   (`bgIsolation: "none"`), `--bg <prompt>` (a run, own worktree), `attach`, `stop <id>` (Close session; the conversation is kept); `gh` only `pr list`; env drops `CLAUDE*`/`AI_AGENT`
-  but `CLAUDE_CONFIG_DIR`. Page token in `<meta name="funtown-token">`: with the Origin for
+  but `CLAUDE_CONFIG_DIR`; the ptys Funtown starts also drop the starting terminal's own variables
+  (`TERM_PROGRAM`, `TERM_PROGRAM_VERSION` and the like) and get `TERM=xterm-256color`,
+  `COLORTERM=truecolor`; its attach clients also get `CLAUDE_CODE_ENABLE_AWAY_SUMMARY=0`. Page token in `<meta name="funtown-token">`: with the Origin for
   `/jump`, `/sessions`, `/runs`, `/projects`, `/projects/remove`, `/sessions/stop`, `/shells/close`, `/answer`, `/avatar`, `/review`, `/switch`,
   `/term`; alone for `/letters`, `/morning`.
 - Avatar: `Town.avatar` = the chosen preset's id (absent = the king); `POST /avatar { id }` (id `^[a-z0-9-]{1,32}$`) writes `avatar.json` `{ id }`; the server stores any such id, the page falls back to the king for one it doesn't know; an unreadable file is logged and means none.
@@ -64,3 +68,11 @@ Decisions that bind
   Replies are shaped only through SessionStart context; only the steward gets requests (reviews).
 - Out of git: `.workflow/`, `.scratch/`, .claude/settings.json, .claude/never-push; a security finding is fixed
   before the push and never written in a tracked file. Fixed CSP; no raw HTML in letters.
+- The town draws with three.js's WebGL renderer (WebGL2) in Chrome's engine. Custom GLSL shaders
+  live in one place and only those the user approved: the sea, the sky, the ink outline on
+  characters and the tilt-shift blur. WebGPU only by the user's decision.
+- The page never calls the app: it talks only to the server and keeps working in a browser tab.
+  The app's native parts (summon key, menu bar icon) live in its main file.
+- The app's window loads only Funtown's own page on 127.0.0.1, with Node off inside it (context
+  isolation and the sandbox on), new windows refused and outside links opened in the default
+  browser.

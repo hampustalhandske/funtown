@@ -58,7 +58,6 @@
         border: 2.5px solid var(--ink); border-radius: 1rem; box-shadow: 0 5px 0 var(--ink); padding: 0.9rem 1.1rem; }
       .pane, .panel, .morning { max-height: calc(100vh - 6.5rem); overflow: auto; overflow-wrap: anywhere; }
       .panel, .pane { top: 5rem; right: 1rem; width: min(23rem, calc(100vw - 2rem)); }
-      .panel.wide { width: min(50rem, calc(100vw - 2rem)); }
       .dot { display: inline-block; width: 0.65rem; height: 0.65rem; margin-right: 0.35rem; border-radius: 50%; background: #bbb; }
       .dot[data-stage="working"] { background: #2e7d32; }
       .dot[data-stage="needs_you"] { background: #d32f2f; }
@@ -85,7 +84,31 @@
       .error { color: var(--error); }
       .badge { margin-left: 0.4rem; padding: 0 0.45rem; border-radius: 0.6rem; border: 1.5px solid var(--ink); font-size: 0.75rem; background: var(--stone); }
       .overlap { display: block; font-size: 0.8rem; color: #8a5a00; }
-      .terminal { height: 24rem; margin-top: 0.5rem; background: #000; border-radius: 0.5rem; overflow: hidden; }
+      .terminal { box-sizing: border-box; height: 24rem; margin-top: 0.5rem; padding: 0.5rem; background: #000; border-radius: 0.5rem; overflow: hidden; }
+      /* A panel's lines scroll above its buttons, which stay at the bottom, so a card never pushes them out of the window. */
+      .panel { display: flex; flex-direction: column; overflow: hidden; }
+      .panel .column { min-height: 0; display: flex; flex-direction: column; }
+      .panel .lines { min-height: 0; overflow: auto; }
+      .column > .actions { flex: none; display: flex; flex-wrap: wrap; gap: 0.5rem; padding-top: 0.5rem; }
+      /* The terminal sheet: a 19rem column of the panel's lines, the terminal taking the rest at full height. */
+      .panel.sheet { top: 5rem; right: 3rem; bottom: 1rem; left: 3rem; width: auto; max-width: 96rem; max-height: none; margin-inline: auto;
+        flex-direction: row; gap: 1rem; }
+      .sheet .column { position: relative; flex: 0 0 19rem; box-sizing: border-box; min-width: 0; }
+      .sheet .lines { flex: 1; }
+      .sheet .column:focus { outline: none; }
+      .sheet .screen { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
+      /* "Waking the session..." sits over the empty terminal, out of the layout, so nothing moves when it goes. */
+      .waking { position: absolute; inset: 0; z-index: 1; margin: 0; display: flex; align-items: center; justify-content: center; color: #ddd; pointer-events: none; }
+      .sheet .terminal, .screen[inert] .terminal { flex: 1; height: auto; min-height: 0; margin-top: 0; }
+      /* A hidden terminal: off the left edge, unseen, in the box the sheet gives it (the sheet's insets, border and padding, less the column and gap). */
+      .panel:not(.sheet) .screen[inert] { position: fixed; right: 100%; top: calc(5rem + 2.5px + 0.9rem); bottom: calc(1rem + 2.5px + 0.9rem);
+        width: calc(min(100% - 6rem, 96rem) - 5px - 2.2rem - 20rem); display: flex; flex-direction: column; visibility: hidden; }
+      /* On a narrow window the column (a fixed 11rem) stacks above the terminal, which keeps the full width. */
+      @media (max-width: 860px) {
+        .panel.sheet { left: 0.5rem; right: 0.5rem; padding: 0.5rem; flex-direction: column; gap: 0.5rem; }
+        .sheet .column { flex: 0 0 11rem; }
+        .panel:not(.sheet) .screen[inert] { top: calc(5rem + 2.5px + 0.5rem + 11rem + 0.5rem); bottom: calc(1rem + 2.5px + 0.5rem); width: calc(100% - 1rem - 5px - 1rem); }
+      }
       .answer-card { margin-top: 0.6rem; padding: 0.5rem 0.7rem; border: 2px solid var(--ribbon); border-radius: 0.7rem; background: #fff3ee; }
       .answer-card pre { margin: 0.25rem 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 14rem; overflow: auto; }
       .answer-card .folder { margin: 0; font-size: 0.85rem; opacity: 0.75; }
