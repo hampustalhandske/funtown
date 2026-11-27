@@ -134,24 +134,27 @@ function ParcelItem({ parcel, cwd, onOpen }: { parcel: Parcel; cwd: string; onOp
 
 type Select = (lead: string, id: string) => void;
 
+/** The listed steward (the Queen's session), if there is one: the card's slot tells "starting" from "busy" by it and fetches her word from it. */
+export const stewardOf = (town: Town | null): Lead | undefined => town?.houses.flatMap((house) => house.leads).find((lead) => lead.steward);
+
 /**
  * Cards of `lead` in `house`, each with its brief's facts; with `only`, just the cards of that character.
  * A card from a subagent the lead doesn't list yet counts as the lead's. `onLetter` gets the asker's id. In a `pane`,
  * the only card there takes the card keys.
  */
-function Cards({ lead, house, cards, only, pane = false, onLetter }: {
-  lead: Lead; house: House; cards: Card[]; only?: string; pane?: boolean; onLetter: (id: string) => void;
+function Cards({ lead, house, cards, steward, only, pane = false, onLetter }: {
+  lead: Lead; house: House; cards: Card[]; steward?: Lead; only?: string; pane?: boolean; onLetter: (id: string) => void;
 }) {
   const subagentOf = (card: Card) => lead.subagents.find((s) => s.id === card.agent);
   const mine = cards.filter((card) => card.lead === lead.id && (only === undefined || (subagentOf(card)?.id ?? lead.id) === only));
   return mine.map((card) => {
     const asker = subagentOf(card) ?? lead;
     const facts = { asker, under: asker === lead ? undefined : lead.name, project: house.project, phase: house.phase };
-    return <AnswerCard key={card.id} card={card} facts={facts} keys={pane && mine.length === 1} onLetter={() => onLetter(asker.id)} />;
+    return <AnswerCard key={card.id} card={card} facts={facts} keys={pane && mine.length === 1} steward={steward} onLetter={() => onLetter(asker.id)} />;
   });
 }
 
-function LeadItem({ lead, house, cards, onSelect }: { lead: Lead; house: House; cards: Card[]; onSelect: Select }) {
+function LeadItem({ lead, house, cards, steward, onSelect }: { lead: Lead; house: House; cards: Card[]; steward?: Lead; onSelect: Select }) {
   return (
     <li className="lead">
       <CharacterRow character={lead} avatar="🧑‍💻" onSelect={(id) => onSelect(lead.id, id)} />
@@ -164,7 +167,7 @@ function LeadItem({ lead, house, cards, onSelect }: { lead: Lead; house: House; 
           ))}
         </ul>
       )}
-      <Cards lead={lead} house={house} cards={cards} onLetter={(id) => onSelect(lead.id, id)} />
+      <Cards lead={lead} house={house} cards={cards} steward={steward} onLetter={(id) => onSelect(lead.id, id)} />
     </li>
   );
 }
@@ -219,12 +222,14 @@ export function AddProject() {
 function HouseCard({
   house,
   cards,
+  steward,
   onSelect,
   onNew,
   notice,
 }: {
   house: House;
   cards: Card[];
+  steward?: Lead;
   onSelect: Select;
   onNew: (cwd: string) => Promise<Failure | null>;
   notice?: string;
@@ -280,7 +285,7 @@ function HouseCard({
       </h2>
       <ul>
         {house.leads.map((lead) => (
-          <LeadItem key={lead.id} lead={lead} house={house} cards={cards} onSelect={onSelect} />
+          <LeadItem key={lead.id} lead={lead} house={house} cards={cards} steward={steward} onSelect={onSelect} />
         ))}
       </ul>
       {house.parcels && house.parcels.length > 0 && (
@@ -339,7 +344,7 @@ function endOf(code: number, lastLine: string): { failed: string } | "detached" 
 }
 
 /** Details of one character of `lead` in `house`: stage, need, its cards, its subagents (for a lead) and a button that focuses its terminal. */
-export function Panel({ character, lead, house, cards, onClose }: { character: Character; lead: Lead; house: House; cards: Card[]; onClose: () => void }) {
+export function Panel({ character, lead, house, cards, steward, onClose }: { character: Character; lead: Lead; house: House; cards: Card[]; steward?: Lead; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [terminal, setTerminal] = useState(false);
@@ -427,7 +432,7 @@ export function Panel({ character, lead, house, cards, onClose }: { character: C
             </p>
           )}
           {character.id === lead.id && <Overlaps overlaps={lead.overlaps} />}
-          <Cards lead={lead} house={house} cards={cards} only={character.id} pane onLetter={() => column.current?.querySelector(".letters")?.scrollIntoView({ block: "nearest" })} />
+          <Cards lead={lead} house={house} cards={cards} steward={steward} only={character.id} pane onLetter={() => column.current?.querySelector(".letters")?.scrollIntoView({ block: "nearest" })} />
           {character.id === lead.id && lead.subagents.length > 0 && (
             <ul aria-label="Subagents">
               {lead.subagents.map((sub) => (
@@ -611,13 +616,14 @@ export function App() {
             key={house.cwd}
             house={house}
             cards={town.cards}
+            steward={stewardOf(town)}
             onSelect={(leadId, id) => setSelection({ lead: leadId, id })}
             onNew={startSession}
             notice={missing.includes(house.cwd) ? "The new session didn't appear." : undefined}
           />
         ))}
       </main>
-      {lead && house && selected && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} house={house} cards={town?.cards ?? []} onClose={onClose} />}
+      {lead && house && selected && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} house={house} cards={town?.cards ?? []} steward={stewardOf(town)} onClose={onClose} />}
       {sheet && <KeySheet onClose={hideSheet} />}
       <Toasts
         toasts={toasts}

@@ -1,10 +1,14 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ElementType, type ReactNode } from "react";
-import type { Card, Character, House } from "../../server/types.ts";
+import { lazy, Suspense, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ElementType, type ReactNode } from "react";
+import type { Card, Character, House, Lead } from "../../server/types.ts";
 import { askOf, goalOf, isHeavy, planTop, SEVERITY, shownLabel, stakesOf, topicOf } from "./brief.ts";
 import { useArmed, useKey, useUndo } from "./keys.ts";
 import { waited } from "./needs.tsx";
+import { LazyBoundary } from "./LazyBoundary.tsx";
 import { funtownToken } from "./token.ts";
 import "./card.css";
+
+// The Queen's text is Markdown, so its renderer stays out of the first page load, as it does for the letters.
+const Word = lazy(() => import("./Letters.tsx").then((m) => ({ default: m.Word })));
 
 type Option = { label: string; description?: string };
 type Question = { question: string; header?: string; multiSelect?: boolean; options?: Option[] };
@@ -36,6 +40,90 @@ async function answer(card: Card, body: object): Promise<string | null> {
   } catch {
     return "Couldn't reach Funtown.";
   }
+}
+
+/** Asks the steward for her word on `card`; gives the reason it was refused, or null once the server took it. */
+async function askWord(card: Card): Promise<string | null> {
+  try {
+    const reply = await fetch("/word", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-funtown-token": funtownToken() },
+      body: JSON.stringify({ card: card.id }),
+    });
+    if (reply.status === 204) return null;
+    if (reply.status === 404) return "This request is already closed.";
+    return reply.status === 409 ? "The Queen's word is off, or this is her own card." : `Couldn't ask the Queen (${reply.status}).`;
+  } catch {
+    return "Couldn't reach Funtown.";
+  }
+}
+
+/** Where her word is while it is on its way, in the user's words: the title and the line under it. */
+const QUEEN_WAITING = {
+  asking: { title: "Asking the Queen...", line: undefined },
+  starting: { title: "The Queen is coming", line: "Starting her session. Your card is first." },
+  busy: { title: "The Queen is busy", line: "Your card is next." },
+  writing: { title: "The Queen is writing", line: "Usually under a minute." },
+} as const;
+
+/**
+ * The Queen's slot on a card: the button to ask her, or where her word is, or the word itself (fetched by its letter
+ * id, as written). `asking` is the undo window of an ask; `steward` is her listed session, which tells "starting" (none
+ * yet) from "busy" (a queued word waits behind her work). Her pick is never marked on the options.
+ */
+function QueenSlot({ word, asking, steward, error, posting, cap, onAsk }: {
+  word: NonNullable<Card["word"]>; asking: boolean; steward?: Lead; error: string | null; posting: boolean; cap: boolean; onAsk: () => void;
+}) {
+  const state = asking ? "asking" : word.state === "queued" ? (steward ? "busy" : "starting") : word.state;
+  const waiting = state in QUEEN_WAITING ? QUEEN_WAITING[state as keyof typeof QUEEN_WAITING] : undefined;
+  const ask = (text: string) => (
+    <button type="button" className="q-btn" disabled={posting} onClick={onAsk}>
+      {text}
+      {cap && <kbd aria-hidden="true">Q</kbd>}
+    </button>
+  );
+  return (
+    <section className={`queen ${state}`} aria-label="The Queen">
+      {waiting && (
+        <>
+          <p className="q-title" role="status">
+            <span className="q-spin" aria-hidden="true" />
+            {waiting.title}
+            {asking && <small> <kbd>Esc</kbd> to undo</small>}
+          </p>
+          {waiting.line && <p className="q-line">{waiting.line}</p>}
+        </>
+      )}
+      {state === "idle" && (
+        <>
+          {ask("Ask the Queen")}
+          <p className="q-line">Her second opinion, when you ask.</p>
+        </>
+      )}
+      {state === "ready" && (
+        <>
+          <p className="q-title">The Queen's word</p>
+          {steward && word.letter ? (
+            <LazyBoundary>
+              <Suspense fallback={null}>
+                <Word lead={steward.id} id={word.letter} />
+              </Suspense>
+            </LazyBoundary>
+          ) : (
+            <p className="q-line">Her session has gone, so her word can't be shown.</p>
+          )}
+        </>
+      )}
+      {state === "failed" && (
+        <>
+          <p className="q-title">No word from the Queen</p>
+          {word.reason && <p className="q-line">{word.reason}</p>}
+          {ask("Ask again")}
+        </>
+      )}
+      {error && <p role="alert" className="error">{error}</p>}
+    </section>
+  );
 }
 
 /** Date.now(), refreshed every 15 s, so a waiting time stays about right. */
@@ -114,9 +202,10 @@ function Tiles({ options, pick, chosen, multi, cut, numbered = false, onToggle }
  * One held ask as its decision brief (take C, "Weighed"): who asks and where, the weight meter, the ask in one line, the
  * goal it serves, a heavy card's stakes, the options as tiles with the agent's pick chosen, the act row, and the raw
  * input one button away. `onLetter` opens the asker's newest letter. No form: nothing sends but the act's own buttons,
- * and, with `keys` (the only card in an open pane), Enter while armed, 1 to 4 and D.
+ * and, with `keys` (the only card in an open pane), Enter while armed, 1 to 4, D and Q. `steward` is the Queen's listed
+ * session, when there is one.
  */
-export function AnswerCard({ card, facts, keys = false, onLetter }: { card: Card; facts: Facts; keys?: boolean; onLetter?: () => void }) {
+export function AnswerCard({ card, facts, keys = false, steward, onLetter }: { card: Card; facts: Facts; keys?: boolean; steward?: Lead; onLetter?: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -167,10 +256,23 @@ export function AnswerCard({ card, facts, keys = false, onLetter }: { card: Card
     : card.kind === "plan" ? { body: approve ? { decision: "allow" } : { decision: "deny", feedback: note.trim() || undefined }, words: approve ? "Approve" : "Keep planning" }
     : null;
   const [waiting, startUndo] = useUndo((what: NonNullable<typeof act>) => void send(what.body));
-  const open = !pending && !sent && waiting === null;
+  const [wordError, setWordError] = useState<string | null>(null);
+  const [posting, setPosting] = useState(false);
+  async function ask() {
+    setWordError(null);
+    setPosting(true);
+    setWordError(await askWord(card));
+    setPosting(false);
+  }
+  const [asking, startAsk] = useUndo<"ask">(() => void ask());
+  const open = !pending && !sent && waiting === null && asking === null;
   // Armed (ADR 0004): a low or medium question with a choice in every question, or a medium plan, alone in its pane.
   const armed = useArmed(keys && open && act !== null && !heavy && complete);
   useKey("Enter", () => act && startUndo(act), armed);
+  // Q takes the same second and undo window. It only asks her, so it needs no choice made and works on a heavy card too.
+  const askable = (card.word?.state === "idle" || card.word?.state === "failed") && !posting;
+  const askArmed = useArmed(keys && open && askable);
+  useKey("q", () => startAsk("ask"), askArmed);
   const numbered = keys && open && card.kind === "question" && questions.length === 1;
   const options = questions[0]?.options ?? [];
   const numberKey = (i: number) => () => toggle(0, options[i].label);
@@ -181,7 +283,18 @@ export function AnswerCard({ card, facts, keys = false, onLetter }: { card: Card
   useKey("d", () => setRaw((shown) => !shown), keys);
   const enterCap = armed && <kbd aria-hidden="true">Enter</kbd>;
   /** The act row, or in its place the undo window while a send waits, or the word that it went. */
-  const actOr = (row: ReactNode) =>
+  const slot = card.word && (
+    <QueenSlot word={card.word} asking={asking !== null} steward={steward} error={wordError} posting={posting} cap={askArmed} onAsk={() => void ask()} />
+  );
+  // The Queen's slot goes above the act row on a heavy card (offered before the act) and under it on a light one.
+  const actOr = (row: ReactNode) => (
+    <>
+      {heavy && slot}
+      {actContent(row)}
+      {!heavy && slot}
+    </>
+  );
+  const actContent = (row: ReactNode) =>
     waiting ? (
       <div className="sending" role="status">
         Sending {waiting.words}... <small><kbd>Esc</kbd> to undo</small>

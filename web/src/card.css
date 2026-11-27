@@ -89,3 +89,23 @@
 .answer-card .tail button { padding: 0; border: 0; background: none; color: var(--ink); font: inherit; font-weight: 700; cursor: pointer; }
 .answer-card .raw { margin: 0.45rem 0 0; padding: 0.55rem 0.65rem; max-height: 12rem; overflow: auto; border-radius: 0.5rem; background: #2b2230; color: #efe7f4;
   font: 0.75rem/1.4 "Recursive Variable", monospace; font-variation-settings: "MONO" 1, "CASL" 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* The Queen's slot: her colour, a left rule and a pale ground when it holds more than the button. */
+.answer-card .queen { --queen: #6b4a8a; margin-top: 0.6rem; color: var(--queen); font-size: 0.84rem; }
+.answer-card .queen:not(.idle) { padding: 0.5rem 0.65rem; border-left: 3px solid var(--queen); background: #f7f2fb; border-radius: 0 0.5rem 0.5rem 0; }
+.answer-card .queen .q-title { font-weight: 760; }
+.answer-card .queen .q-title small { margin-left: 0.4rem; font-weight: 500; font-size: 0.78rem; }
+.answer-card .queen .q-line { color: #6f6180; font-size: 0.78rem; }
+.answer-card .queen.idle { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.15rem 0.5rem; }
+.answer-card .queen .q-btn { padding: 0.1rem 0.55rem; border: 1.5px solid var(--queen); border-radius: 0.5rem; background: none; color: var(--queen); font: inherit; font-weight: 700; cursor: pointer; }
+.answer-card .queen .q-btn kbd { margin-left: 0.45rem; }
+.answer-card .queen .q-btn:disabled { opacity: 0.5; cursor: default; }
+.answer-card .queen.failed .q-btn { margin-top: 0.25rem; }
+/* A heavy card offers her before the act, so her button is the louder one there. */
+.answer-card:is([data-sev="high"], [data-sev="unstated"]) .queen.idle .q-btn { background: var(--queen); color: #fff; }
+.answer-card .queen .q-spin { display: inline-block; width: 0.7em; height: 0.7em; margin-right: 0.4em; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: q-turn 0.9s linear infinite; }
+@keyframes q-turn { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .answer-card .queen .q-spin { animation: none; } }
+.answer-card .queen .q-word { margin-top: 0.25rem; color: var(--ink); overflow-wrap: anywhere; }
+/* Her labelled parts keep their own lines. */
+.answer-card .queen .q-word p { white-space: pre-line; }
+.answer-card .queen .error { margin-top: 0.3rem; color: #a02c2c; font-size: 0.8rem; }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Character, House, Parcel, Town } from "../../../server/types.ts";
-import { AddProject, askReview, Panel, post, removeProject, useSelection, useTown } from "../App.tsx";
+import { AddProject, askReview, Panel, post, removeProject, stewardOf, useSelection, useTown } from "../App.tsx";
 import { KeySheet, useKeySheet } from "../KeySheet.tsx";
 import { useKey, useLayer, useWalk } from "../keys.ts";
 import { MorningButton } from "../Morning.tsx";
@@ -316,7 +316,7 @@ export function TownPage() {
       {sheet && <KeySheet onClose={hideSheet} />}
       {settings && <Settings town={town} muted={muted} onMute={toggleMute} open={openSession} onClose={closeSettings} />}
       {asking && <AskPanel key={`${asking.cwd}/${asking.parcel.number}`} target={asking} onClose={closeAsking} />}
-      {shown && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} house={house} cards={town?.cards ?? []} onClose={onClose} />}
+      {shown && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} house={house} cards={town?.cards ?? []} steward={stewardOf(town)} onClose={onClose} />}
       <Toasts
         toasts={toasts}
         onOpen={(w) => {
