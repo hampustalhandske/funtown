@@ -2,6 +2,7 @@
 
 One line per change, newest first.
 
+- 2026-11-27 18:30 · CLAUDE.md now says where each ask is held: a question or plan before the terminal shows it, a permission while its dialog shows, so only a permission can be answered outside Funtown while its card waits.
 - 2026-11-27 16:25 · The Desk: every ask comes as a brief (who asks and where, how heavy it is and why, the ask, the goal it serves, the agent's pick chosen), the Queen gives her word on a card when asked, the keyboard answers (Space walks what needs you, Enter sends after a second with 1.5 s to undo, 1 to 4, D, Q, M, L, R, the arrows and Enter in the town, ? for the key sheet), and a resting lead stands by its door.
 - 2026-11-21 09:40 · Dependabot bundles its weekly PRs: one for all the CI's actions and one for every npm minor and patch bump; a major npm bump still comes alone, since it can break the build.
 - 2026-11-21 09:10 · A session's terminal feels like the real one: it loads with the page and attaches early, opens in a big sheet (about 103 x 43 at 1280 x 800) in Menlo 13, Option types, Cmd+click opens web links, a slow resume says "Waking the session...", a detach folds the sheet back, and every pty Funtown starts tells Claude the same terminal.

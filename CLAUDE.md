@@ -37,6 +37,7 @@ Contracts (source of truth: this list)
   as written, never parsed; the newest only per lead, 65,536 chars, ids unique across restarts; `GET /letters?lead=` (`&id=` for a steward's review or word, from the journal);
   reply: bracketed paste, `\r` over `/term`. Journal: JSONL, 7 days (steward kept), `/morning?since=`.
 - Holds: `/hold` 200 with the hook output, 204 when released (no page or listing for `unlistedMs`);
+  a question or plan is held in PreToolUse, before the terminal shows it, and a permission in PermissionRequest, while its dialog shows;
   `/answer { card, decision, answers?, feedback? }`; log `by` funtown, terminal
   (typed in Funtown's own terminal for that lead), elsewhere, dropped or unshown (an ask from a listed lead that was never carded:
   a terminal lead's question or plan, or no page open), with the card's kind and severity.
