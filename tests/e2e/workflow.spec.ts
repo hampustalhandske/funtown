@@ -59,6 +59,16 @@ test("the_phase_shows_on_the_project_heading_with_its_note", async ({ page }) =>
   await expect(house(page)).toContainText("tests first");
 });
 
+test("the_goal_and_spec_show_beside_the_phase_and_note_as_text", async ({ page }) => {
+  const goal = "Every ask comes with its brief";
+  const spec = "desk-brief";
+  await stubStream(page, { ...town, houses: [{ ...town.houses[0], phase: { phase: "build", note: "tests first", goal, spec } }, town.houses[1]] });
+  await page.reload();
+  await expect(house(page).getByRole("heading")).toContainText("tests first");
+  await expect(house(page).getByRole("heading")).toContainText(goal);
+  await expect(house(page).getByRole("heading")).toContainText(spec);
+});
+
 test("a_subagents_role_and_tags_and_a_leads_tags_show_on_their_rows_and_the_role_in_the_panel", async ({ page }) => {
   const sub = page.locator('ul[aria-label="alpha subagents"] .character').filter({ hasText: "helper-1" });
   await expect(sub).toContainText("implementer");

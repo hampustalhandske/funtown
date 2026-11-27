@@ -269,6 +269,8 @@ function HouseCard({
         🏠 {house.project}
         {house.phase && <span className="badge phase">{house.phase.phase}</span>}
         {house.phase?.note && <span className="phase-note">{house.phase.note}</span>}
+        {house.phase?.goal && <span className="phase-line" title={house.phase.goal}>goal: {house.phase.goal}</span>}
+        {house.phase?.spec && <span className="phase-line" title={house.phase.spec}>spec: {house.phase.spec}</span>}
       </h2>
       <ul>
         {house.leads.map((lead) => (

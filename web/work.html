@@ -92,6 +92,9 @@
       .badge { margin-left: 0.4rem; padding: 0 0.4rem; border-radius: 0.6rem; font-size: 0.75rem; background: #e6e6ef; color: #333; }
       .badge.phase { background: #dbe7ff; }
       .phase-note { margin-left: 0.5rem; font-size: 0.8rem; font-weight: normal; color: #666; }
+      /* The goal and spec lines are cut with an ellipsis; the full text is in the title. */
+      .phase-line { display: inline-block; max-width: 100%; margin-left: 0.5rem; font-size: 0.8rem; font-weight: normal; color: #666;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
       .overlap { display: block; font-size: 0.8rem; color: #8a5a00; }
       .parcels { list-style: none; padding: 0; margin: 0.5rem 0; font-size: 0.85rem; }
       .parcel .review { margin-left: 0.5rem; font-size: 0.75rem; }

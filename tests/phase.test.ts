@@ -95,6 +95,46 @@ describe("the phase file's steps", () => {
   });
 });
 
+describe("the phase file's goal and spec", () => {
+  /** Writes a phase file with `fields` beside the phase name `phase` and returns the house's phase once the poll shows it. */
+  async function phaseShown(s: Awaited<ReturnType<typeof withProject>>, fields: Record<string, unknown>, phase: string) {
+    s.phaseFile(JSON.stringify({ phase, ...fields }));
+    return houseAt(await townWhere(s.url, (t) => houseAt(t, s.cwd)?.phase?.phase === phase), s.cwd)!.phase!;
+  }
+
+  it("goal_and_spec_are_read_onto_the_house_phase_as_written", async () => {
+    const s = await withProject();
+    const shown = await phaseShown(s, { goal: "Ship the Desk", spec: "desk-brief" }, "g1");
+    expect(shown).toEqual({ phase: "g1", goal: "Ship the Desk", spec: "desk-brief" });
+  });
+
+  it.each([
+    ["a number", 3],
+    ["a list", ["Ship the Desk"]],
+    ["null", null],
+  ])("a_goal_that_is_%s_is_dropped_and_the_rest_of_the_file_stays", async (_what, goal) => {
+    const s = await withProject();
+    expect(await phaseShown(s, { goal, spec: "desk-brief", note: "kept" }, "g2")).toEqual({ phase: "g2", note: "kept", spec: "desk-brief" });
+  });
+
+  it("a_spec_that_is_not_a_string_is_dropped_and_the_rest_of_the_file_stays", async () => {
+    const s = await withProject();
+    expect(await phaseShown(s, { goal: "Ship the Desk", spec: { name: "desk-brief" }, steps: ["a", "b"] }, "g3")).toEqual({
+      phase: "g3",
+      goal: "Ship the Desk",
+      steps: ["a", "b"],
+    });
+  });
+
+  it("unknown_fields_beside_goal_and_spec_stay_ignored", async () => {
+    const s = await withProject();
+    expect(await phaseShown(s, { goal: "Ship", dates: { start: "2026-01-01" }, practice: "daily", owner: "me" }, "g4")).toEqual({
+      phase: "g4",
+      goal: "Ship",
+    });
+  });
+});
+
 describe("roles and tags", () => {
   it("a_subagents_role_is_its_subagentstart_agent_type_and_a_lead_or_an_untyped_subagent_has_none", async () => {
     const s = await withProject();

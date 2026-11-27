@@ -36,8 +36,8 @@ Contracts (source of truth: this list)
 - Logs: `<ISO> <hook|hold|server> <step>: <message>`; a dead run-file pid: `server unclean-exit`.
 - Terminal: `/term?lead=` runs `claude attach` in a pty per socket; closing the socket kills it, and the client's exit
   closes the socket with code 4000 + its exit code (4000 + 128 + the signal when killed).
-- Workflow: `<cwd>/.claude/phase.json` `{ phase, note?, steps?: string[], tags?: { roleOrName: [] } }` (`steps` = the
-  workflow's ordered phases, at most 24, the classroom whiteboard marks done/now/next/later); role = a
+- Workflow: `<cwd>/.claude/phase.json` `{ phase, note?, steps?: string[], tags?: { roleOrName: [] }, goal?, spec? }` (`steps` = the
+  workflow's ordered phases, at most 24, the classroom whiteboard marks done/now/next/later; `goal` = one line on where the project is heading, `spec` = the spec or feature now; unknown fields are ignored, fields are only added, `dates` and `practice` are kept free; a `goal` or `spec` that isn't a string is dropped; the plain list's row shows them as text); role = a
   subagent's `agent_type`; parcels from `gh pr list --author @me` every 60 s; overlaps: files two runs edit. One
   steward in `~/.funtown/steward`: one request per asked PR head, only after `POST /review` (`server/steward.md`; overridden by
   `~/.funtown/steward.md`, empty = off), pasted only with no card and not working; a reply counts as a review only with its three labelled parts; the user's own prompt to it pauses requests until the next ask; `Parcel.review.state` is idle until asked.

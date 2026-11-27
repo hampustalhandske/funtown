@@ -376,7 +376,14 @@ export class TownState {
       if (!found) {
         const phase = this.phases.get(cwd);
         found = { project: basename(cwd) || cwd, cwd, leads: [] };
-        if (phase) found.phase = { phase: phase.phase, ...(phase.note !== undefined ? { note: phase.note } : {}), ...(phase.steps ? { steps: phase.steps } : {}) };
+        if (phase)
+          found.phase = {
+            phase: phase.phase,
+            ...(phase.note !== undefined ? { note: phase.note } : {}),
+            ...(phase.steps ? { steps: phase.steps } : {}),
+            ...(phase.goal !== undefined ? { goal: phase.goal } : {}),
+            ...(phase.spec !== undefined ? { spec: phase.spec } : {}),
+          };
         if (this.seen.has(cwd)) found.seen = true;
         houses.set(cwd, found);
       }
