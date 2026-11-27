@@ -38,9 +38,12 @@ export const questionCard = (sid: string, cwd: string) => ({
   id: "c2", lead: sid, agent: null, kind: "question", tool: "AskUserQuestion", cwd, at: 1,
   input: {
     questions: ["Which database?", "Which cache?", "Which queue?"].map((question) => ({
-      question, header: "Q", multiSelect: false, options: ["Postgres", "SQLite", "Redis"].map((label) => ({ label, description: "" })),
+      question, header: "medium: storage", multiSelect: false,
+      options: ["Postgres", "SQLite", "Redis"].map((label) => ({ label, description: `${label} is where this goes, and it decides how the data is kept.` })),
     })),
   },
+  severity: { level: "medium", reason: "the agent's word: medium: storage", source: "agent" },
+  questions: [0, 1, 2].map(() => ({ level: "medium", pick: 0 })),
 });
 
 /** Runs a page-authenticated POST (the page's token and Origin) against the e2e server. */

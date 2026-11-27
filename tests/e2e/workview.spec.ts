@@ -29,7 +29,10 @@ test.describe("with a stubbed stream", () => {
       subagents: [{ id: "x1", name: "Explore-1", stage: "working", activity: "Read: secret.ts", step: "Read: secret.ts" }],
     });
     const asking = lead({ id: "p1", name: "asker", stage: "needs_you", needs: "permission", since: NOW });
-    const card = { id: "c1", lead: "p1", agent: null, kind: "permission", tool: "Bash", input: { command }, cwd: "/work/demo-app", at: NOW };
+    const card = {
+      id: "c1", lead: "p1", agent: null, kind: "permission", tool: "Bash", input: { command }, cwd: "/work/demo-app", at: NOW,
+      severity: { level: "high", reason: "Funtown's rule: rm with a recursive flag can't be walked back", source: "rule" },
+    };
     await stubStream(page, { claude, houses: [house([working, asking])], cards: [card] });
     await page.goto("/work.html");
 

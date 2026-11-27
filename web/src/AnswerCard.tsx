@@ -1,16 +1,23 @@
-import { useState } from "react";
-import type { Card } from "../../server/types.ts";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ElementType, type ReactNode } from "react";
+import type { Card, Character, House } from "../../server/types.ts";
+import { askOf, goalOf, isHeavy, planTop, SEVERITY, shownLabel, stakesOf, topicOf } from "./brief.ts";
+import { waited } from "./needs.tsx";
 import { funtownToken } from "./token.ts";
+import "./card.css";
 
-type Question = { question: string; header?: string; multiSelect?: boolean; options?: { label: string; description?: string }[] };
+type Option = { label: string; description?: string };
+type Question = { question: string; header?: string; multiSelect?: boolean; options?: Option[] };
 
-/** The exact thing a permission asks to run or touch: a Bash command, a file path, else the raw input. */
-function subject(card: Card): string {
-  const { command, file_path: path } = card.input;
-  if (typeof command === "string") return command;
-  if (typeof path === "string") return path;
-  return JSON.stringify(card.input, null, 2);
-}
+/** Under the act of a card Enter never answers: a heavy card or a permission. */
+const CLICK_ONLY = "Click to answer";
+/** A plan's two answers, the first being the agent's pick (it proposed the plan). */
+const PLAN_OPTIONS: Option[] = [
+  { label: "Approve", description: "The agent leaves plan mode and starts editing." },
+  { label: "Keep planning", description: "Your note goes back; nothing is edited." },
+];
+
+/** The facts Funtown adds to a card: who asks (the lead, or its subagent and the lead it works under), the project and its phase file. */
+export type Facts = { asker: Character; under?: string; project: string; phase?: House["phase"] };
 
 /** Sends one answer for `card`; gives an error text, or null once the server took it. */
 async function answer(card: Card, body: object): Promise<string | null> {
@@ -27,53 +34,93 @@ async function answer(card: Card, body: object): Promise<string | null> {
   }
 }
 
-function QuestionForm({ questions, onSend, disabled }: { questions: Question[]; onSend: (answers: Record<string, string>) => void; disabled: boolean }) {
-  const [picked, setPicked] = useState<Record<string, string[]>>({});
-  const [typed, setTyped] = useState<Record<string, string>>({});
-  const valueOf = (q: Question) => typed[q.question]?.trim() || (picked[q.question] ?? []).join(", ");
-  const complete = questions.every((q) => valueOf(q) !== "");
-  function toggle(q: Question, label: string) {
-    const now = picked[q.question] ?? [];
-    const next = q.multiSelect ? (now.includes(label) ? now.filter((l) => l !== label) : [...now, label]) : [label];
-    setPicked({ ...picked, [q.question]: next });
-  }
+/** Date.now(), refreshed every 15 s, so a waiting time stays about right. */
+function useNow(): number {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
+}
+
+/** `children` in an `as` element cut at `lines` lines, with a "more" after it that opens the rest in place; uncut without `lines`. */
+function Clamp({ as: El, className, lines, id, children }: { as: ElementType; className: string; lines?: number; id?: string; children: ReactNode }) {
+  const ref = useRef<HTMLElement>(null);
+  const [over, setOver] = useState(false);
+  const [open, setOpen] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !lines) return;
+    const measure = () => setOver(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    const watch = new ResizeObserver(measure);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [lines]);
+  if (!lines) return <El className={className} id={id}>{children}</El>;
   return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        onSend(Object.fromEntries(questions.map((q) => [q.question, valueOf(q)])));
-      }}>
-      {questions.map((q) => (
-        <fieldset key={q.question}>
-          <legend>{q.question}</legend>
-          {(q.options ?? []).map((option) => (
-            <label key={option.label} className="option">
-              <input
-                type={q.multiSelect ? "checkbox" : "radio"}
-                name={q.question}
-                checked={(picked[q.question] ?? []).includes(option.label)}
-                onChange={() => toggle(q, option.label)}
-              />
-              {option.label}
-              {option.description && <span className="hint"> {option.description}</span>}
-            </label>
-          ))}
-          <label className="option">
-            Other
-            <input type="text" aria-label={`Other: ${q.question}`} value={typed[q.question] ?? ""} onChange={(e) => setTyped({ ...typed, [q.question]: e.target.value })} />
-          </label>
-        </fieldset>
-      ))}
-      <button type="submit" disabled={disabled || !complete}>Send</button>
-    </form>
+    <>
+      <El ref={ref} id={id} className={`${className} clamp${open ? " open" : ""}`} style={{ "--lines": lines } as CSSProperties}>
+        {children}
+      </El>
+      {(over || open) && (
+        // Inside a tile's label, so the press must not also choose the option.
+        <button type="button" className="more" aria-expanded={open} onClick={(e) => { e.preventDefault(); setOpen(!open); }}>
+          {open ? "less" : "more"}
+        </button>
+      )}
+    </>
   );
 }
 
-/** One held request: what it asks, the folder, and the buttons that answer it. `who` names the asking subagent. */
-export function AnswerCard({ card, who }: { card: Card; who?: string }) {
+/** One question's options as tiles: label, then where it leads (cut at `cut` lines when given); the agent's pick wears a ribbon. */
+function Tiles({ options, pick, chosen, multi, cut, onToggle }: {
+  options: Option[]; pick: number | null; chosen: string[]; multi: boolean; cut?: number; onToggle: (label: string) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="tiles" style={{ "--n": options.length } as CSSProperties}>
+      {options.map((option, i) => (
+        <label key={option.label} className={`tile${chosen.includes(option.label) ? " on" : ""}`}>
+          <input
+            type={multi ? "checkbox" : "radio"}
+            name={id}
+            aria-label={shownLabel(option.label)}
+            aria-describedby={option.description ? `${id}-${i}` : undefined}
+            checked={chosen.includes(option.label)}
+            onChange={() => onToggle(option.label)}
+          />
+          {pick === i && <span className="ribbon">Agent's pick</span>}
+          <span className="lab">{shownLabel(option.label)}</span>
+          {option.description && <Clamp as="span" className="desc" id={`${id}-${i}`} lines={cut}>{option.description}</Clamp>}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * One held ask as its decision brief (take C, "Weighed"): who asks and where, the weight meter, the ask in one line, the
+ * goal it serves, a heavy card's stakes, the options as tiles with the agent's pick chosen, the act row, and the raw
+ * input one button away. `onLetter` opens the asker's newest letter. No form: nothing sends but the act's own buttons.
+ */
+export function AnswerCard({ card, facts, onLetter }: { card: Card; facts: Facts; onLetter?: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [feedback, setFeedback] = useState("");
+  const [raw, setRaw] = useState(false);
+  const [approve, setApprove] = useState(true);
+  const [note, setNote] = useState("");
+  const questions = Array.isArray(card.input.questions) ? (card.input.questions as Question[]) : [];
+  const [chosen, setChosen] = useState<string[][]>(() =>
+    questions.map((q, i) => {
+      const pick = card.questions?.[i]?.pick;
+      const option = pick == null ? undefined : q.options?.[pick];
+      return option ? [option.label] : [];
+    }),
+  );
+  const [typed, setTyped] = useState<string[]>(() => questions.map(() => ""));
+  const now = useNow();
   async function send(body: object) {
     setError(null);
     setPending(true);
@@ -82,33 +129,114 @@ export function AnswerCard({ card, who }: { card: Card; who?: string }) {
     setError(failed);
     if (failed) setPending(false);
   }
-  const plan = typeof card.input.plan === "string" ? card.input.plan : JSON.stringify(card.input, null, 2);
-  const questions = Array.isArray(card.input.questions) ? (card.input.questions as Question[]) : [];
+  const { level, reason } = card.severity;
+  const sev = SEVERITY[level];
+  const heavy = isHeavy(level);
+  // A heavy card shows everything uncut; a light one cuts long text at 3 lines.
+  const cut = heavy ? undefined : 3;
+  const goal = goalOf(facts.phase);
+  const { asker, under, project } = facts;
+  const plan = typeof card.input.plan === "string" ? card.input.plan : "";
+  const top = planTop(plan);
+  const command = card.kind === "permission" && typeof card.input.command === "string" ? card.input.command : undefined;
+
+  const valueOf = (i: number) => typed[i].trim() || chosen[i].join(", ");
+  const complete = questions.every((_, i) => valueOf(i) !== "");
+  function toggle(i: number, label: string) {
+    const was = chosen[i];
+    const next = questions[i].multiSelect ? (was.includes(label) ? was.filter((l) => l !== label) : [...was, label]) : [label];
+    setChosen(chosen.map((c, j) => (j === i ? next : c)));
+  }
+  const chosenWords = questions.map((_, i) => typed[i].trim() || chosen[i].map(shownLabel).join(", ")).join("; ");
+
   return (
-    <div className={`answer-card ${card.kind}`} role="group" aria-label={`${card.kind} request`}>
-      <p className="who">{who ?? "Claude"} {card.kind === "permission" ? `asks to use ${card.tool}` : card.kind === "question" ? "asks a question" : "asks you to approve a plan"}</p>
-      {card.kind === "permission" && <pre className="subject">{subject(card)}</pre>}
-      <p className="folder">{card.cwd}</p>
-      {card.kind === "permission" && (
-        <div className="actions">
-          <button type="button" disabled={pending} onClick={() => send({ decision: "allow" })}>Allow</button>
-          <button type="button" disabled={pending} onClick={() => send({ decision: "deny" })}>Deny</button>
+    <div className={`answer-card ${card.kind}`} data-sev={level} style={{ "--sev": sev.colour } as CSSProperties} role="group" aria-label={`${card.kind} request`}>
+      <p className="who">
+        <b>{asker.name}</b>
+        {asker.role && ` (${asker.role})`} · {project}
+        {under && ` · under ${under}`} · waiting {waited(card.at, now)}
+      </p>
+      <div className="weigh">
+        <span className="marks" aria-hidden="true">
+          {[1, 2, 3].map((n) => <i key={n} className={n <= sev.marks ? "on" : undefined} />)}
+        </span>
+        <b>{sev.word}</b> <span>{reason}</span>
+      </div>
+      {/* A header with a level word is already in the reason above; one without is shown as the topic. */}
+      {questions.length === 1 && topicOf(questions[0].header) === questions[0].header && <p className="topic">{questions[0].header}</p>}
+      <Clamp as="h3" className="ask" lines={cut}>{askOf(card, questions)}</Clamp>
+      {goal && (
+        <Clamp as="p" className="goal" lines={2}>
+          {goal.goal && <>For <b>{goal.goal}</b> · </>}
+          {goal.where}
+        </Clamp>
+      )}
+      {goal?.spec && <p className="goal">Spec: {goal.spec}</p>}
+      {heavy ? (
+        <div className="stakes">
+          <p className="why">{stakesOf(card.severity)}</p>
+          {command !== undefined && <pre className="cmd">{command}</pre>}
+          {asker.step && <p>Last step: {asker.step}</p>}
         </div>
+      ) : (
+        command !== undefined && <pre className="cmd">{command}</pre>
       )}
       {card.kind === "question" && (
-        <QuestionForm questions={questions} disabled={pending} onSend={(answers) => send({ decision: "allow", answers })} />
-      )}
-      {card.kind === "plan" && (
         <>
-          <pre className="plan">{plan}</pre>
-          <textarea aria-label="Feedback" value={feedback} onChange={(e) => setFeedback(e.target.value)} />
-          <div className="actions">
-            <button type="button" disabled={pending} onClick={() => send({ decision: "allow" })}>Approve</button>
-            <button type="button" disabled={pending} onClick={() => send({ decision: "deny", feedback: feedback.trim() || undefined })}>Keep planning</button>
+          {questions.map((q, i) => (
+            <fieldset key={q.question}>
+              {questions.length > 1 && (
+                <legend>
+                  {q.question} <small>· {[topicOf(q.header), SEVERITY[card.questions?.[i]?.level ?? "unstated"].word].filter(Boolean).join(" · ")}</small>
+                </legend>
+              )}
+              <Tiles options={q.options ?? []} pick={card.questions?.[i]?.pick ?? null} chosen={chosen[i]} multi={!!q.multiSelect} cut={cut} onToggle={(label) => toggle(i, label)} />
+              <label className="tile other">
+                Other
+                <input type="text" aria-label={`Other: ${q.question}`} placeholder="your own answer" value={typed[i]} onChange={(e) => setTyped(typed.map((t, j) => (j === i ? e.target.value : t)))} />
+              </label>
+            </fieldset>
+          ))}
+          <div className="act">
+            <button type="button" className="go" disabled={pending || !complete} onClick={() => send({ decision: "allow", answers: Object.fromEntries(questions.map((q, i) => [q.question, valueOf(i)])) })}>
+              {complete ? `${heavy ? "Answer" : "Send"}: ${chosenWords}` : "Send"}
+            </button>
+            {!complete ? <p className="hint">Choose an option to send</p> : heavy && <p className="hint">{CLICK_ONLY}</p>}
           </div>
         </>
       )}
+      {card.kind === "plan" && (
+        <>
+          {top.length > 0 ? (
+            <div className="plantop">{top.map((line, i) => <p key={i}>{line}</p>)}</div>
+          ) : (
+            <Clamp as="p" className="plantop" lines={cut}>{plan}</Clamp>
+          )}
+          <Tiles options={PLAN_OPTIONS} pick={0} chosen={[approve ? "Approve" : "Keep planning"]} multi={false} onToggle={(label) => setApprove(label === "Approve")} />
+          {!approve && <textarea className="note" aria-label="Note to the agent" placeholder="Your note to the agent (optional)" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />}
+          <div className="act">
+            <button type="button" className="go" disabled={pending} onClick={() => send(approve ? { decision: "allow" } : { decision: "deny", feedback: note.trim() || undefined })}>
+              {approve ? "Approve" : "Keep planning"}
+            </button>
+            {heavy && <p className="hint">{CLICK_ONLY}</p>}
+          </div>
+        </>
+      )}
+      {card.kind === "permission" && (
+        <div className="act">
+          <button type="button" className="go ghost" disabled={pending} onClick={() => send({ decision: "allow" })}>{heavy ? "Allow once" : "Allow"}</button>
+          <button type="button" className="go ghost" disabled={pending} onClick={() => send({ decision: "deny" })}>Deny</button>
+          <p className="hint">{CLICK_ONLY}</p>
+          <p className="note">Allow runs it once; Deny tells the agent no.</p>
+        </div>
+      )}
       {error && <p role="alert" className="error">{error}</p>}
+      <div className="tail">
+        <button type="button" aria-expanded={raw} onClick={() => setRaw(!raw)}>{raw ? "Hide raw detail" : "Raw detail"}</button>
+        {!heavy && asker.step && <span>Last step: {asker.step}</span>}
+        {asker.letter !== undefined && onLetter && <button type="button" onClick={onLetter}>Newest letter</button>}
+      </div>
+      {raw && <pre className="raw">{JSON.stringify(card.input, null, 2)}</pre>}
     </div>
   );
 }

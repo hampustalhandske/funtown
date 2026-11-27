@@ -100,9 +100,12 @@ test("space_opens_the_first_in_the_list_then_the_next_and_wraps_and_does_nothing
 test("space_in_a_card_text_box_opens_nothing_and_is_text_and_a_new_card_or_waiting_character_leaves_focus_and_text_alone", async ({ page }) => {
   const plan = {
     id: "p1", lead: "b1", agent: null, kind: "plan", tool: "ExitPlanMode", input: { plan: "1. Do it" }, cwd: "/work/alpha", at: NOW - 1000,
+    severity: { level: "medium", reason: "Funtown's rule: every plan is medium", source: "kind" },
   };
   const bg = waiting("b1", "bg-1", NOW - 1000, { kind: "background", shortId: "b1b1b1b1", needs: "plan", tty: null, termProgram: null });
   const stream = await open(page, town([house("alpha", [bg])], [plan]));
+  // Keep planning opens the plan card's note box.
+  await page.locator('section[aria-label="alpha"]').getByRole("radio", { name: "Keep planning" }).check();
   const box = page.locator('section[aria-label="alpha"]').getByRole("textbox").first();
   await box.click();
   await page.keyboard.type("ab");

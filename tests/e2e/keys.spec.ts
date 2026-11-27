@@ -22,7 +22,10 @@ const three = () =>
 const reply = () =>
   town(
     [house("alpha", [waiting("b1", "bg-1", NOW - 1000, { kind: "background", shortId: "b1b1b1b1", needs: "plan", tty: null, termProgram: null })])],
-    [{ id: "p1", lead: "b1", agent: null, kind: "plan", tool: "ExitPlanMode", input: { plan: "1. Do it" }, cwd: "/work/alpha", at: NOW - 1000 }],
+    [{
+      id: "p1", lead: "b1", agent: null, kind: "plan", tool: "ExitPlanMode", input: { plan: "1. Do it" }, cwd: "/work/alpha", at: NOW - 1000,
+      severity: { level: "medium", reason: "Funtown's rule: every plan is medium", source: "kind" },
+    }],
   );
 
 async function open(page: Page, initial: unknown, path = "/work.html") {

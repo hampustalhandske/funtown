@@ -81,9 +81,10 @@
       kbd { display: inline-block; min-width: 1.6em; padding: 0 0.4rem; border: 2px solid var(--ink); border-bottom-width: 3px; border-radius: 0.4rem;
         background: var(--stone); font: 600 0.85rem/1.5 ui-monospace, Menlo, monospace; text-align: center; white-space: nowrap; }
       button { font: inherit; color: inherit; }
-      :is(.pane, .panel, .morning, .letters) button:not(.icon) { background: var(--stone); border: 2px solid var(--ink); border-radius: 0.6rem;
+      /* A card styles its own buttons (card.css). */
+      :is(.pane, .panel, .morning, .letters) button:not(.icon, .answer-card *) { background: var(--stone); border: 2px solid var(--ink); border-radius: 0.6rem;
         box-shadow: 0 2px 0 var(--ink); padding: 0.2rem 0.7rem; cursor: pointer; }
-      :is(.pane, .panel, .morning) button:not(.icon):active { transform: translateY(1px); box-shadow: 0 1px 0 var(--ink); }
+      :is(.pane, .panel, .morning) button:not(.icon, .answer-card *):active { transform: translateY(1px); box-shadow: 0 1px 0 var(--ink); }
       :is(.pane, .panel, .morning) button[aria-pressed="true"] { background: #e6dccb; }
       button:disabled { opacity: 0.5; cursor: default; }
       input, textarea { font: inherit; color: inherit; border: 2px solid var(--ink); border-radius: 0.5rem; padding: 0.3rem 0.5rem; background: #fff; }
@@ -118,12 +119,6 @@
         .sheet .column { flex: 0 0 11rem; }
         .panel:not(.sheet) .screen[inert] { top: calc(5rem + 2.5px + 0.5rem + 11rem + 0.5rem); bottom: calc(1rem + 2.5px + 0.5rem); width: calc(100% - 1rem - 5px - 1rem); }
       }
-      .answer-card { margin-top: 0.6rem; padding: 0.5rem 0.7rem; border: 2px solid var(--ribbon); border-radius: 0.7rem; background: #fff3ee; }
-      .answer-card pre { margin: 0.25rem 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 14rem; overflow: auto; }
-      .answer-card .folder { margin: 0; font-size: 0.85rem; opacity: 0.75; }
-      .answer-card .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
-      .answer-card .option { display: block; }
-      .answer-card textarea { width: 100%; box-sizing: border-box; }
       .letters { margin-top: 0.5rem; max-height: 22rem; overflow: auto; }
       .letter { border-top: 2px dashed #c8b89e; padding: 0.3rem 0; overflow-wrap: anywhere; }
       .letter h3 { margin: 0; font-size: 0.8rem; opacity: 0.7; }

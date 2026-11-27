@@ -447,6 +447,26 @@ test.describe("the terminal sheet at 1280 x 800", () => {
     expect(after.count).toBeGreaterThan(before.count);
   });
 
+  test("a_card_sits_in_the_19rem_column_and_its_act_row_stays_on_screen_while_the_column_scrolls", async ({ page }) => {
+    // Catches a card that widens the column (costing the terminal columns) or pushes its answer below the window.
+    fake.list([bg()]);
+    await page.goto("/work.html");
+    // the server lists the session (so it can attach) before the page gets the stubbed card
+    await expect(row(page, "beta")).toBeVisible();
+    await stubStream(page, betaState(project, cwd, sid, [questionCard(sid, cwd)]));
+    await page.reload();
+    await row(page, "beta").click({ position: { x: 5, y: 5 } });
+    const panel = page.getByRole("dialog");
+    await showTerminal(panel);
+    await expect(screen(page)).toContainText("attached abcd1234");
+    const column = (await panel.locator(".column").boundingBox())!;
+    expect(column.width).toBe(19 * 16);
+    const card = (await panel.getByRole("group", { name: "question request" }).boundingBox())!;
+    expect(card.x + card.width).toBeLessThanOrEqual(column.x + column.width);
+    expect(await panel.locator(".lines").evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
+    await expect(panel.getByRole("button", { name: /^Send: / })).toBeInViewport({ ratio: 1 });
+  });
+
   test("a_card_shows_in_the_column_and_takes_no_rows_from_the_terminal", async ({ page }) => {
     // Catches a card stacked above the terminal, which would cost it rows.
     const stream = await stubStream(page, betaState(project, cwd, sid, []));
@@ -454,7 +474,10 @@ test.describe("the terminal sheet at 1280 x 800", () => {
     const terminal = panel.getByLabel("Session terminal");
     const before = (await terminal.boundingBox())!;
     const size = (await sizeShown(screen(page)))!;
-    const card = { id: "c1", lead: sid, agent: null, kind: "permission", tool: "Bash", input: { command: "rm -rf build" }, cwd, at: 1 };
+    const card = {
+      id: "c1", lead: sid, agent: null, kind: "permission", tool: "Bash", input: { command: "rm -rf build" }, cwd, at: 1,
+      severity: { level: "high", reason: "Funtown's rule: rm with a recursive flag can't be walked back", source: "rule" },
+    };
     stream.send(betaState(project, cwd, sid, [card]));
     await expect(panel.getByRole("button", { name: "Allow" })).toBeVisible({ timeout: 10_000 });
     expect(await terminal.boundingBox()).toEqual(before);

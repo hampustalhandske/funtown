@@ -135,19 +135,21 @@ function ParcelItem({ parcel, cwd, onOpen }: { parcel: Parcel; cwd: string; onOp
 type Select = (lead: string, id: string) => void;
 
 /**
- * Cards of `lead`, each naming its subagent when a subagent asks; with `only`, just the cards
- * of that character. A card from a subagent the lead doesn't list yet counts as the lead's.
+ * Cards of `lead` in `house`, each with its brief's facts; with `only`, just the cards of that character.
+ * A card from a subagent the lead doesn't list yet counts as the lead's. `onLetter` gets the asker's id.
  */
-function Cards({ lead, cards, only }: { lead: Lead; cards: Card[]; only?: string }) {
-  const owner = (card: Card) => (card.agent && lead.subagents.some((s) => s.id === card.agent) ? card.agent : lead.id);
+function Cards({ lead, house, cards, only, onLetter }: { lead: Lead; house: House; cards: Card[]; only?: string; onLetter: (id: string) => void }) {
+  const subagentOf = (card: Card) => lead.subagents.find((s) => s.id === card.agent);
   return cards
-    .filter((card) => card.lead === lead.id && (only === undefined || owner(card) === only))
-    .map((card) => (
-      <AnswerCard key={card.id} card={card} who={card.agent ? (lead.subagents.find((s) => s.id === card.agent)?.name ?? "A subagent") : undefined} />
-    ));
+    .filter((card) => card.lead === lead.id && (only === undefined || (subagentOf(card)?.id ?? lead.id) === only))
+    .map((card) => {
+      const asker = subagentOf(card) ?? lead;
+      const facts = { asker, under: asker === lead ? undefined : lead.name, project: house.project, phase: house.phase };
+      return <AnswerCard key={card.id} card={card} facts={facts} onLetter={() => onLetter(asker.id)} />;
+    });
 }
 
-function LeadItem({ lead, cards, onSelect }: { lead: Lead; cards: Card[]; onSelect: Select }) {
+function LeadItem({ lead, house, cards, onSelect }: { lead: Lead; house: House; cards: Card[]; onSelect: Select }) {
   return (
     <li className="lead">
       <CharacterRow character={lead} avatar="🧑‍💻" onSelect={(id) => onSelect(lead.id, id)} />
@@ -160,7 +162,7 @@ function LeadItem({ lead, cards, onSelect }: { lead: Lead; cards: Card[]; onSele
           ))}
         </ul>
       )}
-      <Cards lead={lead} cards={cards} />
+      <Cards lead={lead} house={house} cards={cards} onLetter={(id) => onSelect(lead.id, id)} />
     </li>
   );
 }
@@ -276,7 +278,7 @@ function HouseCard({
       </h2>
       <ul>
         {house.leads.map((lead) => (
-          <LeadItem key={lead.id} lead={lead} cards={cards} onSelect={onSelect} />
+          <LeadItem key={lead.id} lead={lead} house={house} cards={cards} onSelect={onSelect} />
         ))}
       </ul>
       {house.parcels && house.parcels.length > 0 && (
@@ -334,8 +336,8 @@ function endOf(code: number, lastLine: string): { failed: string } | "detached" 
   return { failed: unknown };
 }
 
-/** Details of one character: stage, need, its subagents (for a lead) and a button that focuses its terminal. */
-export function Panel({ character, lead, cards, onClose }: { character: Character; lead: Lead; cards: Card[]; onClose: () => void }) {
+/** Details of one character of `lead` in `house`: stage, need, its cards, its subagents (for a lead) and a button that focuses its terminal. */
+export function Panel({ character, lead, house, cards, onClose }: { character: Character; lead: Lead; house: House; cards: Card[]; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [terminal, setTerminal] = useState(false);
@@ -423,7 +425,7 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
             </p>
           )}
           {character.id === lead.id && <Overlaps overlaps={lead.overlaps} />}
-          <Cards lead={lead} cards={cards} only={character.id} />
+          <Cards lead={lead} house={house} cards={cards} only={character.id} onLetter={() => column.current?.querySelector(".letters")?.scrollIntoView({ block: "nearest" })} />
           {character.id === lead.id && lead.subagents.length > 0 && (
             <ul aria-label="Subagents">
               {lead.subagents.map((sub) => (
@@ -493,13 +495,13 @@ export function useSelection(town: Town | null) {
   useEffect(() => {
     if (town && selection && !selected) setSelection(null);
   }, [town, selection, selected]);
-  const openCwd = lead && town?.houses.find((house) => house.leads.includes(lead))?.cwd;
-  const openSession = selected && openCwd ? { id: selected.id, name: selected.name, cwd: openCwd } : null;
+  const house = lead && town?.houses.find((h) => h.leads.includes(lead));
+  const openSession = selected && house ? { id: selected.id, name: selected.name, cwd: house.cwd } : null;
   const waiting = urgencyList(town);
   const [muted, toggleMute] = useMute();
   const openWaiting = useCallback((w: Pick<Waiting, "lead" | "id">) => setSelection({ lead: w.lead, id: w.id }), []);
   const { toasts, drop } = useAlerts(waiting, town !== null, muted, openWaiting);
-  return { selection, setSelection, onClose, lead, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop };
+  return { selection, setSelection, onClose, lead, house, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop };
 }
 
 /** The house `/work.html#<cwd>` names, or "" when the hash isn't a valid encoded folder. */
@@ -514,7 +516,7 @@ function hashedHouse(): string {
 /** The town page: one house per project, its leads and their subagents, with a list of everyone waiting for you. */
 export function App() {
   const [town, restarted] = useTown();
-  const { selection, setSelection, onClose, lead, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop } = useSelection(town);
+  const { selection, setSelection, onClose, lead, house, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop } = useSelection(town);
   const current = selection && `${selection.lead}/${selection.id}`;
   useWalk(waiting, current, openWaiting);
   useLetterKey(town, current, openWaiting);
@@ -613,7 +615,7 @@ export function App() {
           />
         ))}
       </main>
-      {lead && selected && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} cards={town?.cards ?? []} onClose={onClose} />}
+      {lead && house && selected && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} house={house} cards={town?.cards ?? []} onClose={onClose} />}
       {sheet && <KeySheet onClose={hideSheet} />}
       <Toasts
         toasts={toasts}

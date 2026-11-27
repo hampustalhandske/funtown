@@ -172,7 +172,7 @@ function AskPanel({ target, onClose }: { target: AskTarget; onClose: () => void 
 /** The town page: the village in one canvas, a row of icon buttons, panels on demand, and a hidden list for screen readers. */
 export function TownPage() {
   const [town, restarted] = useTown();
-  const { selection, setSelection, onClose, lead, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop } = useSelection(town);
+  const { selection, setSelection, onClose, lead, house, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop } = useSelection(town);
   const [settings, setSettings] = useState(false);
   const [asking, setAsking] = useState<AskTarget | null>(null);
   const closeAsking = useCallback(() => setAsking(null), []);
@@ -214,7 +214,7 @@ export function TownPage() {
   const at = classroom?.cwd ?? (marked !== null && index.houses.has(marked) ? marked : null);
   const workHref = at === null ? "/work.html" : workLink(at);
   useKey("l", () => location.assign(workHref));
-  const shown = lead && selected;
+  const shown = lead && house && selected;
   useLayer("classroom", showing, () => go(null));
 
   /** Opens the review panel, letter or PR of parcel `number` in `cwd`. */
@@ -291,7 +291,7 @@ export function TownPage() {
       {sheet && <KeySheet onClose={hideSheet} />}
       {settings && <Settings town={town} muted={muted} onMute={toggleMute} open={openSession} onClose={closeSettings} />}
       {asking && <AskPanel key={`${asking.cwd}/${asking.parcel.number}`} target={asking} onClose={closeAsking} />}
-      {shown && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} cards={town?.cards ?? []} onClose={onClose} />}
+      {shown && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} house={house} cards={town?.cards ?? []} onClose={onClose} />}
       <Toasts
         toasts={toasts}
         onOpen={(w) => {
