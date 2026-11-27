@@ -65,7 +65,7 @@ Decisions that bind
   page POSTs cap at 64 KB, `/term` frames 1 MB; ids, cwds, ttys, prompts reach children only as
   arguments. The one shell Funtown starts is the Shell tab's interactive login shell in a house's folder.
 - All code our own. Tests never run the real `claude` or `gh`, use real names or the home folder.
-  Replies are shaped only through SessionStart context; only the steward gets requests (reviews).
+  Replies are shaped only through SessionStart context; only the steward gets requests (reviews, and her word on a card the user asks for).
 - Out of git: `.workflow/`, `.scratch/`, .claude/settings.json, .claude/never-push; a security finding is fixed
   before the push and never written in a tracked file. Fixed CSP; no raw HTML in letters.
 - The town draws with three.js's WebGL renderer (WebGL2) in Chrome's engine. Custom GLSL shaders
