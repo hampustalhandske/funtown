@@ -1,14 +1,15 @@
-import { lazy, Suspense, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ElementType, type ReactNode } from "react";
+import { lazy, Suspense, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ElementType, type ReactNode } from "react";
+import { planTop } from "../../server/brief-parts.ts";
 import type { Card, Character, House, Lead } from "../../server/types.ts";
-import { askOf, goalOf, isHeavy, planTop, SEVERITY, shownLabel, stakesOf, topicOf } from "./brief.ts";
+import { askOf, goalOf, isHeavy, SEVERITY, shownLabel, stakesOf, topicOf, wordsOf } from "./brief.ts";
 import { useArmed, useKey, useUndo } from "./keys.ts";
-import { waited } from "./needs.tsx";
+import { useNow, waited } from "./needs.tsx";
 import { LazyBoundary } from "./LazyBoundary.tsx";
 import { funtownToken } from "./token.ts";
 import "./card.css";
 
-// The Queen's text is Markdown, so its renderer stays out of the first page load, as it does for the letters.
-const Word = lazy(() => import("./Letters.tsx").then((m) => ({ default: m.Word })));
+// The Queen's letters are Markdown, so their renderer stays out of the first page load, as it does for the letters.
+export const LetterById = lazy(() => import("./Letters.tsx").then((m) => ({ default: m.LetterById })));
 
 type Option = { label: string; description?: string };
 type Question = { question: string; header?: string; multiSelect?: boolean; options?: Option[] };
@@ -27,54 +28,50 @@ const NUMBER_KEYS = 4;
 /** The facts Funtown adds to a card: who asks (the lead, or its subagent and the lead it works under), the project and its phase file. */
 export type Facts = { asker: Character; under?: string; project: string; phase?: House["phase"] };
 
-/** Sends one answer for `card`; gives an error text, or null once the server took it. */
-async function answer(card: Card, body: object): Promise<string | null> {
+/**
+ * POSTs `body` about `card` to `path` with the page token; gives null once the server took it (204), else the text
+ * `refused` has for the status, else `failed` with the status.
+ */
+async function postCard(path: string, card: Card, body: object, refused: Record<number, string>, failed: string): Promise<string | null> {
   try {
-    const reply = await fetch("/answer", {
+    const reply = await fetch(path, {
       method: "POST",
       headers: { "content-type": "application/json", "x-funtown-token": funtownToken() },
       body: JSON.stringify({ card: card.id, ...body }),
     });
     if (reply.status === 204) return null;
-    return reply.status === 404 ? "This request is already closed." : `Answer failed (${reply.status}).`;
+    return refused[reply.status] ?? `${failed} (${reply.status}).`;
   } catch {
     return "Couldn't reach Funtown.";
   }
 }
 
+const CLOSED = "This request is already closed.";
+/** Sends one answer for `card`; gives an error text, or null once the server took it. */
+const answer = (card: Card, body: object) => postCard("/answer", card, body, { 404: CLOSED }, "Answer failed");
 /** Asks the steward for her word on `card`; gives the reason it was refused, or null once the server took it. */
-async function askWord(card: Card): Promise<string | null> {
-  try {
-    const reply = await fetch("/word", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-funtown-token": funtownToken() },
-      body: JSON.stringify({ card: card.id }),
-    });
-    if (reply.status === 204) return null;
-    if (reply.status === 404) return "This request is already closed.";
-    return reply.status === 409 ? "The Queen's word is off, or this is her own card." : `Couldn't ask the Queen (${reply.status}).`;
-  } catch {
-    return "Couldn't reach Funtown.";
-  }
-}
+const askWord = (card: Card) =>
+  postCard("/word", card, {}, { 404: CLOSED, 409: "The Queen's word is off, or this is her own card." }, "Couldn't ask the Queen");
 
 /** Where her word is while it is on its way, in the user's words: the title and the line under it. */
 const QUEEN_WAITING = {
   asking: { title: "Asking the Queen...", line: undefined },
   starting: { title: "The Queen is coming", line: "Starting her session. Your card is first." },
   busy: { title: "The Queen is busy", line: "Your card is next." },
+  queued: { title: "Queued for the Queen", line: "Your card is first." },
   writing: { title: "The Queen is writing", line: "Usually under a minute." },
 } as const;
 
 /**
  * The Queen's slot on a card: the button to ask her, or where her word is, or the word itself (fetched by its letter
  * id, as written). `asking` is the undo window of an ask; `steward` is her listed session, which tells "starting" (none
- * yet) from "busy" (a queued word waits behind her work). Her pick is never marked on the options.
+ * yet) from "busy" (a queued word waits behind her work) and "queued" (she is listed and not working). Her pick is
+ * never marked on the options.
  */
 function QueenSlot({ word, asking, steward, error, posting, cap, onAsk }: {
   word: NonNullable<Card["word"]>; asking: boolean; steward?: Lead; error: string | null; posting: boolean; cap: boolean; onAsk: () => void;
 }) {
-  const state = asking ? "asking" : word.state === "queued" ? (steward ? "busy" : "starting") : word.state;
+  const state = asking ? "asking" : word.state === "queued" ? (!steward ? "starting" : steward.stage === "working" ? "busy" : "queued") : word.state;
   const waiting = state in QUEEN_WAITING ? QUEEN_WAITING[state as keyof typeof QUEEN_WAITING] : undefined;
   const ask = (text: string) => (
     <button type="button" className="q-btn" disabled={posting} onClick={onAsk}>
@@ -106,7 +103,7 @@ function QueenSlot({ word, asking, steward, error, posting, cap, onAsk }: {
           {steward && word.letter ? (
             <LazyBoundary>
               <Suspense fallback={null}>
-                <Word lead={steward.id} id={word.letter} />
+                <LetterById lead={steward.id} id={word.letter} className="q-word" />
               </Suspense>
             </LazyBoundary>
           ) : (
@@ -124,16 +121,6 @@ function QueenSlot({ word, asking, steward, error, posting, cap, onAsk }: {
       {error && <p role="alert" className="error">{error}</p>}
     </section>
   );
-}
-
-/** Date.now(), refreshed every 15 s, so a waiting time stays about right. */
-function useNow(): number {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 15_000);
-    return () => clearInterval(timer);
-  }, []);
-  return now;
 }
 
 /** `children` in an `as` element cut at `lines` lines, with a "more" after it that opens the rest in place; uncut without `lines`. */
@@ -199,7 +186,7 @@ function Tiles({ options, pick, chosen, multi, cut, numbered = false, onToggle }
 }
 
 /**
- * One held ask as its decision brief (take C, "Weighed"): who asks and where, the weight meter, the ask in one line, the
+ * One held ask as its decision brief: who asks and where, the weight meter, the ask in one line, the
  * goal it serves, a heavy card's stakes, the options as tiles with the agent's pick chosen, the act row, and the raw
  * input one button away. `onLetter` opens the asker's newest letter. No form: nothing sends but the act's own buttons,
  * and, with `keys` (the only card in an open pane), Enter while armed, 1 to 4, D and Q. `steward` is the Queen's listed
@@ -221,7 +208,7 @@ export function AnswerCard({ card, facts, keys = false, steward, onLetter }: { c
     }),
   );
   const [typed, setTyped] = useState<string[]>(() => questions.map(() => ""));
-  const now = useNow();
+  const now = useNow(15_000);
   async function send(body: object) {
     setError(null);
     setPending(true);
@@ -239,7 +226,7 @@ export function AnswerCard({ card, facts, keys = false, steward, onLetter }: { c
   const goal = goalOf(facts.phase);
   const { asker, under, project } = facts;
   const plan = typeof card.input.plan === "string" ? card.input.plan : "";
-  const top = planTop(plan);
+  const top = planTop(plan).map((t) => t.line);
   const command = card.kind === "permission" && typeof card.input.command === "string" ? card.input.command : undefined;
 
   const valueOf = (i: number) => typed[i].trim() || chosen[i].join(", ");
@@ -269,9 +256,8 @@ export function AnswerCard({ card, facts, keys = false, steward, onLetter }: { c
   // Armed (ADR 0004): a low or medium question with a choice in every question, or a medium plan, alone in its pane.
   const armed = useArmed(keys && open && act !== null && !heavy && complete);
   useKey("Enter", () => act && startUndo(act), armed);
-  // Q takes the same second and undo window. It only asks her, so it needs no choice made and works on a heavy card too.
-  const askable = (card.word?.state === "idle" || card.word?.state === "failed") && !posting;
-  const askArmed = useArmed(keys && open && askable);
+  // Q follows the same arm rule and undo window; on a card Enter skips, asking her stays a click.
+  const askArmed = armed && (card.word?.state === "idle" || card.word?.state === "failed") && !posting;
   useKey("q", () => startAsk("ask"), askArmed);
   const numbered = keys && open && card.kind === "question" && questions.length === 1;
   const options = questions[0]?.options ?? [];
@@ -282,7 +268,7 @@ export function AnswerCard({ card, facts, keys = false, steward, onLetter }: { c
   useKey("4", numberKey(3), numbered && options.length > 3);
   useKey("d", () => setRaw((shown) => !shown), keys);
   const enterCap = armed && <kbd aria-hidden="true">Enter</kbd>;
-  /** The act row, or in its place the undo window while a send waits, or the word that it went. */
+  /** The Queen's slot, when her word is on for this card. */
   const slot = card.word && (
     <QueenSlot word={card.word} asking={asking !== null} steward={steward} error={wordError} posting={posting} cap={askArmed} onAsk={() => void ask()} />
   );
@@ -294,6 +280,7 @@ export function AnswerCard({ card, facts, keys = false, steward, onLetter }: { c
       {!heavy && slot}
     </>
   );
+  /** The act row, or in its place the undo window while a send waits, or the word that it went. */
   const actContent = (row: ReactNode) =>
     waiting ? (
       <div className="sending" role="status">
@@ -318,8 +305,8 @@ export function AnswerCard({ card, facts, keys = false, steward, onLetter }: { c
         </span>
         <b>{sev.word}</b> <span>{reason}</span>
       </div>
-      {/* A header with a level word is already in the reason above; one without is shown as the topic. */}
-      {questions.length === 1 && topicOf(questions[0].header) === questions[0].header && <p className="topic">{questions[0].header}</p>}
+      {/* The header's words after its level word (the level is in the meter above) are the question's topic. */}
+      {questions.length === 1 && topicOf(questions[0].header) && <p className="topic">{topicOf(questions[0].header)}</p>}
       <Clamp as="h3" className="ask" lines={cut}>{askOf(card, questions)}</Clamp>
       {goal && (
         <Clamp as="p" className="goal" lines={2}>
@@ -331,6 +318,7 @@ export function AnswerCard({ card, facts, keys = false, steward, onLetter }: { c
       {heavy ? (
         <div className="stakes">
           <p className="why">{stakesOf(card.severity)}</p>
+          {wordsOf(card, questions).map((words) => <p key={words} className="words">{words}</p>)}
           {command !== undefined && <pre className="cmd">{command}</pre>}
           {asker.step && <p>Last step: {asker.step}</p>}
         </div>
@@ -402,7 +390,12 @@ export function AnswerCard({ card, facts, keys = false, steward, onLetter }: { c
         {!heavy && asker.step && <span>Last step: {asker.step}</span>}
         {asker.letter !== undefined && onLetter && <button type="button" onClick={onLetter}>Newest letter</button>}
       </div>
-      {raw && <pre className="raw">{JSON.stringify(card.input, null, 2)}</pre>}
+      {raw && (
+        <pre className="raw">
+          {JSON.stringify(card.input, null, 2)}
+          {card.suggestions && `\n\npermission_suggestions: ${JSON.stringify(card.suggestions, null, 2)}`}
+        </pre>
+      )}
     </div>
   );
 }

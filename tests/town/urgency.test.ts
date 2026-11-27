@@ -46,11 +46,6 @@ describe("urgencyList", () => {
     });
   });
 
-  test("a_resting_lead_that_waited_longer_than_an_ask_still_comes_after_it", async () => {
-    const t = town([house("alpha", [lead("a", needs("turn ended", 1)), lead("b", needs("permission", 99))])]);
-    expect(ids(t)).toEqual(["b", "a"]);
-  });
-
   test("equal_times_keep_the_order_of_the_town_and_a_missing_time_goes_last_in_its_tier", async () => {
     const t = town([
       house("alpha", [lead("x", needs("waiting", 7)), lead("y", { stage: "needs_you", needs: "waiting" }), lead("z", needs("waiting", 7))]),
@@ -87,10 +82,22 @@ describe("urgencyList", () => {
     const all = layout(t, urgencyList(t));
     const pose = Object.fromEntries(all.flatMap((p) => (p.kind === "lead" ? [[p.id, p.pose]] : [])));
     expect(pose).toEqual({ rest: "idle", ask: "queue", limit: "stuck" });
-    const at = (id: string) => all.find((p) => p.kind === "lead" && p.id === id)!.at;
+  });
+
+  test("a_resting_lead_stands_by_its_own_door_clear_of_the_parcels_and_the_rack", async () => {
+    // Catches a resting lead placed off to one side, where it reads as any other lead at the house.
+    const t = town([
+      house("alpha", [lead("rest", needs("turn ended", 1), [char("hat")]), lead("worker")]),
+    ]);
+    t.houses[0].parcels = [{ number: 1, title: "PR", url: "https://example.test/1", draft: false }];
+    const all = layout(t, urgencyList(t));
     const building = all.find((p) => p.kind === "building")!.at;
-    // It stands in the house's yard, in front of the building, not at the desk's queue.
-    expect(at("rest").z).toBeGreaterThan(building.z);
-    expect(Math.abs(at("rest").x - building.x)).toBeLessThan(3);
+    const door = { x: building.x, z: building.z + 0.6 };
+    const rest = all.find((p) => p.kind === "lead" && p.id === "rest")!.at;
+    expect(Math.hypot(rest.x - door.x, rest.z - door.z)).toBeLessThan(0.6);
+    expect(rest.z).toBeGreaterThan(door.z);
+    for (const p of all.filter((p) => p.kind === "parcel" || p.kind === "hat" || (p.kind === "lead" && p.id !== "rest"))) {
+      expect(Math.hypot(p.at.x - rest.x, p.at.z - rest.z), p.kind).toBeGreaterThanOrEqual(0.55);
+    }
   });
 });

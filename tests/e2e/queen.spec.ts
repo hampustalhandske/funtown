@@ -79,8 +79,8 @@ test("an_idle_word_offers_the_button_and_one_click_posts_the_card_to_word", asyn
   await expect.poll(() => words).toEqual([{ card: "q1" }]);
 });
 
-test("a_word_that_is_queued_says_starting_without_a_steward_and_busy_with_a_working_one", async ({ page }) => {
-  // Catches a user told to wait for a session that isn't there, or told she is starting when she is only busy.
+test("a_word_that_is_queued_says_starting_without_a_steward_busy_with_a_working_one_and_first_with_an_idle_one", async ({ page }) => {
+  // Catches a user told to wait for a session that isn't there, or told she is busy when she isn't working.
   const { send } = await open(page, town([withWord({ state: "queued" })]));
   const brief = await cardIn(page, "csv-export");
   await expect(slot(brief)).toContainText("The Queen is coming");
@@ -89,6 +89,10 @@ test("a_word_that_is_queued_says_starting_without_a_steward_and_busy_with_a_work
   send(town([withWord({ state: "queued" })], queen()));
   await expect(slot(brief)).toContainText("The Queen is busy", { timeout: 10_000 });
   await expect(slot(brief)).toContainText("Your card is next.");
+  send(town([withWord({ state: "queued" })], queen("needs_you")));
+  await expect(slot(brief)).toContainText("Queued for the Queen", { timeout: 10_000 });
+  await expect(slot(brief)).toContainText("Your card is first.");
+  await expect(slot(brief)).not.toContainText("busy");
 });
 
 test("a_word_being_written_says_so_and_offers_no_button", async ({ page }) => {
@@ -235,6 +239,27 @@ for (const word of [{ state: "queued" }, { state: "writing" }, { state: "ready",
     await settle(page);
     expect(words).toEqual([]);
     await expect(page.getByText("Asking the Queen")).toHaveCount(0);
+  });
+}
+
+const HEAVY = asks([HIGH], ["high"], [0], { word: { state: "idle" } });
+const UNCHOSEN = asks([MEDIUM], ["medium"], [null], { word: { state: "idle" } });
+const PERMISSION = { ...permission({ command: "npm test" }, { level: "medium", reason: "Funtown's rule: unknown command", source: "rule" }), lead: "s1", agent: null, word: { state: "idle" } };
+for (const [name, card] of [["a_heavy_card", HEAVY], ["a_permission", PERMISSION], ["a_card_with_nothing_chosen", UNCHOSEN]] as const) {
+  test(`q_follows_enters_arm_rule_so_on_${name}_it_asks_nothing_and_the_button_still_does`, async ({ page }) => {
+    // Catches a Q that arms where Enter doesn't, so a key spends usage on a card the user has to aim at.
+    const { words } = await open(page, town([card]));
+    const brief = await cardIn(page, "csv-export");
+    await page.clock.runFor(1000);
+    const button = brief.getByRole("button", { name: "Ask the Queen" });
+    await expect(button).toBeVisible();
+    await expect(button.locator("kbd")).toHaveCount(0);
+    await page.keyboard.press("q");
+    await page.clock.runFor(3000);
+    await settle(page);
+    expect(words).toEqual([]);
+    await button.click();
+    await expect.poll(() => words).toEqual([{ card: card.id }]);
   });
 }
 

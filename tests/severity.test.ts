@@ -1,38 +1,20 @@
-import { afterEach, describe, expect, it } from "vitest";
-import type { Card } from "../server/types.ts";
-import { hold, leadsOf, listed, listedBg, sleep, start, townWhere, type Json } from "./helpers.ts";
+import { describe, expect, it } from "vitest";
+import { connectPage, CWD, ev, held as holding, leadsOf, listed, listedBg, sleep, start, townWhere, type Json } from "./helpers.ts";
 
-const CWD = "/work/demo-app";
 const BG = "bg111111-0000-4000-8000-000000000000";
-
-const aborts: AbortController[] = [];
-afterEach(() => {
-  for (const a of aborts.splice(0)) a.abort();
-});
 
 /** A server with a terminal lead `s1` and a background lead BG, both listed, and a page connected. */
 async function room() {
   const s = await start({ pollMs: 60_000 });
   s.fake.list([listed("s1", CWD), listedBg(BG, CWD, { status: "busy" })]);
   await townWhere(s.url, (t) => leadsOf(t).length === 2);
-  const ctl = new AbortController();
-  aborts.push(ctl);
-  fetch(`${s.url}/stream`, { signal: ctl.signal }).then((r) => r.body!.pipeTo(new WritableStream())).catch(() => {});
+  connectPage(s.url);
   await sleep(50);
   return s;
 }
-type S = Awaited<ReturnType<typeof room>>;
 
-let clock = 1000;
-const ev = (name: string, extra: Json, session: string) => ({ hook_event_name: name, session_id: session, cwd: CWD, funtown: { at: clock++ }, ...extra });
-
-/** Holds `payload` and returns the card it becomes; earlier holds stay open, so the newest card is the one asked for. */
-async function held(s: S, payload: Json): Promise<Card> {
-  const before = (await townWhere(s.url, () => true)).cards.length;
-  hold(s.url, payload);
-  const cards = (await townWhere(s.url, (t) => t.cards.length === before + 1)).cards;
-  return cards[cards.length - 1];
-}
+/** The card `payload` becomes once held. */
+const held = async (s: { url: string }, payload: Json) => (await holding(s, payload)).card;
 
 const ask = (questions: Json[]) => ev("PreToolUse", { tool_name: "AskUserQuestion", tool_use_id: "tu1", tool_input: { questions } }, BG);
 const q = (header: string, labels: string[] = ["A", "B"]): Json => ({
@@ -144,7 +126,7 @@ const perm = (tool: string, input: Json) => ev("PermissionRequest", { tool_name:
 const bash = (command: string) => perm("Bash", { command, description: "d" });
 
 /** The level Funtown's rule gives each payload, in order, as `[label, level]` pairs. */
-async function levels(s: S, payloads: [string, Json][]) {
+async function levels(s: { url: string }, payloads: [string, Json][]) {
   const out: [string, string][] = [];
   for (const [label, payload] of payloads) {
     const card = await held(s, payload);
@@ -154,7 +136,7 @@ async function levels(s: S, payloads: [string, Json][]) {
   }
   return out;
 }
-const bashCases = async (s: S, commands: string[]) => levels(s, commands.map((c) => [c, bash(c)]));
+const bashCases = async (s: { url: string }, commands: string[]) => levels(s, commands.map((c) => [c, bash(c)]));
 const all = (commands: string[], level: string) => commands.map((c) => [c, level]);
 
 describe("severity on a permission card: Funtown's rule", () => {

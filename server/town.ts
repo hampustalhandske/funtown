@@ -12,6 +12,8 @@ export type HookEvent = {
   tool_name?: string;
   tool_input?: Record<string, unknown>;
   tool_use_id?: string;
+  /** On a PermissionRequest: the rules Claude Code offers to always allow, as sent. */
+  permission_suggestions?: unknown;
   cwd?: string;
   agent_id?: string;
   agent_type?: string;
@@ -381,14 +383,12 @@ export class TownState {
       if (!found) {
         const phase = this.phases.get(cwd);
         found = { project: basename(cwd) || cwd, cwd, leads: [] };
-        if (phase)
-          found.phase = {
-            phase: phase.phase,
-            ...(phase.note !== undefined ? { note: phase.note } : {}),
-            ...(phase.steps ? { steps: phase.steps } : {}),
-            ...(phase.goal !== undefined ? { goal: phase.goal } : {}),
-            ...(phase.spec !== undefined ? { spec: phase.spec } : {}),
-          };
+        if (phase) {
+          // parsePhase never sets a field to undefined, so every field but the tags is shown as read.
+          const { tags, ...shown } = phase;
+          void tags;
+          found.phase = shown;
+        }
         if (this.seen.has(cwd)) found.seen = true;
         houses.set(cwd, found);
       }

@@ -2,31 +2,20 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Card } from "../server/types.ts";
-import { connect, hold, jsonLines, leadsOf, listed, listedBg, post, postPage, realDir, sleep, start, tokenOf, townWhere, until, type Json } from "./helpers.ts";
+import { connect, connectPage, CWD, evAt as ev, held, hold, jsonLines, leadsOf, listed, listedBg, post, postPage, realDir, sleep, start, tokenOf, townWhere, until, type Json } from "./helpers.ts";
 
 /**
  * The answer log (`answers.jsonl`): one line per closed ask of a listed lead, saying where it
  * was answered. Tests drive the real server over HTTP and a real /term socket on the fake claude.
  */
 
-const CWD = "/work/demo-app";
 const BG = "bg111111-0000-4000-8000-000000000000";
 const OTHER_BG = "bg222222-0000-4000-8000-000000000000";
 
-const aborts: AbortController[] = [];
 afterEach(() => {
   vi.useRealTimers();
-  for (const a of aborts.splice(0)) a.abort();
 });
 
-const ev = (name: string, at: number, extra: Json = {}, session = "s1") => ({
-  hook_event_name: name,
-  session_id: session,
-  cwd: CWD,
-  funtown: { at },
-  ...extra,
-});
 const permission = (at: number, session = "s1", command = "rm -rf build") =>
   ev("PermissionRequest", at, { tool_name: "Bash", tool_input: { command } }, session);
 const question = (at: number, header = "low: db", session = BG) =>
@@ -45,13 +34,6 @@ const plan = (at: number, session = BG) =>
 /** The event that shows the question's tool call ran, so its card was answered somewhere else. */
 const questionRan = (session = BG) => ev("PostToolUse", 300, { tool_name: "AskUserQuestion", tool_use_id: "tu1" }, session);
 
-/** Keeps a /stream open for the rest of the test, as an open page does. */
-function connectPage(url: string) {
-  const ctl = new AbortController();
-  aborts.push(ctl);
-  fetch(`${url}/stream`, { signal: ctl.signal }).then((r) => r.body!.pipeTo(new WritableStream())).catch(() => {});
-}
-
 /** A server with a terminal lead `s1` and background leads BG and OTHER_BG, all listed, writing to a fresh answer log; `page` false leaves no page open. */
 async function room(opts: Parameters<typeof start>[0] & { page?: boolean } = {}) {
   const { page = true, ...rest } = opts;
@@ -68,16 +50,7 @@ async function room(opts: Parameters<typeof start>[0] & { page?: boolean } = {})
 }
 type Room = Awaited<ReturnType<typeof room>>;
 
-const cardsWhere = async (url: string, ok: (c: Card[]) => boolean) => (await townWhere(url, (t) => ok(t.cards))).cards;
 const answer = (s: Room, body: Json) => postPage(s, "/answer", body);
-
-/** Holds `payload`, waits for its card and returns the card and `abort`. */
-async function held(s: Room, payload: Json) {
-  const before = (await cardsWhere(s.url, () => true)).length;
-  const h = hold(s.url, payload);
-  const cards = await cardsWhere(s.url, (c) => c.length === before + 1);
-  return { card: cards[cards.length - 1], reply: h.reply, abort: h.abort };
-}
 
 describe("the answer log: a card that was shown", () => {
   it("each_way_a_card_closes_adds_one_line_with_by_kind_severity_its_source_and_queen_false", async () => {

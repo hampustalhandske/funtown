@@ -111,6 +111,8 @@ export type Card = {
   input: Record<string, unknown>;
   /** The hook payload's cwd. */
   cwd: string;
+  /** On a permission card: the payload's `permission_suggestions` as sent, when it carries a list. */
+  suggestions?: unknown[];
   /** The hook's `funtown.at`. */
   at: number;
   /** How serious the card is; on a question card, the several-questions rule over `questions`. */

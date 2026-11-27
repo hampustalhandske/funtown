@@ -12,6 +12,26 @@ export async function stubStream(page: Page, initial: unknown) {
   return { send: (t: unknown) => void (current = t) };
 }
 
+/** A working terminal lead `s1` named lead-1 in the stream's shape, with `over` laid on top. */
+export const lead = (over: Record<string, unknown>) => ({
+  id: "s1", name: "lead-1", stage: "working", activity: null, step: null, tty: "ttys001", termProgram: "TestTerm",
+  kind: "terminal", shortId: null, subagents: [], ...over,
+});
+/** A lead waiting for the user since `since`, its need "waiting" unless `over` says otherwise. */
+export const waiting = (id: string, name: string, since: number, over: Record<string, unknown> = {}) =>
+  lead({ id, name, stage: "needs_you", needs: "waiting", since, ...over });
+/** A house of the project `project` in `/work/<project>`. */
+export const house = (project: string, leads: unknown[]) => ({ project, cwd: `/work/${project}`, leads });
+/** A Town state with `houses` and `cards` and no Claude version problems. */
+export const town = (houses: unknown[], cards: unknown[] = []) => ({ claude: { version: "2.1.325", problems: [] }, houses, cards });
+/** The panel of the character named `name`. */
+export const panel = (page: Page, name: string) => page.getByRole("dialog", { name: `${name} details` });
+/** Passes when no pane is open. */
+export const noDialog = (page: Page) => expect(page.getByRole("dialog")).toHaveCount(0);
+/** Dispatches a keydown at the page the way a browser would, for what Playwright's keyboard can't give (another layout, a composition, a dead key). */
+export const keydown = (page: Page, init: { key: string; code: string; isComposing?: boolean }) =>
+  page.evaluate((i) => void document.body.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...i })), init);
+
 let clock = Date.now();
 /** Posts one hook event for `sid` in `cwd` to the e2e server, with a `funtown.at` later than the last one. */
 export async function hook(sid: string, cwd: string, name: string, extra: Record<string, unknown> = {}) {

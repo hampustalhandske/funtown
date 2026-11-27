@@ -1,4 +1,4 @@
-/* The card, take C "Weighed": one look on the town and in the plain list. `--sev` is set from SEVERITY in brief.ts. */
+/* The card: one look on the town and in the plain list. `--sev` is set from SEVERITY in brief.ts. */
 
 /* A panel widens to 32rem while it holds a card, so a medium card fits at 1280 x 800; beside a shown terminal the card keeps the 19rem column. */
 .panel:not(.sheet):has(.answer-card) { width: min(32rem, calc(100vw - 2rem)); }
@@ -24,11 +24,12 @@
 
 .answer-card .topic { margin-top: 0.3rem; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
 .answer-card .topic + .ask { margin-top: 0.05rem; }
-/* A heavy card's stakes: why it is heavy, the exact command and the last step, before the options. */
+/* A heavy card's stakes: why it is heavy, the agent's own words, the exact command and the last step, before the options. */
 .answer-card .stakes { margin-top: 0.6rem; padding: 0.55rem 0.7rem; border: 1.5px solid #e2c3bd; border-radius: 0.6rem; background: #f8ece9; font-size: 0.85rem; color: #4c4350; }
 .answer-card[data-sev="unstated"] .stakes { border-color: #d6d1d9; background: #f1eff2; }
 .answer-card .stakes .why { font-weight: 760; color: var(--sev); }
 .answer-card .stakes > p + p { margin-top: 0.3rem; }
+.answer-card .stakes .words { font-style: italic; overflow-wrap: anywhere; }
 .answer-card[data-sev="high"] .desc, .answer-card[data-sev="unstated"] .desc { font-size: 0.9rem; color: var(--ink); }
 .answer-card[data-sev="low"] :is(.lab) { font-size: 0.92rem; }
 .answer-card[data-sev="low"] .desc { font-size: 0.78rem; }

@@ -311,6 +311,19 @@ describe("the steward", () => {
     expect(stewardLines(p)[1].message).toBe("reply to #7 lacks Before merging");
   });
 
+  it("a_reply_that_names_a_part_in_passing_without_its_colon_is_not_a_review", async () => {
+    // Breaks if the review check finds a label anywhere in the text instead of as a label, as her word's check does.
+    const p = paths();
+    const { fake } = reused(p, [pr(7)]);
+    const s = await startSteward(p, fake);
+    await ask(s, p, 7);
+    await until(() => pastes(fake.attachInput(SHORT)).length === 1, 8000);
+    await stewardStop(s.url, p, SID, "Squash title: fix(parser): handle empty input\nMerge text: Handles empty input.\nBefore merging anything, run the tests.");
+    await until(() => stewardLines(p).length > 0);
+    expect(stewardLines(p).map((l) => l.message)).toEqual(["reply to #7 lacks Before merging"]);
+    expect(reviewOf(await townWhere(s.url, () => true), p, 7)?.state).not.toBe("ready");
+  });
+
   it("the_users_own_message_to_the_steward_with_no_request_in_flight_stops_requests_even_if_its_text_matches_the_last_request_and_a_new_request_resumes_them", async () => {
     const p = paths();
     const { fake } = reused(p, [pr(7), pr(9), pr(11)]);
@@ -891,6 +904,20 @@ describe("the steward's word on a card", () => {
     expect(raw).toMatch(/\n\(cut at 8,000 of 9,\d{3} characters\)$/);
     expect(raw.indexOf("\n(cut at")).toBe(8_000);
     expect(text).not.toMatch(/[\x00-\x08\x0b-\x1f\x7f]/);
+  });
+
+  it("a_plans_brief_names_approve_as_the_agents_pick_as_the_card_does", async () => {
+    // Breaks if the brief she reads says the plan has no pick while the card's ribbon is on Approve.
+    const p = paths();
+    const BG = "b0000001-0000-4000-8000-000000000000";
+    const { steward } = reused(p, []);
+    const fake = fakeClaude().list([listedBg(BG, p.project, { name: "beta" }), steward("idle")]).prs(p.project, []);
+    const s = await startSteward(p, fake);
+    await townWhere(s.url, (t) => houseAt(t, p.project)?.leads.length === 1);
+    const card = await cardFrom(s, p, ev("PreToolUse", { cwd: p.project, tool_name: "ExitPlanMode", tool_input: { plan: "Goal: ship it" } }, BG));
+    expect(await askWord(s, card.id)).toBe(204);
+    await until(() => pastes(fake.attachInput(SHORT)).length === 1, 8000);
+    expect(pastes(fake.attachInput(SHORT))[0]).toContain("  The agent's pick: Approve\n");
   });
 
   it("the_shipped_card_prompt_names_the_project_holds_the_brief_and_asks_for_pick_why_and_check_first", async () => {

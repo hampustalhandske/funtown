@@ -1,15 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
-import { stubStream } from "./stream.ts";
+import { house, lead, panel, stubStream, town, waiting } from "./stream.ts";
 
 const NOW = Date.now();
-const lead = (over: Record<string, unknown>) => ({
-  id: "s1", name: "lead-1", stage: "working", activity: null, step: null, tty: "ttys001", termProgram: "TestTerm",
-  kind: "terminal", shortId: null, subagents: [], ...over,
-});
-const waiting = (id: string, name: string, since: number, over: Record<string, unknown> = {}) =>
-  lead({ id, name, stage: "needs_you", needs: "waiting", since, ...over });
-const house = (project: string, leads: unknown[]) => ({ project, cwd: `/work/${project}`, leads });
-const town = (houses: unknown[], cards: unknown[] = []) => ({ claude: { version: "2.1.325", problems: [] }, houses, cards });
 
 /** Counts what the page asks of Web Audio and of the Notification API; `notificationPermission` is what the page is told. */
 const stubs = (permission: string) => `
@@ -46,7 +38,6 @@ const rows = (page: Page) => queue(page).getByRole("button");
 const sounds = (page: Page) => page.evaluate(() => (window as unknown as { __starts: number }).__starts);
 const popups = (page: Page) =>
   page.evaluate(() => (window as unknown as { __notes: { title: string; body: string }[] }).__notes.map((n) => ({ title: n.title, body: n.body })));
-const panel = (page: Page, name: string) => page.getByRole("dialog", { name: `${name} details` });
 const active = (page: Page) => page.evaluate(() => `${document.activeElement?.tagName}:${(document.activeElement as HTMLInputElement | null)?.value ?? ""}`);
 
 const three = () =>

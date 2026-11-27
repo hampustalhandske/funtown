@@ -1,16 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_URL } from "../fake-claude.ts";
-import { stubStream } from "./stream.ts";
+import { house, keydown, lead, noDialog, panel, stubStream, town } from "./stream.ts";
 
 const NOW = Date.now();
-const lead = (over: Record<string, unknown>) => ({
-  id: "s1", name: "lead-1", stage: "working", activity: null, step: null, tty: "ttys001", termProgram: "TestTerm",
-  kind: "terminal", shortId: null, subagents: [], ...over,
-});
 const background = (id: string, name: string, over: Record<string, unknown> = {}) =>
   lead({ id, name, kind: "background", shortId: id.repeat(8).slice(0, 8), tty: null, termProgram: null, ...over });
-const house = (project: string, leads: unknown[]) => ({ project, cwd: `/work/${project}`, leads });
-const town = (houses: unknown[], cards: unknown[] = []) => ({ claude: { version: "2.1.325", problems: [] }, houses, cards });
 
 /** Three leads with letters of different ages: lead-b is the newest, then lead-c, then lead-a; lead-d has none. */
 const lettered = () =>
@@ -34,13 +28,8 @@ async function open(page: Page, initial: unknown, path = "/work.html") {
   // the first state is in before a test presses a key
   await expect(page.locator("ul.town-list button, section.house").first()).toBeAttached();
 }
-const panel = (page: Page, name: string) => page.getByRole("dialog", { name: `${name} details` });
-const noDialog = (page: Page) => expect(page.getByRole("dialog")).toHaveCount(0);
 const sheet = (page: Page) => page.getByRole("dialog", { name: "Key sheet" });
 const focusedName = (page: Page) => page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.tagName);
-/** Dispatches a keydown at the page the way a browser would, for a key whose `key` and `code` differ (another layout). */
-const keydown = (page: Page, init: { key: string; code: string }) =>
-  page.evaluate((i) => void document.body.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...i })), init);
 
 test("r_puts_the_cursor_in_the_reply_box_when_the_terminal_is_hidden_and_the_sheet_stays_closed", async ({ page }) => {
   await open(page, bg());
@@ -214,6 +203,31 @@ test("esc_closes_the_key_sheet_first_and_the_pane_under_it_stays", async ({ page
   await page.keyboard.press("Escape");
   await noDialog(page);
 });
+
+for (const path of ["/", "/work.html"]) {
+  test(`at_390_px_the_key_sheet_on_${path === "/" ? "the_town" : "the_work_view"}_never_scrolls_sideways_or_breaks_a_word`, async ({ page }) => {
+    // Catches a column cut at the sheet's edge, or one so narrow that "classroom" breaks into "clas sro om".
+    await page.setViewportSize({ width: 390, height: 800 });
+    await open(page, lettered(), path);
+    await page.keyboard.press("?");
+    await expect(sheet(page)).toBeVisible();
+    const fits = await sheet(page).evaluate((s) => s.scrollWidth <= s.clientWidth);
+    const broken = await sheet(page).locator("td").evaluateAll((cells) =>
+      cells.flatMap((cell) => {
+        const text = cell.firstChild;
+        if (!(text instanceof Text)) return [];
+        return [...text.data.matchAll(/\S+/g)].flatMap((m) => {
+          const range = document.createRange();
+          range.setStart(text, m.index);
+          range.setEnd(text, m.index + m[0].length);
+          return range.getClientRects().length > 1 ? [m[0]] : [];
+        });
+      }),
+    );
+    expect(fits).toBe(true);
+    expect(broken).toEqual([]);
+  });
+}
 
 test("the_key_sheet_opens_with_the_pointer_too_and_its_close_button_closes_it", async ({ page }) => {
   await open(page, lettered(), "/");

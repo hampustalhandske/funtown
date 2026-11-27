@@ -1,15 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
-import { stubStream } from "./stream.ts";
+import { house, keydown, lead, noDialog, panel, stubStream, town, waiting } from "./stream.ts";
 
 const NOW = Date.now();
-const lead = (over: Record<string, unknown>) => ({
-  id: "s1", name: "lead-1", stage: "working", activity: null, step: null, tty: "ttys001", termProgram: "TestTerm",
-  kind: "terminal", shortId: null, subagents: [], ...over,
-});
-const waiting = (id: string, name: string, since: number, over: Record<string, unknown> = {}) =>
-  lead({ id, name, stage: "needs_you", needs: "waiting", since, ...over });
-const house = (project: string, leads: unknown[]) => ({ project, cwd: `/work/${project}`, leads });
-const town = (houses: unknown[], cards: unknown[] = []) => ({ claude: { version: "2.1.325", problems: [] }, houses, cards });
 
 /** Three asks in urgency order: lead-1 (permission), lead-2 (waiting), lead-3 (stuck). */
 const three = () =>
@@ -35,11 +27,6 @@ async function open(page: Page, initial: unknown, path = "/work.html") {
   if (path === "/work.html") await expect(page.locator("section[aria-label]").first()).toBeVisible();
   else await expect(page.locator("ul.town-list button").first()).toBeAttached(); // the first state is in before a test presses a key
 }
-const panel = (page: Page, name: string) => page.getByRole("dialog", { name: `${name} details` });
-const noDialog = (page: Page) => expect(page.getByRole("dialog")).toHaveCount(0);
-/** Dispatches a keydown at the page the way a browser would, for what Playwright's keyboard can't give (a composition, a dead key). */
-const keydown = (page: Page, init: { key: string; code: string; isComposing?: boolean }) =>
-  page.evaluate((i) => void document.body.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...i })), init);
 
 test("space_opens_the_next_ask_in_urgency_order_and_wraps_and_shift_space_goes_back", async ({ page }) => {
   await open(page, three());

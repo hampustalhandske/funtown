@@ -496,6 +496,26 @@ test.describe("the terminal sheet at 390 px", () => {
     await expect(panel.getByRole("button", { name: "Close session" })).toBeInViewport({ ratio: 1 });
     expect((await sizeShown(screen(page)))!.cols).toBeGreaterThanOrEqual(40);
   });
+
+  test("a_card_gets_room_to_read_its_ask_without_scrolling_and_the_terminal_keeps_rows", async ({ page }) => {
+    // Catches a card squeezed into a band above the terminal, where the ask itself needs scrolling to read.
+    const one = questionCard(sid, cwd);
+    const card = { ...one, input: { questions: [one.input.questions[0]] }, questions: [one.questions[0]] };
+    fake.list([bg()]);
+    await page.goto("/work.html");
+    await expect(row(page, "beta")).toBeVisible();
+    await stubStream(page, betaState(project, cwd, sid, [card]));
+    await page.reload();
+    await row(page, "beta").click({ position: { x: 5, y: 5 } });
+    const panel = page.getByRole("dialog");
+    await showTerminal(panel);
+    await expect(screen(page)).toContainText("attached abcd1234");
+    const lines = (await panel.locator(".lines").boundingBox())!;
+    const ask = (await panel.getByRole("heading", { name: "Which database?" }).boundingBox())!;
+    expect(ask.y + ask.height).toBeLessThanOrEqual(lines.y + lines.height);
+    await expect(panel.getByRole("button", { name: /^Send: / })).toBeInViewport({ ratio: 1 });
+    await expect.poll(async () => (await sizeShown(screen(page)))!.rows).toBeGreaterThanOrEqual(12);
+  });
 });
 
 test.describe("early attach", () => {

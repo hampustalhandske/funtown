@@ -139,7 +139,8 @@ export function createHolds(
         cwd: typeof event.cwd === "string" ? event.cwd : "",
         at: typeof event.funtown?.at === "number" ? event.funtown.at : Date.now(),
       };
-      const card: Card = { ...made, ...rate(made) };
+      const suggestions = Array.isArray(event.permission_suggestions) ? { suggestions: event.permission_suggestions } : {};
+      const card: Card = { ...made, ...suggestions, ...rate(made) };
       const unshown = kind !== "permission" && lead?.kind === "terminal" ? "terminal session" : noPage() ? "no page" : null;
       if (unshown) {
         if (lead) log(card, "unshown", unshown);

@@ -66,6 +66,13 @@
       .keysheet th, .keysheet td { text-align: left; vertical-align: top; padding: 0.35rem 0.5rem; border-top: 1px solid #ddd5c7; }
       .keysheet th { border-top: 0; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: #666; }
       .keysheet td.key { white-space: nowrap; }
+      /* On a narrow window each key is the key and where on one line, what it does under them: no column gets too narrow. */
+      @media (max-width: 600px) {
+        .keysheet thead { display: none; }
+        .keysheet tr { display: grid; grid-template-columns: auto minmax(0, 1fr); border-top: 1px solid #ddd5c7; }
+        .keysheet td { border-top: 0; }
+        .keysheet td:last-child { grid-column: 1 / -1; padding-top: 0; }
+      }
       kbd { display: inline-block; min-width: 1.6em; padding: 0 0.4rem; border: 1px solid #c8a97e; border-bottom-width: 2px; border-radius: 0.3rem;
         background: #f6f1e7; font: 600 0.85rem/1.5 ui-monospace, Menlo, monospace; text-align: center; white-space: nowrap; }
       .kind { margin-left: 0.4rem; font-size: 0.8rem; color: #666; }
@@ -88,11 +95,13 @@
       /* A hidden terminal: off the left edge, unseen, in the box the sheet gives it (the sheet's insets, border and padding, less the column and gap). */
       .panel:not(.sheet) .screen[inert] { position: fixed; right: 100%; top: calc(5rem + 2px + 0.75rem); bottom: calc(1rem + 2px + 0.75rem);
         width: calc(min(100% - 6rem, 96rem) - 4px - 2rem - 20rem); display: flex; flex-direction: column; visibility: hidden; }
-      /* On a narrow window the column (a fixed 11rem) stacks above the terminal, which keeps the full width. */
+      /* On a narrow window the column (11rem, or 60% of the sheet with a card, so its ask reads without scrolling) stacks above the terminal, which keeps the full width. */
       @media (max-width: 860px) {
         .panel.sheet { left: 0.5rem; right: 0.5rem; padding: 0.5rem; flex-direction: column; gap: 0.5rem; }
         .sheet .column { flex: 0 0 11rem; }
+        .sheet .column:has(.answer-card) { flex-basis: 60%; }
         .panel:not(.sheet) .screen[inert] { top: calc(5rem + 2px + 0.5rem + 11rem + 0.5rem); bottom: calc(1rem + 2px + 0.5rem); width: calc(100% - 1rem - 4px - 1rem); }
+        .panel:not(.sheet):has(.answer-card) .screen[inert] { top: calc(5rem + 2px + 0.5rem + 0.6 * (100vh - 7rem - 4px) + 0.5rem); }
       }
       .hint { font-weight: 600; }
       .panel h2 { margin: 0; font-size: 1.15rem; }
@@ -100,15 +109,16 @@
       .badge { margin-left: 0.4rem; padding: 0 0.4rem; border-radius: 0.6rem; font-size: 0.75rem; background: #e6e6ef; color: #333; }
       .badge.phase { background: #dbe7ff; }
       .phase-note { margin-left: 0.5rem; font-size: 0.8rem; font-weight: normal; color: #666; }
-      /* The goal and spec lines are cut with an ellipsis; the full text is in the title. */
-      .phase-line { display: inline-block; max-width: 100%; margin-left: 0.5rem; font-size: 0.8rem; font-weight: normal; color: #666;
-        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+      /* The goal and spec lines wrap in full within the house's width: with no width of their own, they never widen it. */
+      .phase-line { display: block; contain: inline-size; margin-left: 0.5rem; font-size: 0.8rem; font-weight: normal; color: #666; overflow-wrap: anywhere; }
       .overlap { display: block; font-size: 0.8rem; color: #8a5a00; }
       .parcels { list-style: none; padding: 0; margin: 0.5rem 0; font-size: 0.85rem; }
       .parcel .review { margin-left: 0.5rem; font-size: 0.75rem; }
       /* Long titles, notes and file paths wrap instead of widening the page. */
       .phase-note, .overlap, .parcels { overflow-wrap: anywhere; }
       .mail { margin-left: 0.4rem; }
+      /* A card open in the pane is one line in the list, pointing there. */
+      .in-pane { margin: 0.4rem 0; font-size: 0.85rem; font-style: italic; color: #666; overflow-wrap: anywhere; }
       .morning { position: fixed; top: 1rem; left: 50%; transform: translateX(-50%); width: min(50rem, calc(100vw - 4rem));
         max-height: calc(100vh - 2rem); overflow: auto; background: #fff; border: 2px solid #c8a97e; border-radius: 8px; padding: 1rem; z-index: 5; }
       .morning h2 { margin: 0; font-size: 1.15rem; }

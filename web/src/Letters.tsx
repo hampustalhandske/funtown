@@ -42,10 +42,11 @@ export const LetterView = memo(function LetterView({ letter, name }: { letter: L
 });
 
 /**
- * One letter of `lead` by its id, as written, with no heading: the Queen's word on a card. Line breaks stay, so her
- * labelled parts stay on their own lines. A missing letter or a failed fetch says so in a line.
+ * One letter of `lead` by its id, as written, with no heading, in a `className` box: the Queen's word on a card, or
+ * her review of a PR. Line breaks stay, so her labelled parts stay on their own lines. A missing letter or a failed
+ * fetch says so in a line.
  */
-export function Word({ lead, id }: { lead: string; id: string }) {
+export function LetterById({ lead, id, className }: { lead: string; id: string; className: string }) {
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -55,11 +56,11 @@ export function Word({ lead, id }: { lead: string; id: string }) {
     fetch(`/letters?lead=${encodeURIComponent(lead)}&id=${encodeURIComponent(id)}`, { headers: { "x-funtown-token": funtownToken() } })
       .then(async (reply) => {
         if (!current) return;
-        if (reply.status === 404) setError("Her word is no longer kept.");
-        else if (!reply.ok) setError(`Her word failed to load (${reply.status}).`);
+        if (reply.status === 404) setError("This letter is no longer kept.");
+        else if (!reply.ok) setError(`This letter failed to load (${reply.status}).`);
         else setText(((await reply.json()) as Letter[])[0]?.text ?? "");
       })
-      .catch(() => current && setError("Her word failed to load."));
+      .catch(() => current && setError("This letter failed to load."));
     return () => {
       current = false;
     };
@@ -67,7 +68,7 @@ export function Word({ lead, id }: { lead: string; id: string }) {
   if (error) return <p role="alert" className="error">{error}</p>;
   if (text === null) return null;
   return (
-    <div className="q-word">
+    <div className={className}>
       <Markdown remarkPlugins={[remarkGfm]} components={components}>{text}</Markdown>
     </div>
   );

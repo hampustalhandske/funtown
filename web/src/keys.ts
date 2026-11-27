@@ -10,7 +10,8 @@ const RANK: Record<LayerKind, number> = { undo: 0, text: 1, sheet: 2, pane: 3, c
 
 /** A layer a page registers; the text box layer is never registered, the module finds it in the focused element. */
 type Layer = { kind: Exclude<LayerKind, "text">; close: () => void };
-type Walk = { list: { key: string }[]; current: string | null; open: (index: number) => void };
+/** The page's latest urgency walk, read when Space is pressed. */
+type Walk = { current: { list: { key: string }[]; current: string | null; open: (index: number) => void } };
 
 /** The open layers, oldest first. */
 const layers: Layer[] = [];
@@ -74,10 +75,11 @@ function onKeyDown(event: KeyboardEvent) {
     if (typingPlace(event.target)) return;
     event.preventDefault();
     for (const send of [...waitingSends]) send();
-    if (!walk || walk.list.length === 0) return;
-    const at = walk.list.findIndex((w) => w.key === walk!.current);
-    const size = walk.list.length;
-    walk.open(event.shiftKey ? (at < 0 ? size - 1 : (at - 1 + size) % size) : (at + 1) % size);
+    if (!walk || walk.current.list.length === 0) return;
+    const { list, current, open } = walk.current;
+    const at = list.findIndex((w) => w.key === current);
+    const size = list.length;
+    open(event.shiftKey ? (at < 0 ? size - 1 : (at - 1 + size) % size) : (at + 1) % size);
     return;
   }
   // A letter, digit or sign by the character typed (so any layout works); Shift is only the way to type "?", never a letter's.
@@ -135,18 +137,14 @@ export function useLayer(kind: Layer["kind"], open: boolean, close: () => void):
  * wrapping; with `current` not in the list they open the first and the last. Does nothing on an empty list.
  */
 export function useWalk<T extends { key: string }>(list: T[], current: string | null, open: (entry: T) => void): void {
-  const latest = useRef({ list, current, open });
-  latest.current = { list, current, open };
+  const now = { list, current, open: (i: number) => open(list[i]) };
+  const latest = useRef(now);
+  latest.current = now;
   useEffect(() => {
     listen();
-    const mine: Walk = {
-      get list() { return latest.current.list; },
-      get current() { return latest.current.current; },
-      open: (i) => latest.current.open(latest.current.list[i]),
-    };
-    walk = mine;
+    walk = latest;
     return () => {
-      if (walk === mine) walk = null;
+      if (walk === latest) walk = null;
     };
   }, []);
 }

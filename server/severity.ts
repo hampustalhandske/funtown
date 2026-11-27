@@ -1,18 +1,16 @@
 import { isAbsolute, relative, resolve } from "node:path";
+import { planTop, RECOMMENDED } from "./brief-parts.ts";
 import type { Card, Level, QuestionRating, Severity } from "./types.ts";
 
 /** Least to most serious among the stated levels. */
 const STATED: Level[] = ["low", "medium", "high"];
 const UNSTATED: Severity = { level: "unstated", reason: "the agent didn't say", source: "agent" };
 
-/** How many of a plan's first lines are read for its "How serious:" line. */
-const PLAN_LINES = 10;
-
 /** What `rate` adds to a card. */
 type Rating = Pick<Card, "severity" | "questions">;
 
-/** The agent's word on one question: its header's first word, up to a colon or a space, when exactly `low`, `medium` or `high`. */
-function word(header: unknown): Severity {
+/** The level word of one question: its header's first word, up to a colon or a space, when exactly `low`, `medium` or `high`. */
+function levelWord(header: unknown): Severity {
   if (typeof header !== "string") return UNSTATED;
   const first = header.split(/[:\s]/, 1)[0];
   const level = STATED.find((l) => l === first);
@@ -22,27 +20,25 @@ function word(header: unknown): Severity {
 /** The index of the first option whose label ends " (Recommended)", else null. */
 function pick(options: unknown): number | null {
   if (!Array.isArray(options)) return null;
-  const at = options.findIndex((o) => typeof o?.label === "string" && o.label.endsWith(" (Recommended)"));
+  const at = options.findIndex((o) => typeof o?.label === "string" && o.label.endsWith(RECOMMENDED));
   return at < 0 ? null : at;
 }
 
 /** Any high, else any unstated, else the highest stated; the first question of that level gives the reason. */
 function questionCard(input: Record<string, unknown>): Rating {
   const asked = Array.isArray(input.questions) ? input.questions : [];
-  const words = asked.map((q) => word(q?.header));
-  const questions: QuestionRating[] = asked.map((q, i) => ({ level: words[i].level, pick: pick(q?.options) }));
+  const levels = asked.map((q) => levelWord(q?.header));
+  const questions: QuestionRating[] = asked.map((q, i) => ({ level: levels[i].level, pick: pick(q?.options) }));
   const order: Level[] = ["high", "unstated", "medium", "low"];
-  const level = order.find((l) => words.some((w) => w.level === l));
-  return { severity: words.find((w) => w.level === level) ?? UNSTATED, questions };
+  const level = order.find((l) => levels.some((w) => w.level === l));
+  return { severity: levels.find((w) => w.level === level) ?? UNSTATED, questions };
 }
 
-/** A plan is medium by Funtown's rule; its own "How serious:" line among its first lines starting with `high` raises it to high, never lower. */
+/** A plan is medium by Funtown's rule; its own "How serious:" top line starting with `high` raises it to high, never lower. */
 function planCard(input: Record<string, unknown>): Rating {
-  const lines = typeof input.plan === "string" ? input.plan.split("\n", PLAN_LINES) : [];
-  for (const line of lines) {
-    const said = /^[\s#>*_-]*how serious:[\s*_]*(high(?![a-z]).*)$/i.exec(line)?.[1];
-    if (said) return { severity: { level: "high", reason: `the agent's word: ${said.trim()}`, source: "agent" } };
-  }
+  const top = typeof input.plan === "string" ? planTop(input.plan) : [];
+  const said = top.find((t) => t.label === "how serious" && /^high(?![a-z])/i.test(t.said))?.said;
+  if (said) return { severity: { level: "high", reason: `the agent's word: ${said.trim()}`, source: "agent" } };
   return { severity: { level: "medium", reason: "Funtown's rule: every plan is medium", source: "kind" } };
 }
 

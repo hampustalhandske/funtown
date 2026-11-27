@@ -47,6 +47,8 @@ function rack(at: Spot, k: number): Spot {
 }
 /** The k-th place in front of a building at `at`: rows of six. */
 const yard = (at: Spot, k: number): Spot => ({ x: at.x - 1.5 + SEAT * (k % 6), z: at.z + 1.6 + SEAT * Math.floor(k / 6) });
+/** The k-th resting lead at the door of a building at `at`: in front of the door, between the parcels and the rack, the next ones further out. */
+const porch = (at: Spot, k: number): Spot => ({ x: at.x, z: at.z + 1.1 + SEAT * k });
 /** The k-th parcel at the door of a building at `at`: three in a row left of the door, the rest piled along its side. */
 const doorstep = (at: Spot, k: number): Spot =>
   k < 3 ? { x: at.x - 0.55 - 0.55 * k, z: at.z + 0.95 } : { x: at.x - 1.15 - 0.55 * ((k - 3) % 2), z: at.z + 0.4 - 0.55 * Math.floor((k - 3) / 2) };
@@ -60,8 +62,8 @@ function queueSpot(i: number, count: number): Spot {
 
 /**
  * Where everything in `town` stands. Buildings follow house order on a grid in front of the
- * castle; working, done and resting leads stand in front of their building and working subagents are
- * hats on its rack; stuck ones sit there too; everyone who asks you queues at the desk in `waiting`
+ * castle; working and done leads stand in front of their building, resting ones by its door, and working
+ * subagents are hats on its rack; stuck ones sit there too; everyone who asks you queues at the desk in `waiting`
  * (urgency) order; open parcels sit at the door; the lead marked `steward` stands by the desk. Done
  * subagents are not placed.
  * Pure: the same Town (and waiting order) always gives the same places.
@@ -77,12 +79,13 @@ export function layout(town: Town, waiting: Waiting[]): Placed[] {
   const settle = (house: House, at: Spot, leads: House["leads"], colour: string, asLeads: boolean): number => {
     let pegs = 0;
     let seats = 0;
+    let resting = 0;
     for (const lead of leads) {
       if (asLeads) {
         const pose = poseOf(lead);
         const make = (spot: Spot): Placed => ({ kind: "lead", id: lead.id, lead: lead.id, cwd: house.cwd, colour, pose, at: spot });
         if (pose === "queue") queue.push({ key: `${lead.id}/${lead.id}`, place: make });
-        else placed.push(make(yard(at, seats++)));
+        else placed.push(make(lead.needs === "turn ended" ? porch(at, resting++) : yard(at, seats++)));
       }
       for (const sub of lead.subagents) {
         if (sub.stage === "done") continue;

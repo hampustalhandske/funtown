@@ -7,7 +7,7 @@ import { afterEach } from "vitest";
 import WebSocket from "ws";
 import { startServer } from "../server/app.ts";
 import { FakeClaude } from "./fake-claude.ts";
-import type { Town } from "../server/types.ts";
+import type { Card, Town } from "../server/types.ts";
 
 export type Json = Record<string, unknown>;
 
@@ -180,6 +180,33 @@ export const ev = (name: string, extra: Json = {}, session = "s1") => ({
   funtown: { tty: "ttys009", term_program: "TestTerm", at: (clock = Math.max(clock + 1, Date.now())) },
   ...extra,
 });
+
+/** A hook event for `session` in CWD at the given `funtown.at`, with no tty. */
+export const evAt = (name: string, at: number, extra: Json = {}, session = "s1") => ({
+  hook_event_name: name,
+  session_id: session,
+  cwd: CWD,
+  funtown: { at },
+  ...extra,
+});
+
+/** Keeps a /stream open for the rest of the test, as an open page does. */
+export function connectPage(url: string): void {
+  const ctl = new AbortController();
+  holds.push(ctl);
+  fetch(`${url}/stream`, { signal: ctl.signal }).then((r) => r.body!.pipeTo(new WritableStream())).catch(() => {});
+}
+
+/** The open cards of the first Town state in which `ok(cards)` holds. */
+export const cardsWhere = async (url: string, ok: (c: Card[]) => boolean) => (await townWhere(url, (t) => ok(t.cards))).cards;
+
+/** Holds `payload`, waits for its card and returns the card, the pending reply and `abort`; earlier holds stay open, so the newest card is this one. */
+export async function held(s: { url: string }, payload: Json) {
+  const before = (await cardsWhere(s.url, () => true)).length;
+  const h = hold(s.url, payload);
+  const cards = await cardsWhere(s.url, (c) => c.length === before + 1);
+  return { card: cards[cards.length - 1], reply: h.reply, abort: h.abort };
+}
 
 export type ErrorLine = { source: string; step: string; message: string };
 const ERROR_LINE = /^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z) (hook|hold|server) (.+?): (.*)$/;

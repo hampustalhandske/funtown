@@ -1,13 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
-import { stubStream } from "./stream.ts";
+import { house, lead, stubStream, town } from "./stream.ts";
 
 const NOW = Date.now();
-const lead = (over: Record<string, unknown>) => ({
-  id: "s1", name: "lead-1", stage: "working", activity: null, step: null, tty: "ttys001", termProgram: "TestTerm",
-  kind: "terminal", shortId: null, subagents: [], ...over,
-});
-const house = (project: string, leads: unknown[]) => ({ project, cwd: `/work/${project}`, leads });
-const town = (houses: unknown[], cards: unknown[] = []) => ({ claude: { version: "2.1.325", problems: [] }, houses, cards });
 
 /** Three houses in a row, left to right: alpha, beta, gamma. The middle of the screen is beta's. */
 const row = () => town(["alpha", "beta", "gamma"].map((p, i) => house(p, [lead({ id: `s${i}`, name: `lead-${i}` })])));

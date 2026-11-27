@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Character, House, Parcel, Town } from "../../../server/types.ts";
-import { AddProject, askReview, Panel, post, removeProject, stewardOf, useSelection, useTown } from "../App.tsx";
-import { KeySheet, useKeySheet } from "../KeySheet.tsx";
-import { useKey, useLayer, useWalk } from "../keys.ts";
+import { AddProject, askReview, Panel, post, removeProject, stewardOf, usePageKeys, useSelection, useTown } from "../App.tsx";
+import { KeySheet } from "../KeySheet.tsx";
+import { useKey, useLayer } from "../keys.ts";
 import { MorningButton } from "../Morning.tsx";
 import { SwitchButton, type OpenSession } from "../Switch.tsx";
-import { needOf, NotifyButton, Toasts, useLetterKey } from "../needs.tsx";
+import { needOf, NotifyButton, Toasts } from "../needs.tsx";
 import { boardOf, interior, type Board, type InPlaced } from "./interior.ts";
 import { AVATARS, avatarFor } from "./kit/avatars.ts";
 import { keyOf, layout, type Placed } from "./layout.ts";
@@ -191,9 +191,6 @@ export function TownPage() {
     setMarked(w.cwd);
     setLast({ to: w.cwd });
   }, [openWaiting]);
-  useWalk(waiting, current, openAndMark);
-  useLetterKey(town, current, openAndMark);
-  const [sheet, showSheet, hideSheet] = useKeySheet();
   const name = useCallback((p: Placed | InPlaced) => words(p, index).name, [index]);
 
   // The classroom being shown: the cwd in the page hash, kept in step with Back, reload and pasted links.
@@ -218,9 +215,9 @@ export function TownPage() {
   const hasMark = marked !== null && index.houses.has(marked);
   useLayer("mark", hasMark, () => setMarked(null));
   // The plain list opens at the house you are at: the classroom's, else the marked one.
-  const at = classroom?.cwd ?? (marked !== null && index.houses.has(marked) ? marked : null);
+  const at = classroom?.cwd ?? (hasMark ? marked : null);
   const workHref = at === null ? "/work.html" : workLink(at);
-  useKey("l", () => location.assign(workHref));
+  const [sheet, showSheet, hideSheet] = usePageKeys(town, waiting, current, openAndMark, workHref);
   const shown = lead && house && selected;
   useLayer("classroom", showing, () => go(null));
 
@@ -246,8 +243,11 @@ export function TownPage() {
   const openParcel = useCallback(
     (cwd: string, number: number) => {
       const parcel = index.houses.get(cwd)?.parcels?.find((x) => x.number === number);
-      const steward = parcel?.review?.state === "ready" ? parcel.review.steward : undefined;
-      if (steward && index.characters.has(steward)) setSelection({ lead: steward, id: steward });
+      const ready = parcel?.review?.state === "ready" ? parcel.review : undefined;
+      const steward = ready?.steward;
+      if (steward && index.characters.has(steward)) {
+        setSelection({ lead: steward, id: steward, review: ready?.letter === undefined ? undefined : { pr: number, letter: ready.letter } });
+      }
       else if (parcel?.review?.state === "idle") {
         setSettings(false);
         onClose();
@@ -316,7 +316,7 @@ export function TownPage() {
       {sheet && <KeySheet onClose={hideSheet} />}
       {settings && <Settings town={town} muted={muted} onMute={toggleMute} open={openSession} onClose={closeSettings} />}
       {asking && <AskPanel key={`${asking.cwd}/${asking.parcel.number}`} target={asking} onClose={closeAsking} />}
-      {shown && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} house={house} cards={town?.cards ?? []} steward={stewardOf(town)} onClose={onClose} />}
+      {shown && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} house={house} cards={town?.cards ?? []} steward={stewardOf(town)} review={selection?.review} onClose={onClose} />}
       <Toasts
         toasts={toasts}
         onOpen={(w) => {

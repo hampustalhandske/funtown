@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Card, Character, Town } from "../../server/types.ts";
+import type { Card, Character, House, Town } from "../../server/types.ts";
 import { useKey } from "./keys.ts";
 
 /**
@@ -29,6 +29,11 @@ const tierOf = (c: Character): Tier => (c.needs === "turn ended" || rateLimited(
 const rankOf = (c: Character, tier: Tier): number =>
   tier === 1 ? (c.needs !== undefined && c.needs in CARD_KINDS ? 0 : 1) : tier === 4 ? (rateLimited(c) ? 0 : 1) : 0;
 
+/** Every character (lead or subagent) of `town`, in the town's order, with its house and its lead's id. */
+function* characters(town: Town | null): Generator<{ c: Character; house: House; lead: string }> {
+  for (const house of town?.houses ?? []) for (const lead of house.leads) for (const c of [lead, ...lead.subagents]) yield { c, house, lead: lead.id };
+}
+
 /**
  * Every needs_you character (lead or subagent) of `town` as one list in strict tiers: 1 asks (cards,
  * then other asks), 2 stuck, 4 quiet (stuck on a rate limit, then resting leads, whose turn ended).
@@ -36,15 +41,11 @@ const rankOf = (c: Character, tier: Tier): number =>
  */
 export function urgencyList(town: Town | null): Waiting[] {
   const list: { w: Waiting; rank: number }[] = [];
-  for (const house of town?.houses ?? []) {
-    for (const lead of house.leads) {
-      for (const c of [lead, ...lead.subagents]) {
-        if (c.stage !== "needs_you") continue;
-        const tier = tierOf(c);
-        const w: Waiting = { key: `${lead.id}/${c.id}`, lead: lead.id, id: c.id, project: house.project, cwd: house.cwd, name: c.name, need: needOf(c), since: c.since ?? Infinity, tier };
-        list.push({ w, rank: rankOf(c, tier) });
-      }
-    }
+  for (const { c, house, lead } of characters(town)) {
+    if (c.stage !== "needs_you") continue;
+    const tier = tierOf(c);
+    const w: Waiting = { key: `${lead}/${c.id}`, lead, id: c.id, project: house.project, cwd: house.cwd, name: c.name, need: needOf(c), since: c.since ?? Infinity, tier };
+    list.push({ w, rank: rankOf(c, tier) });
   }
   // `since` is Infinity when unknown: two unknowns tie (Infinity - Infinity is NaN) and keep the town's order.
   const older = (a: number, b: number) => (a === b ? 0 : a - b);
@@ -54,29 +55,30 @@ export function urgencyList(town: Town | null): Waiting[] {
 /** A character with a letter, and where to find it: what M walks. */
 export type Lettered = Pick<Waiting, "key" | "lead" | "id" | "cwd">;
 
-/** Every character (lead or subagent) of `town` with a letter, the newest letter first; letters of one time keep the town's order. */
-export function letterList(town: Town | null): Lettered[] {
-  const list: { l: Lettered; at: number }[] = [];
-  for (const house of town?.houses ?? []) {
-    for (const lead of house.leads) {
-      for (const c of [lead, ...lead.subagents]) {
-        if (c.letter !== undefined) list.push({ l: { key: `${lead.id}/${c.id}`, lead: lead.id, id: c.id, cwd: house.cwd }, at: c.letter });
-      }
-    }
-  }
-  return list.sort((a, b) => b.at - a.at).map((x) => x.l);
-}
-
 /**
- * Makes M open the pane of the character with the newest letter, then the next newest, wrapping; `current` is the open
- * pane's `lead/id` (when it has no letter, M opens the newest). Keeps no "read" memory, and sends and marks nothing.
+ * Makes M open the pane of the character with the newest letter, then the next newest, wrapping (letters of one time
+ * keep the town's order); `current` is the open pane's `lead/id` (when it has no letter, M opens the newest). Keeps no
+ * "read" memory, and sends and marks nothing.
  */
 export function useLetterKey(town: Town | null, current: string | null, open: (entry: Lettered) => void): void {
   useKey("m", () => {
-    const list = letterList(town);
+    const list = [...characters(town)]
+      .filter(({ c }) => c.letter !== undefined)
+      .sort((a, b) => b.c.letter! - a.c.letter!)
+      .map(({ c, house, lead }): Lettered => ({ key: `${lead}/${c.id}`, lead, id: c.id, cwd: house.cwd }));
     if (list.length === 0) return;
     open(list[(list.findIndex((l) => l.key === current) + 1) % list.length]);
   });
+}
+
+/** Date.now(), refreshed every `everyMs`, so a waiting time shown with it stays about right. */
+export function useNow(everyMs: number): number {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), everyMs);
+    return () => clearInterval(timer);
+  }, [everyMs]);
+  return now;
 }
 
 /** "3m" style wait text for a character waiting since `since`. */
@@ -177,11 +179,7 @@ export function useAlerts(waiting: Waiting[], loaded: boolean, muted: boolean, o
 
 /** The "Needs you" list: one row per waiting character, in urgency order; quiet rows (tier 4) are drawn quieter. */
 export function NeedsList({ waiting, onOpen }: { waiting: Waiting[]; onOpen: (w: Waiting) => void }) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 5000);
-    return () => clearInterval(t);
-  }, []);
+  const now = useNow(5000);
   if (waiting.length === 0) return null;
   return (
     <section className="needs-list" aria-label="Needs you">

@@ -88,7 +88,7 @@ test("after_a_successful_answer_the_card_says_sent_and_offers_no_button_until_it
   await expect(under.getByRole("button", { name: /^(Allow|Deny)/ })).toHaveCount(0);
 });
 
-// The brief on a card, take C "Weighed".
+// The brief on a card.
 test("a_medium_question_shows_who_asks_its_weight_the_ask_the_goal_and_stacked_options_with_the_pick_chosen", async ({ page }) => {
   // Catches a card that hides whose work it is, the severity, the goal, or the agent's pick.
   const { answers } = await open(page, ledger([asker()], [asks([MEDIUM], ["medium"], [0])]));
@@ -97,6 +97,8 @@ test("a_medium_question_shows_who_asks_its_weight_the_ask_the_goal_and_stacked_o
   await expect(brief).toContainText("Medium");
   await expect(brief).toContainText("the agent's word: medium: data");
   await expect(brief.getByRole("heading", { name: MEDIUM.question })).toBeVisible();
+  // the header's words after its level word are the question's topic (story 3)
+  await expect(brief.locator(".topic")).toHaveText("data");
   await expect(brief).toContainText("For Invoices export from one button · implement, step 3 of 6");
   await expect(brief).toContainText("Spec: docs/specs/csv-export.md");
   await expect(brief).toContainText("Last step: Edit: src/invoices/export.ts");
@@ -155,6 +157,8 @@ test("a_high_question_opens_its_stakes_first_and_its_button_names_the_act", asyn
   const brief = await cardIn(page, "csv-export");
   const stakes = brief.locator(".stakes");
   await expect(stakes).toContainText("The agent marked this high.");
+  // the agent's own words: its header and its question
+  await expect(stakes.locator(".words")).toHaveText(`high: data · ${HIGH.question}`);
   await expect(stakes).toContainText("Last step: Bash: npm run migrate -- --dry");
   const [stakesBox, first] = [await stakes.boundingBox(), await tile(brief, "Dry run first").boundingBox()];
   expect(stakesBox!.y + stakesBox!.height).toBeLessThanOrEqual(first!.y);
@@ -236,6 +240,8 @@ test("a_high_plan_opens_its_stakes", async ({ page }) => {
   await open(page, ledger([asker({ needs: "plan" })], [planned({ level: "high", reason: "the agent's word: high; drops a table", source: "agent" })]));
   const brief = await cardIn(page, "csv-export");
   await expect(brief.locator(".stakes")).toContainText("The agent marked this high.");
+  // the agent's own words: the plan's How serious line as written
+  await expect(brief.locator(".stakes .words")).toHaveText(PLAN.split("\n")[2]);
   await expect(brief).toContainText("Click to answer");
 });
 
@@ -249,6 +255,8 @@ test("a_subagents_high_permission_says_who_asks_under_which_lead_its_description
   await expect(brief.getByRole("heading", { name: "Push the branch to GitHub" })).toBeVisible();
   const stakes = brief.locator(".stakes");
   await expect(stakes).toContainText("High: git push leaves this Mac.");
+  // the agent's own words: Bash's description
+  await expect(stakes.locator(".words")).toHaveText("Push the branch to GitHub");
   await expect(stakes.locator("pre")).toHaveText("git push origin feature/csv-export");
   await expect(stakes).toContainText("Last step: Bash: npm test");
   await expect(brief).toContainText("Click to answer");
@@ -320,6 +328,32 @@ test("raw_detail_shows_the_whole_tool_input_as_sent", async ({ page }) => {
   await expect(raw).toContainText('"preview": "CREATE TABLE invoices_v2 (...)"');
   await brief.getByRole("button", { name: "Hide raw detail" }).click();
   await expect(raw).toHaveCount(0);
+});
+
+test("raw_detail_on_a_permission_shows_its_suggestions_as_sent", async ({ page }) => {
+  // Catches a permission whose "always allow" rules from Claude Code are hidden (story 15).
+  const suggestions = [{ type: "addRules", rules: [{ toolName: "Bash", ruleContent: "npm install:*" }], behavior: "allow", destination: "localSettings" }];
+  await open(page, ledger([asker({ stage: "working", subagents: [implementer] })], [
+    { ...permission({ command: "npm install papaparse@5.4.1" }, { level: "medium", reason: "Funtown's rule: not on the high or low list", source: "rule" }), suggestions },
+  ]));
+  const brief = await cardIn(page, "implementer-1");
+  await brief.getByRole("button", { name: "Raw detail" }).click();
+  await expect(brief.locator("pre.raw")).toContainText('"command": "npm install papaparse@5.4.1"');
+  await expect(brief.locator("pre.raw")).toContainText('"ruleContent": "npm install:*"');
+});
+
+test("a_card_open_in_the_pane_is_one_line_in_the_list_so_one_card_never_shows_two_choices", async ({ page }) => {
+  // Catches the list row offering "Keep both" while the pane beside it says "New table only".
+  await open(page, ledger([asker()], [asks([MEDIUM], ["medium"], [0])]));
+  const list = page.locator('section[aria-label="ledgerline"]');
+  await expect(list.getByRole("group", { name: "question request" })).toBeVisible();
+  const brief = await cardIn(page, "csv-export");
+  await tile(brief, "New table only").click();
+  await expect(page.getByRole("group", { name: "question request" })).toHaveCount(1);
+  await expect(list).toContainText(`csv-export: ${MEDIUM.question} · open in the panel`);
+  await expect(list.getByRole("button", { name: /^Send: / })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(list.getByRole("group", { name: "question request" })).toBeVisible();
 });
 
 test("enter_in_a_cards_text_box_or_on_an_option_sends_nothing", async ({ page }) => {

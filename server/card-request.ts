@@ -1,9 +1,11 @@
+// The card request: the brief the steward reads to give her word on a card, and the bounds of that word.
 import { basename } from "node:path";
+import { standing } from "./brief-parts.ts";
 import type { Card, Lead, Level, Word } from "./types.ts";
 import type { PhaseFile } from "./workflow.ts";
 
 /** The most characters of a card's raw `tool_input` the brief carries. */
-export const INPUT_CHARS = 8_000;
+const INPUT_CHARS = 8_000;
 /** How long a pasted word may go without a reply before it fails and the steward's next request may go. */
 export const WORD_MS = 5 * 60_000;
 /** The states a press queues a word from: not asked yet, and only a failed word again. */
@@ -33,7 +35,7 @@ function questionLines(card: Card): string[] {
 /** The ask in one line, with the options a plan or a permission always has. */
 function fixedLines(card: Card): string[] {
   if (card.kind === "plan") {
-    return ["Ask: approve this plan (the plan is in the raw input below)", "  Option 1: Approve: the agent leaves plan mode and starts on the plan", "  Option 2: Keep planning: the agent revises the plan", "  The agent's pick: none"];
+    return ["Ask: approve this plan (the plan is in the raw input below)", "  Option 1: Approve: the agent leaves plan mode and starts on the plan", "  Option 2: Keep planning: the agent revises the plan", "  The agent's pick: Approve"];
   }
   const target = str(card.input.command) || str(card.input.file_path) || str(card.input.notebook_path) || str(card.input.url);
   return [`Ask: may it run ${card.tool}${target ? `: ${target}` : ""}`, "  Option 1: Allow: the tool runs as given", "  Option 2: Deny: the tool doesn't run and the agent is told so", "  The agent's pick: none"];
@@ -53,8 +55,7 @@ export function brief(card: Card, lead: Lead | undefined, house: string, phase: 
   const { level, source, reason } = card.severity;
   lines.push(`Severity: ${shown(level)}; source: ${source}; reason: ${reason}`);
   if (phase) {
-    const step = phase.steps?.indexOf(phase.phase) ?? -1;
-    lines.push(`Phase: ${phase.phase}${step >= 0 ? `, step ${step + 1} of ${phase.steps!.length}` : ""}`);
+    lines.push(`Phase: ${standing(phase)}`);
     if (phase.goal !== undefined) lines.push(`Goal: ${phase.goal}`);
     if (phase.spec !== undefined) lines.push(`Spec: ${phase.spec}`);
   }

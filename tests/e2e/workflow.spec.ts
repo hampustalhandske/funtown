@@ -69,6 +69,20 @@ test("the_goal_and_spec_show_beside_the_phase_and_note_as_text", async ({ page }
   await expect(house(page).getByRole("heading")).toContainText(spec);
 });
 
+test("a_long_goal_wraps_within_the_houses_own_width_and_shows_in_full_without_a_hover", async ({ page }) => {
+  // Catches a goal that stretches its house across the row, or one cut short with the rest only in a hover title.
+  const goal = "Invoices export from one button for every customer, including the biggest one with about 1.2 million invoice rows a year, without new infrastructure and without breaking the nightly report";
+  const width = async () => (await house(page).boundingBox())!.width;
+  const plain = await width();
+  await stubStream(page, { ...town, houses: [{ ...town.houses[0], phase: { phase: "build", note: "tests first", goal } }, town.houses[1]] });
+  await page.reload();
+  const line = house(page).locator(".phase-line");
+  await expect(line).toContainText(goal);
+  expect(await width()).toBe(plain);
+  expect(await line.evaluate((e) => e.scrollWidth <= e.clientWidth && e.getClientRects().length > 0)).toBe(true);
+  await expect(line).toBeInViewport({ ratio: 1 });
+});
+
 test("a_subagents_role_and_tags_and_a_leads_tags_show_on_their_rows_and_the_role_in_the_panel", async ({ page }) => {
   const sub = page.locator('ul[aria-label="alpha subagents"] .character').filter({ hasText: "helper-1" });
   await expect(sub).toContainText("implementer");
@@ -117,11 +131,20 @@ test("only_an_idle_parcel_has_an_ask_for_review_button_and_it_asks_only_when_cli
   expect(asked[0].origin).toBeTruthy();
 });
 
-test("clicking_a_ready_review_opens_the_stewards_panel_with_the_review_as_written", async ({ page }) => {
+test("clicking_a_ready_review_opens_the_stewards_panel_with_the_review_fetched_by_its_letter_id_though_a_later_word_is_her_newest", async ({ page }) => {
+  // Catches a review pushed out of reach by her word on a card that came after it (story 42).
+  const ids: (string | null)[] = [];
+  await page.route("**/letters?*", (r) => {
+    const id = new URL(r.request().url()).searchParams.get("id");
+    ids.push(id);
+    const letter = id === "L1" ? { id: "L1", from: "st1", name: "steward", text: REVIEW, at: 2 } : { id: "W2", from: "st1", name: "steward", text: "Pick: Keep both", at: 3 };
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([letter]) });
+  });
   await parcel(page, 12).getByText("review ready ✉").click();
-  const letters = panel(page, "steward").getByRole("region", { name: "Letters" });
-  await expect(letters).toContainText("Squash: Fix the parser");
-  await expect(letters).toContainText("Check the parser tests before merging.");
+  const review = panel(page, "steward").getByRole("region", { name: "Review of #12" });
+  await expect(review).toContainText("Squash: Fix the parser");
+  await expect(review).toContainText("Check the parser tests before merging.");
+  expect(ids).toContain("L1");
 });
 
 test("at_390_px_a_long_parcel_title_note_and_overlap_file_do_not_widen_the_page", async ({ page }) => {

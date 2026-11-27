@@ -6,7 +6,7 @@ import type { LogError } from "./errors.ts";
 import type { Journal } from "./journal.ts";
 import type { HookEvent, TownState } from "./town.ts";
 import type { Card, Lead, Parcel, Word } from "./types.ts";
-import { ASKABLE, brief, WORD_LABELS, WORD_MS } from "./word.ts";
+import { ASKABLE, brief, WORD_LABELS, WORD_MS } from "./card-request.ts";
 import type { Pr } from "./workflow.ts";
 
 /** How long its output must pause before the request is written: the screen has been drawn. */
@@ -17,8 +17,10 @@ const LINGER_MS = 1_000;
 const LISTED_MS = 5 * 60_000;
 
 const key = (pr: number, head: string) => `${pr}\0${head}`;
-/** The labels a reply must hold to count as a review: the three parts `steward.md` asks for. */
+/** The labels a reply must hold, each followed by a colon, to count as a review: the three parts `steward.md` asks for. */
 const REVIEW_LABELS = ["Squash title", "Merge text", "Before merging"];
+/** The `labels` a reply's `text` lacks as labels, each followed by a colon; a reply holding them all counts. */
+const missingLabels = (labels: string[], text = "") => labels.filter((label) => !text.includes(`${label}:`));
 /** Whether `lead` is stuck repeating a tool call: its turn still runs, unlike one stuck on an error. */
 const inLoop = (lead: Lead) => lead.needs === "stuck" && lead.reason?.startsWith("loop:") === true;
 
@@ -306,7 +308,7 @@ export function createSteward(opts: {
       if (inFlight.kind === "word") {
         const { card, at } = inFlight;
         const letter = name === "Stop" ? town.letters(steward.id)?.find((l) => l.from === steward.id && l.at >= at) : undefined;
-        const missing = WORD_LABELS.filter((label) => !(letter?.text ?? "").includes(`${label}:`));
+        const missing = missingLabels(WORD_LABELS, letter?.text);
         if (name === "StopFailure") {
           words.set(card, { state: "failed", reason: "the steward's turn failed" });
         } else if (letter && missing.length === 0) {
@@ -318,11 +320,12 @@ export function createSteward(opts: {
       } else if (name === "Stop") {
         const { pr, head, at } = inFlight;
         const letter = town.letters(steward.id)?.find((l) => l.from === steward.id);
-        if (letter && letter.at >= at && REVIEW_LABELS.every((label) => letter.text.includes(label))) {
+        const missing = missingLabels(REVIEW_LABELS, letter?.text);
+        if (letter && letter.at >= at && missing.length === 0) {
           reviewed.set(key(pr, head), letter.id);
           journal?.append({ kind: "reviewed", at: Date.now(), pr, head, letter: letter.id });
         } else {
-          logError("steward", `reply to #${pr} lacks ${REVIEW_LABELS.filter((label) => !(letter?.text ?? "").includes(label)).join(", ")}`);
+          logError("steward", `reply to #${pr} lacks ${missing.join(", ")}`);
           asked.delete(key(pr, head));
         }
       }
