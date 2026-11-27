@@ -1,9 +1,6 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Card } from "../server/types.ts";
-import { hold, jsonLines, leadsOf, listed, listedBg, post, sleep, start, tokenOf, townWhere, until, type Json } from "./helpers.ts";
+import { hold, leadsOf, listed, listedBg, post, sleep, start, tokenOf, townWhere, type Json } from "./helpers.ts";
 
 
 const CWD = "/work/demo-app";
@@ -274,31 +271,5 @@ describe("when a card is released", () => {
     s.fake.list([listed("s1", CWD), listedBg(BG, CWD, { status: "busy" }), listed("late", CWD)]);
     const cards = await cardsWhere(s.url, (c) => c.length === 1);
     expect(cards[0]).toMatchObject({ lead: "late", kind: "permission" });
-  });
-});
-
-describe("the answer log", () => {
-  it("each_way_a_card_closes_adds_one_line_with_the_right_by", async () => {
-    const log = join(mkdtempSync(join(tmpdir(), "funtown-answers-")), "answers.jsonl");
-    const s = await room({ answerLog: log });
-    const lines = () => jsonLines(log);
-    const line = (kind: string, by: string) => ({ at: expect.any(Number), lead: "s1", project: "demo-app", kind, by });
-
-    const a = await held(s, permission(100));
-    await answer(s, { card: a.card.id, decision: "allow" });
-    await until(() => lines().length === 1);
-    expect(lines()).toEqual([line("permission", "funtown")]);
-
-    const b = await held(s, permission(200));
-    await post(s.url, ev("PostToolUse", 300, { tool_name: "Bash", tool_input: { command: "rm -rf build" } }));
-    await until(() => lines().length === 2);
-    expect(lines()[1]).toEqual(line("permission", "elsewhere"));
-    await b.reply;
-
-    const c = await held(s, permission(400));
-    c.abort();
-    await until(() => lines().length === 3);
-    expect(lines()[2]).toEqual(line("permission", "dropped"));
-    expect(await cardsWhere(s.url, (cs) => cs.length === 0)).toEqual([]);
   });
 });

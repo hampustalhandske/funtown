@@ -36,7 +36,9 @@ Contracts (source of truth: this list)
   as written, never parsed; the newest only per lead, 65,536 chars, ids unique across restarts; `GET /letters?lead=` (`&id=` for a steward's review or word, from the journal);
   reply: bracketed paste, `\r` over `/term`. Journal: JSONL, 7 days (steward kept), `/morning?since=`.
 - Holds: `/hold` 200 with the hook output, 204 when released (no page or listing for `unlistedMs`);
-  `/answer { card, decision, answers?, feedback? }`; log `by` funtown, elsewhere or dropped.
+  `/answer { card, decision, answers?, feedback? }`; log `by` funtown, terminal
+  (typed in Funtown's own terminal for that lead), elsewhere, dropped or unshown (an ask from a listed lead that was never carded:
+  a terminal lead's question or plan, or no page open), with the card's kind and severity.
 - Logs: `<ISO> <hook|hold|server> <step>: <message>`; a dead run-file pid: `server unclean-exit`.
 - Terminal: `/term?lead=` runs `claude attach` in a pty per socket; closing the socket kills it, and the client's exit
   closes the socket with code 4000 + its exit code (4000 + 128 + the signal when killed).

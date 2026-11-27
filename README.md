@@ -34,8 +34,10 @@ session in `~/.funtown/steward` to review the pull requests you ask it to (an em
 turns that off). Nothing is sent to it unless you ask. Sessions come from
 `claude agents --json`, terminals from `claude attach`; the server never reads Claude
 Code's own files. The only Claude Code file Funtown touches is `settings.json`, where the
-installer adds and removes its own hook entries. Each answer card that closes adds a line
-to `~/.funtown/answers.jsonl`, saying whether it was answered in Funtown or elsewhere.
+installer adds and removes its own hook entries. Each ask of a session you've added adds a line
+to `~/.funtown/answers.jsonl`: where it was answered (on a card in Funtown, in Funtown's own
+terminal, elsewhere, or never shown because it came from a terminal session or no page was
+open), with its kind, how serious it was and whether you asked the Queen for her word.
 
 ## Development
 

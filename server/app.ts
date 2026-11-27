@@ -109,7 +109,7 @@ async function readJson(req: IncomingMessage, max = Infinity): Promise<{ value: 
  * own Origin and token. `/events` refuses any request with an `Origin` header, so web pages
  * cannot post to it. `POST /hold` (no Origin either) holds a permission, question or plan as a
  * card until `POST /answer` (page Origin and token) answers it or it is released; `answerLog` (a
- * JSONL path) gets one line per closed card. `journal` (a JSONL path) gets a line per kept letter and per character that
+ * JSONL path) gets one line per ask of a listed lead (see `createHolds`). `journal` (a JSONL path) gets a line per kept letter and per character that
  * becomes stuck, and feeds `GET /morning?since=<ms>` (page token). `unlistedMs` (default 10 s)
  * is how long hook data and holds wait for their session to be listed, and holds for a page to
  * be open. `errorLog` (a path) gets one line per server error, besides stderr. `POST /switch` (page
@@ -163,12 +163,21 @@ export async function startServer(opts: {
   const logError = serverLogger(opts.errorLog);
   const journal = opts.journal ? openJournal(opts.journal, logError) : undefined;
   const town = new TownState(version, unlistedMs, journal);
-  const holds = createHolds(town, { unlistedMs, answerLog: opts.answerLog, logError, changed: () => broadcast() });
+  const holds = createHolds(town, {
+    unlistedMs,
+    answerLog: opts.answerLog,
+    asked: (card) => {
+      const state = steward?.word(card)?.state;
+      return state !== undefined && state !== "idle";
+    },
+    logError,
+    changed: () => broadcast(),
+  });
   const terminals = createTerminals(claude, opts.shell, logError, () => {
     if (closed) return;
     town.setShells(terminals.shells());
     broadcast();
-  });
+  }, (lead) => holds.typed(lead));
   let projects: string[] = [];
   try {
     if (opts.projects) projects = readProjects(opts.projects);

@@ -7,10 +7,20 @@ import { rate } from "./severity.ts";
 import type { HookEvent, TownState } from "./town.ts";
 import type { Card } from "./types.ts";
 
-type By = "funtown" | "elsewhere" | "dropped";
-type Hold = { card: Card; toolUseId: string | undefined; res: ServerResponse; shown: boolean; timer?: NodeJS.Timeout };
+type By = "funtown" | "terminal" | "elsewhere" | "unshown" | "dropped";
+type Hold = {
+  card: Card;
+  toolUseId: string | undefined;
+  res: ServerResponse;
+  shown: boolean;
+  timer?: NodeJS.Timeout;
+  /** When input last reached the lead's terminal socket while the card was open. */
+  typedAt?: number;
+};
 
 const DENIED = "The user denied this in Funtown.";
+/** How long after input on Funtown's own terminal for its lead a card's close still counts as answered there. */
+const TERMINAL_MS = 10_000;
 /** Events that show a session went on past any request it had open. */
 const MOVED_ON = ["Stop", "SubagentStop", "UserPromptSubmit", "SessionStart"];
 
@@ -57,19 +67,29 @@ function hookOutput(card: Card, body: Record<string, unknown>): object | null {
  * replied to when its card closes: 200 with the hook output when answered in Funtown, 204
  * when released. Releases: a later event of the same agent (`event`), the lead leaving the
  * list (`refresh`), no listing within `unlistedMs`, or no page for `unlistedMs` (`pages`).
- * Every card that closes appends one line to `answerLog`, when given. `changed` runs
- * whenever the open cards change.
+ * Every ask of a listed lead appends one line to `answerLog`, when given: `{ at, lead,
+ * project, kind, by, severity, source, queen }` once its card closes, or at once for an ask
+ * that was never carded (`by` "unshown", with a `reason`: a terminal lead's question or plan,
+ * or no page open). A card released as answered elsewhere within TERMINAL_MS after input to
+ * its lead on a `/term` socket (`typed`) is logged `terminal`. `asked` says whether the
+ * Queen's word was asked for a card. `changed` runs whenever the open cards change.
  */
-export function createHolds(town: TownState, opts: { unlistedMs: number; answerLog?: string; logError: LogError; changed: () => void }) {
-  const { unlistedMs, answerLog, logError, changed } = opts;
+export function createHolds(
+  town: TownState,
+  opts: { unlistedMs: number; answerLog?: string; asked: (card: Card) => boolean; logError: LogError; changed: () => void },
+) {
+  const { unlistedMs, answerLog, asked, logError, changed } = opts;
   const holds = new Map<string, Hold>();
   // when the last page left (or the server started), or null while a page is open
   let noPageSince: number | null = Date.now();
   let noPageTimer: NodeJS.Timeout | undefined;
 
-  const log = (card: Card, by: By) => {
+  const log = (card: Card, by: By, reason?: "terminal session" | "no page") => {
     if (!answerLog) return;
-    const line = { at: Date.now(), lead: card.lead, project: basename(card.cwd), kind: card.kind, by };
+    const line = {
+      at: Date.now(), lead: card.lead, project: basename(card.cwd), kind: card.kind, by, ...(reason && { reason }),
+      severity: card.severity.level, source: card.severity.source, queen: asked(card),
+    };
     try {
       mkdirSync(dirname(answerLog), { recursive: true });
       appendFileSync(answerLog, `${JSON.stringify(line)}\n`);
@@ -104,7 +124,7 @@ export function createHolds(town: TownState, opts: { unlistedMs: number; answerL
       const kind = event ? kindOf(event) : null;
       const sid = event?.session_id;
       const lead = typeof sid === "string" ? town.lead(sid) : undefined;
-      if (!event || !kind || typeof sid !== "string" || noPage() || (kind !== "permission" && lead?.kind === "terminal")) {
+      if (!event || !kind || typeof sid !== "string") {
         res.writeHead(204).end();
         return;
       }
@@ -120,6 +140,12 @@ export function createHolds(town: TownState, opts: { unlistedMs: number; answerL
         at: typeof event.funtown?.at === "number" ? event.funtown.at : Date.now(),
       };
       const card: Card = { ...made, ...rate(made) };
+      const unshown = kind !== "permission" && lead?.kind === "terminal" ? "terminal session" : noPage() ? "no page" : null;
+      if (unshown) {
+        if (lead) log(card, "unshown", unshown);
+        res.writeHead(204).end();
+        return;
+      }
       const hold: Hold = { card, toolUseId: event.tool_use_id, res, shown: lead !== undefined };
       if (!lead) hold.timer = setTimeout(() => void close(hold, "elsewhere"), unlistedMs);
       holds.set(card.id, hold);
@@ -154,7 +180,7 @@ export function createHolds(town: TownState, opts: { unlistedMs: number; answerL
         // Moved past the card: its own tool ran, a new call started, or the turn ended. A parallel
         // sibling's PostToolUse proves nothing.
         const moved = name === "PostToolUse" ? own : name === "PreToolUse" ? !own : MOVED_ON.includes(name);
-        if (moved) void close(hold, "elsewhere");
+        if (moved) void close(hold, hold.typedAt !== undefined && Date.now() - hold.typedAt <= TERMINAL_MS ? "terminal" : "elsewhere");
       }
     },
 
@@ -163,13 +189,21 @@ export function createHolds(town: TownState, opts: { unlistedMs: number; answerL
       for (const hold of holds.values()) {
         const lead = town.lead(hold.card.lead);
         if (hold.shown && !lead) void close(hold, "elsewhere");
-        else if (!hold.shown && lead?.kind === "terminal" && hold.card.kind !== "permission") void close(hold, "elsewhere");
+        else if (!hold.shown && lead?.kind === "terminal" && hold.card.kind !== "permission") {
+          log(hold.card, "unshown", "terminal session");
+          void close(hold, "elsewhere");
+        }
         else if (!hold.shown && lead) {
           hold.shown = true;
           clearTimeout(hold.timer);
           changed();
         }
       }
+    },
+
+    /** Notes that input reached `lead`'s terminal socket: its open cards may be answered there. */
+    typed(lead: string): void {
+      for (const hold of holds.values()) if (hold.shown && hold.card.lead === lead) hold.typedAt = Date.now();
     },
 
     /** Tells the holds how many pages are open; with none for `unlistedMs`, every hold is released. */
