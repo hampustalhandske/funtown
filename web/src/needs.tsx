@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Card, Character, Town } from "../../server/types.ts";
+import { useKey } from "./keys.ts";
 
 /**
  * The urgency tier of an entry: 1 asks, 2 stuck, 4 quiet. Tier 3 (burning houses) is left free for
@@ -48,6 +49,34 @@ export function urgencyList(town: Town | null): Waiting[] {
   // `since` is Infinity when unknown: two unknowns tie (Infinity - Infinity is NaN) and keep the town's order.
   const older = (a: number, b: number) => (a === b ? 0 : a - b);
   return list.sort((a, b) => a.w.tier - b.w.tier || a.rank - b.rank || older(a.w.since, b.w.since)).map((x) => x.w);
+}
+
+/** A character with a letter, and where to find it: what M walks. */
+export type Lettered = Pick<Waiting, "key" | "lead" | "id" | "cwd">;
+
+/** Every character (lead or subagent) of `town` with a letter, the newest letter first; letters of one time keep the town's order. */
+export function letterList(town: Town | null): Lettered[] {
+  const list: { l: Lettered; at: number }[] = [];
+  for (const house of town?.houses ?? []) {
+    for (const lead of house.leads) {
+      for (const c of [lead, ...lead.subagents]) {
+        if (c.letter !== undefined) list.push({ l: { key: `${lead.id}/${c.id}`, lead: lead.id, id: c.id, cwd: house.cwd }, at: c.letter });
+      }
+    }
+  }
+  return list.sort((a, b) => b.at - a.at).map((x) => x.l);
+}
+
+/**
+ * Makes M open the pane of the character with the newest letter, then the next newest, wrapping; `current` is the open
+ * pane's `lead/id` (when it has no letter, M opens the newest). Keeps no "read" memory, and sends and marks nothing.
+ */
+export function useLetterKey(town: Town | null, current: string | null, open: (entry: Lettered) => void): void {
+  useKey("m", () => {
+    const list = letterList(town);
+    if (list.length === 0) return;
+    open(list[(list.findIndex((l) => l.key === current) + 1) % list.length]);
+  });
 }
 
 /** "3m" style wait text for a character waiting since `since`. */

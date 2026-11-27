@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Character, House, Parcel, Town } from "../../../server/types.ts";
 import { AddProject, askReview, Panel, post, removeProject, useSelection, useTown } from "../App.tsx";
-import { useLayer, useWalk } from "../keys.ts";
+import { KeySheet, useKeySheet } from "../KeySheet.tsx";
+import { useKey, useLayer, useWalk } from "../keys.ts";
 import { MorningButton } from "../Morning.tsx";
 import { SwitchButton, type OpenSession } from "../Switch.tsx";
-import { needOf, NotifyButton, Toasts } from "../needs.tsx";
+import { needOf, NotifyButton, Toasts, useLetterKey } from "../needs.tsx";
 import { boardOf, interior, type Board, type InPlaced } from "./interior.ts";
 import { AVATARS, avatarFor } from "./kit/avatars.ts";
 import { keyOf, layout, type Placed } from "./layout.ts";
@@ -78,6 +79,7 @@ const ICONS = {
   settings: <Icon><path d="M4 7h9M17 7h3M4 17h3M11 17h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></Icon>,
   work: <Icon><rect x="4.5" y="4" width="15" height="16" rx="2.5" /><path d="M8.5 9h7M8.5 12.5h7M8.5 16h4" /></Icon>,
   morning: <Icon><path d="M3 18h18M7 18a5 5 0 0 1 10 0M12 7.5v2.5M5.5 10.5l1.6 1.6M18.5 10.5l-1.6 1.6" /></Icon>,
+  keys: <Icon><rect x="3" y="6.5" width="18" height="11" rx="2.5" /><path d="M7 10.5h.01M10.5 10.5h.01M14 10.5h.01M17.5 10.5h.01M8 14h8" /></Icon>,
   reload: <Icon><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4.5H15" /></Icon>,
   close: <Icon><path d="M7 7l10 10M17 7L7 17" /></Icon>,
   back: <Icon><path d="M10 6l-6 6 6 6M4 12h16" /></Icon>,
@@ -179,10 +181,14 @@ export function TownPage() {
   const index = useMemo(() => indexOf(town), [town]);
   // The house the keys last reached: it shows its name plate, as a hover does. Gone with its house.
   const [marked, setMarked] = useState<string | null>(null);
-  useWalk(waiting, selection && `${selection.lead}/${selection.id}`, (w) => {
+  const current = selection && `${selection.lead}/${selection.id}`;
+  const openAndMark = useCallback((w: { lead: string; id: string; cwd: string }) => {
     openWaiting(w);
     setMarked(w.cwd);
-  });
+  }, [openWaiting]);
+  useWalk(waiting, current, openAndMark);
+  useLetterKey(town, current, openAndMark);
+  const [sheet, showSheet, hideSheet] = useKeySheet();
   const name = useCallback((p: Placed | InPlaced) => words(p, index).name, [index]);
 
   // The classroom being shown: the cwd in the page hash, kept in step with Back, reload and pasted links.
@@ -204,6 +210,10 @@ export function TownPage() {
     if (town && inCwd !== null && !classroom) go(null, true);
   }, [town, inCwd, classroom, go]);
   const showing = classroom !== undefined;
+  // The plain list opens at the house you are at: the classroom's, else the marked one.
+  const at = classroom?.cwd ?? (marked !== null && index.houses.has(marked) ? marked : null);
+  const workHref = at === null ? "/work.html" : workLink(at);
+  useKey("l", () => location.assign(workHref));
   const shown = lead && selected;
   useLayer("classroom", showing, () => go(null));
 
@@ -266,7 +276,8 @@ export function TownPage() {
         )}
         <span className="slot" title="Morning">{ICONS.morning}<MorningButton aria-label="Morning" waiting={waiting} town={town} onOpen={openWaiting} /></span>
         {classroom && <button type="button" className="icon" aria-label="Back to town" title="Back to town" onClick={() => go(null)}>{ICONS.back}</button>}
-        <a className="icon" href={classroom ? workLink(classroom.cwd) : "/work.html"} aria-label="Work view" title="Work view">{ICONS.work}</a>
+        <a className="icon" href={workHref} aria-label="Work view" title="Work view (L)">{ICONS.work}</a>
+        <button type="button" className="icon" aria-label="Key sheet" title="Key sheet (?)" onClick={showSheet}>{ICONS.keys}</button>
         <button
           type="button"
           className={`icon${town && town.claude.problems.length > 0 ? " flagged" : ""}`}
@@ -277,6 +288,7 @@ export function TownPage() {
           {ICONS.settings}
         </button>
       </nav>
+      {sheet && <KeySheet onClose={hideSheet} />}
       {settings && <Settings town={town} muted={muted} onMute={toggleMute} open={openSession} onClose={closeSettings} />}
       {asking && <AskPanel key={`${asking.cwd}/${asking.parcel.number}`} target={asking} onClose={closeAsking} />}
       {shown && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} cards={town?.cards ?? []} onClose={onClose} />}

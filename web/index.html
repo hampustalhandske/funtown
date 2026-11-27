@@ -68,9 +68,18 @@
       h2 { margin: 0 2.5rem 0.4rem 0; font-size: 1.2rem; font-weight: 800; }
       h3, h4 { margin: 0.5rem 0 0.2rem; font-size: 0.95rem; }
       .pane .close, .panel .close, .morning .close { position: absolute; top: 0.6rem; right: 0.6rem; }
-      .panel .close, .morning .close { width: 2rem; height: 2rem; padding: 0; border-radius: 50%; }
+      .panel .close, .morning .close, .keysheet .close { width: 2rem; height: 2rem; padding: 0; border-radius: 50%; }
       .pane .close { width: 2.2rem; height: 2.2rem; box-shadow: 0 2px 0 var(--ink); }
       .pane .close .glyph { width: 1.1rem; height: 1.1rem; }
+      /* The key sheet: a wide pane over the panes, one row per key. */
+      .keysheet { width: min(46rem, calc(100vw - 2rem)); z-index: 7; }
+      .keysheet p { margin: 0 0 0.6rem; font-size: 0.9rem; }
+      .keysheet table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+      .keysheet th, .keysheet td { text-align: left; vertical-align: top; padding: 0.35rem 0.5rem; border-top: 2px dashed #c8b89e; }
+      .keysheet th { border-top: 0; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+      .keysheet td.key { white-space: nowrap; }
+      kbd { display: inline-block; min-width: 1.6em; padding: 0 0.4rem; border: 2px solid var(--ink); border-bottom-width: 3px; border-radius: 0.4rem;
+        background: var(--stone); font: 600 0.85rem/1.5 ui-monospace, Menlo, monospace; text-align: center; white-space: nowrap; }
       button { font: inherit; color: inherit; }
       :is(.pane, .panel, .morning, .letters) button:not(.icon) { background: var(--stone); border: 2px solid var(--ink); border-radius: 0.6rem;
         box-shadow: 0 2px 0 var(--ink); padding: 0.2rem 0.7rem; cursor: pointer; }

@@ -16,6 +16,8 @@ type Walk = { list: { key: string }[]; current: string | null; open: (index: num
 const layers: Layer[] = [];
 /** The urgency walk the page registered, if any. */
 let walk: Walk | null = null;
+/** The single-character keys pages registered: per lowercased key the handlers, the latest registered last (it runs). */
+const keys = new Map<string, (() => void)[]>();
 let listening = false;
 
 /** Whether `target` is inside a terminal, where every key, Esc included, is Claude's. */
@@ -63,7 +65,14 @@ function onKeyDown(event: KeyboardEvent) {
     const at = walk.list.findIndex((w) => w.key === walk!.current);
     const size = walk.list.length;
     walk.open(event.shiftKey ? (at < 0 ? size - 1 : (at - 1 + size) % size) : (at + 1) % size);
+    return;
   }
+  // A letter, digit or sign by the character typed (so any layout works); Shift is only the way to type "?", never a letter's.
+  if (typingPlace(event.target) || (event.shiftKey && /^[a-z]$/i.test(event.key))) return;
+  const run = keys.get(event.key.toLowerCase())?.at(-1);
+  if (!run) return;
+  event.preventDefault();
+  run();
 }
 
 /** A mouse click leaves no button focused, so a later Space or Enter never presses it again; Tab-focus and Enter work as usual. */
@@ -119,4 +128,24 @@ export function useWalk<T extends { key: string }>(list: T[], current: string | 
       if (walk === mine) walk = null;
     };
   }, []);
+}
+
+/**
+ * Makes `run` the answer to the character `key` ("m", "?") while `enabled`, outside typing places and without
+ * Cmd, Ctrl or Option. Matched by the character typed, so any layout works. With several registered for one key
+ * the latest runs; the key does nothing else (the browser never sees it).
+ */
+export function useKey(key: string, run: () => void, enabled = true): void {
+  const latest = useRef(run);
+  latest.current = run;
+  useEffect(() => {
+    if (!enabled) return;
+    listen();
+    const name = key.toLowerCase();
+    const mine = () => latest.current();
+    keys.set(name, [...(keys.get(name) ?? []), mine]);
+    return () => {
+      keys.set(name, (keys.get(name) ?? []).filter((h) => h !== mine));
+    };
+  }, [key, enabled]);
 }

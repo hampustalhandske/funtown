@@ -3,8 +3,9 @@ import type { Card, Character, House, Lead, Parcel, Stage, Town } from "../../se
 import { AnswerCard } from "./AnswerCard.tsx";
 import { MorningButton } from "./Morning.tsx";
 import { LazyBoundary } from "./LazyBoundary.tsx";
-import { NeedsList, NotifyButton, Toasts, useAlerts, useMute, urgencyList, type Waiting } from "./needs.tsx";
-import { useLayer, useWalk } from "./keys.ts";
+import { NeedsList, NotifyButton, Toasts, useAlerts, useLetterKey, useMute, urgencyList, type Waiting } from "./needs.tsx";
+import { useKey, useLayer, useWalk } from "./keys.ts";
+import { KeySheet, useKeySheet } from "./KeySheet.tsx";
 import { funtownToken } from "./token.ts";
 import { SwitchButton } from "./Switch.tsx";
 import { ReplyBox } from "./ReplyBox.tsx";
@@ -365,6 +366,11 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
   const reply = useRef<((text: string) => string | null) | null>(null);
   const stamp = [lead, ...lead.subagents].map((c) => c.letter ?? 0).join(",");
   useLayer("pane", true, onClose);
+  // R is for a background lead's own pane: the cursor goes where a reply is typed, the terminal when it is shown, else the reply box.
+  useKey("r", () => {
+    const target = terminal ? screen.current : column.current?.querySelector(".reply");
+    target?.querySelector("textarea")?.focus();
+  }, background);
   // Showing a terminal that was hidden gives it the keyboard again (a new one focuses itself).
   useEffect(() => {
     if (terminal) screen.current?.querySelector("textarea")?.focus();
@@ -491,7 +497,7 @@ export function useSelection(town: Town | null) {
   const openSession = selected && openCwd ? { id: selected.id, name: selected.name, cwd: openCwd } : null;
   const waiting = urgencyList(town);
   const [muted, toggleMute] = useMute();
-  const openWaiting = useCallback((w: Waiting) => setSelection({ lead: w.lead, id: w.id }), []);
+  const openWaiting = useCallback((w: Pick<Waiting, "lead" | "id">) => setSelection({ lead: w.lead, id: w.id }), []);
   const { toasts, drop } = useAlerts(waiting, town !== null, muted, openWaiting);
   return { selection, setSelection, onClose, lead, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop };
 }
@@ -509,7 +515,11 @@ function hashedHouse(): string {
 export function App() {
   const [town, restarted] = useTown();
   const { selection, setSelection, onClose, lead, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop } = useSelection(town);
-  useWalk(waiting, selection && `${selection.lead}/${selection.id}`, openWaiting);
+  const current = selection && `${selection.lead}/${selection.id}`;
+  useWalk(waiting, current, openWaiting);
+  useLetterKey(town, current, openWaiting);
+  useKey("l", () => location.assign("/"));
+  const [sheet, showSheet, hideSheet] = useKeySheet();
   // The selection when each New session was clicked; a session opens itself only if that is still it (or nothing is open).
   const selectionNow = useRef(selection);
   selectionNow.current = selection;
@@ -564,7 +574,8 @@ export function App() {
     <>
       <header>
         <h1>Funtown</h1>
-        <a href="/" aria-label="Town" title="Town">🏘️</a>
+        <a href="/" aria-label="Town" title="Town (L)">🏘️</a>
+        <button type="button" aria-label="Key sheet" title="Key sheet (?)" onClick={showSheet}>⌨️</button>
         <button type="button" aria-pressed={muted} onClick={toggleMute}>
           {muted ? "Unmute" : "Mute"}
         </button>
@@ -603,6 +614,7 @@ export function App() {
         ))}
       </main>
       {lead && selected && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} cards={town?.cards ?? []} onClose={onClose} />}
+      {sheet && <KeySheet onClose={hideSheet} />}
       <Toasts
         toasts={toasts}
         onOpen={(w) => {

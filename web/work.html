@@ -56,6 +56,18 @@
       .activity { font-family: ui-monospace, monospace; font-size: 0.85rem; color: #444; }
       .panel { position: fixed; top: 1rem; right: 1rem; width: 20rem; background: #fff; border: 2px solid #c8a97e;
         border-radius: 0.75rem; padding: 0.75rem 1rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); }
+      /* The key sheet: a wide pane, one row per key. */
+      .keysheet { position: fixed; top: 1rem; right: 1rem; z-index: 30; width: min(46rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); overflow: auto;
+        box-sizing: border-box; background: #fff; border: 2px solid #c8a97e; border-radius: 0.75rem; padding: 0.75rem 1rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); }
+      .keysheet h2 { margin: 0 2rem 0.4rem 0; font-size: 1.15rem; }
+      .keysheet p { margin: 0 0 0.6rem; font-size: 0.9rem; }
+      .keysheet .close { position: absolute; top: 0.5rem; right: 0.5rem; cursor: pointer; }
+      .keysheet table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+      .keysheet th, .keysheet td { text-align: left; vertical-align: top; padding: 0.35rem 0.5rem; border-top: 1px solid #ddd5c7; }
+      .keysheet th { border-top: 0; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: #666; }
+      .keysheet td.key { white-space: nowrap; }
+      kbd { display: inline-block; min-width: 1.6em; padding: 0 0.4rem; border: 1px solid #c8a97e; border-bottom-width: 2px; border-radius: 0.3rem;
+        background: #f6f1e7; font: 600 0.85rem/1.5 ui-monospace, Menlo, monospace; text-align: center; white-space: nowrap; }
       .kind { margin-left: 0.4rem; font-size: 0.8rem; color: #666; }
       .terminal { box-sizing: border-box; height: 24rem; background: #000; margin-top: 0.5rem; padding: 0.5rem; }
       /* A panel's lines scroll above its buttons, which stay at the bottom, so a card never pushes them out of the window. */
