@@ -33,9 +33,12 @@ const LOT = 4.4;
 const FIRST_ROW = 1.6;
 const SEAT = 0.6;
 
-/** A character's pose: needs you queues at the desk, stuck sits down, done stands idle, working works at its building. */
+/**
+ * A character's pose: needing you queues at the desk, stuck sits down, done stands idle, working
+ * works at its building. A resting one (its turn ended) stands idle at its house, not in the queue.
+ */
 export const poseOf = (c: Character): Pose =>
-  c.stage === "done" ? "idle" : c.stage === "working" ? "work" : c.needs === "stuck" ? "stuck" : "queue";
+  c.stage === "done" || c.needs === "turn ended" ? "idle" : c.stage === "working" ? "work" : c.needs === "stuck" ? "stuck" : "queue";
 
 /** The k-th peg of the hat rack right of the door of a building at `at`: four pegs a rail, each further rail behind the last. */
 function rack(at: Spot, k: number): Spot {
@@ -57,9 +60,9 @@ function queueSpot(i: number, count: number): Spot {
 
 /**
  * Where everything in `town` stands. Buildings follow house order on a grid in front of the
- * castle; working and done leads stand in front of their building and working subagents are hats
- * on its rack; stuck ones sit there too; everyone who needs you queues at the desk in `waiting`
- * order; open parcels sit at the door; the lead marked `steward` stands by the desk. Done
+ * castle; working, done and resting leads stand in front of their building and working subagents are
+ * hats on its rack; stuck ones sit there too; everyone who asks you queues at the desk in `waiting`
+ * (urgency) order; open parcels sit at the door; the lead marked `steward` stands by the desk. Done
  * subagents are not placed.
  * Pure: the same Town (and waiting order) always gives the same places.
  */

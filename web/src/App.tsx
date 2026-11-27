@@ -3,7 +3,7 @@ import type { Card, Character, House, Lead, Parcel, Stage, Town } from "../../se
 import { AnswerCard } from "./AnswerCard.tsx";
 import { MorningButton } from "./Morning.tsx";
 import { LazyBoundary } from "./LazyBoundary.tsx";
-import { NeedsList, NotifyButton, Toasts, useAlerts, useMute, useNextKey, waitingList, type Waiting } from "./needs.tsx";
+import { NeedsList, NotifyButton, Toasts, useAlerts, useMute, useNextKey, urgencyList, type Waiting } from "./needs.tsx";
 import { funtownToken } from "./token.ts";
 import { SwitchButton } from "./Switch.tsx";
 import { ReplyBox } from "./ReplyBox.tsx";
@@ -495,7 +495,7 @@ export function useSelection(town: Town | null) {
   }, [town, selection, selected]);
   const openCwd = lead && town?.houses.find((house) => house.leads.includes(lead))?.cwd;
   const openSession = selected && openCwd ? { id: selected.id, name: selected.name, cwd: openCwd } : null;
-  const waiting = waitingList(town);
+  const waiting = urgencyList(town);
   const [muted, toggleMute] = useMute();
   const openWaiting = useCallback((w: Waiting) => setSelection({ lead: w.lead, id: w.id }), []);
   const { toasts, drop } = useAlerts(waiting, town !== null, muted, openWaiting);
