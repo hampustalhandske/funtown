@@ -160,21 +160,23 @@ it("install_without_settings_flag_writes_into_CLAUDE_CONFIG_DIR_when_it_is_set",
 });
 
 type Entry = { matcher?: string; hooks: { type: string; command: string; async?: boolean }[] };
-const letterEntries = (s: { hooks?: Record<string, Entry[]> }) =>
-  (s.hooks?.SessionStart ?? []).filter((e) => e.hooks.some((h) => h.command.includes("letter.md")));
+/** The installed SessionStart entries whose command names `file` (`letter.md` or `ask.md`). */
+const sessionStartEntries = (s: { hooks?: Record<string, Entry[]> }, file: string) =>
+  (s.hooks?.SessionStart ?? []).filter((e) => e.hooks.some((h) => h.command.includes(file)));
+const letterEntries = (s: { hooks?: Record<string, Entry[]> }) => sessionStartEntries(s, "letter.md");
 
 /**
- * What the installed SessionStart letter command prints, run the way Claude runs it, in a fresh HOME that
- * holds `.funtown/letter.md` with `override` when one is given.
+ * What the installed SessionStart command for `file` prints, run the way Claude runs it, in a fresh HOME that
+ * holds `.funtown/<file>` with `override` when one is given.
  */
-function printed(override?: string): string {
+function printedBy(file: string, override?: string): string {
   const home = mkdtempSync(join(tmpdir(), "funtown-home-"));
   try {
     if (override !== undefined) {
       mkdirSync(join(home, ".funtown"));
-      writeFileSync(join(home, ".funtown", "letter.md"), override);
+      writeFileSync(join(home, ".funtown", file), override);
     }
-    const [entry] = letterEntries(setup({}).run("install"));
+    const [entry] = sessionStartEntries(setup({}).run("install"), file);
     const r = spawnSync("sh", ["-c", entry.hooks[0].command], { encoding: "utf8", env: { ...process.env, HOME: home }, cwd: home });
     expect(r.status, r.stderr).toBe(0);
     return r.stdout;
@@ -193,6 +195,55 @@ it("install_adds_one_sync_session_start_letter_entry_for_startup_resume_clear_co
   expect(ours[0].hooks[0].type).toBe("command");
   expect(ours[0].hooks[0].async).toBeUndefined();
   expect(letterEntries(s.run("uninstall"))).toEqual([]);
+});
+
+const printed = (override?: string) => printedBy("letter.md", override);
+const ASK = resolve(import.meta.dirname, "../hooks/ask.md");
+
+it("install_adds_one_sync_session_start_ask_entry_for_startup_resume_clear_compact_and_uninstall_removes_it", () => {
+  const s = setup({});
+  const ours = sessionStartEntries(s.run("install"), "ask.md");
+  expect(ours).toHaveLength(1);
+  expect(ours[0].matcher).toBe("startup|resume|clear|compact");
+  expect(ours[0].hooks).toHaveLength(1);
+  expect(ours[0].hooks[0].type).toBe("command");
+  expect(ours[0].hooks[0].async).toBeUndefined();
+  expect(sessionStartEntries(s.run("uninstall"), "ask.md")).toEqual([]);
+});
+
+it("the_ask_command_prints_the_repo_ask_text_when_the_user_has_no_override", () => {
+  expect(printedBy("ask.md")).toBe(readFileSync(ASK, "utf8"));
+});
+
+it("the_ask_command_prints_the_users_override_instead_of_the_repo_ask_text", () => {
+  expect(printedBy("ask.md", "My own ask.\n")).toBe("My own ask.\n");
+});
+
+it("an_empty_ask_override_is_the_off_switch_and_prints_nothing", () => {
+  expect(printedBy("ask.md", "")).toBe("");
+});
+
+it("an_empty_ask_override_leaves_the_letter_printing_as_before", () => {
+  const home = mkdtempSync(join(tmpdir(), "funtown-home-"));
+  try {
+    mkdirSync(join(home, ".funtown"));
+    writeFileSync(join(home, ".funtown", "ask.md"), "");
+    const s = setup({});
+    for (const file of ["letter.md", "ask.md"]) {
+      expect(sessionStartEntries(s.run("install"), file), file).toHaveLength(1);
+    }
+    const [entry] = letterEntries(s.run("install"));
+    const r = spawnSync("sh", ["-c", entry.hooks[0].command], { encoding: "utf8", env: { ...process.env, HOME: home }, cwd: home });
+    expect(r.stdout).toBe(readFileSync(LETTER, "utf8"));
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+it("the_ask_text_repo_file_is_not_empty_and_fits_session_start_contexts_10000_character_cap", () => {
+  const text = readFileSync(ASK, "utf8");
+  expect(text.trim().length).toBeGreaterThan(0);
+  expect(text.length).toBeLessThan(10_000);
 });
 
 it("the_letter_command_prints_the_repo_file_when_the_user_has_no_override", () => {

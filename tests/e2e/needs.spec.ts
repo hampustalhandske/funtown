@@ -1,15 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
-import { stubStream } from "./stream.ts";
+import { house, lead, panel, stubStream, town, waiting } from "./stream.ts";
 
 const NOW = Date.now();
-const lead = (over: Record<string, unknown>) => ({
-  id: "s1", name: "lead-1", stage: "working", activity: null, step: null, tty: "ttys001", termProgram: "TestTerm",
-  kind: "terminal", shortId: null, subagents: [], ...over,
-});
-const waiting = (id: string, name: string, since: number, over: Record<string, unknown> = {}) =>
-  lead({ id, name, stage: "needs_you", needs: "turn ended", since, ...over });
-const house = (project: string, leads: unknown[]) => ({ project, cwd: `/work/${project}`, leads });
-const town = (houses: unknown[], cards: unknown[] = []) => ({ claude: { version: "2.1.325", problems: [] }, houses, cards });
 
 /** Counts what the page asks of Web Audio and of the Notification API; `notificationPermission` is what the page is told. */
 const stubs = (permission: string) => `
@@ -46,7 +38,6 @@ const rows = (page: Page) => queue(page).getByRole("button");
 const sounds = (page: Page) => page.evaluate(() => (window as unknown as { __starts: number }).__starts);
 const popups = (page: Page) =>
   page.evaluate(() => (window as unknown as { __notes: { title: string; body: string }[] }).__notes.map((n) => ({ title: n.title, body: n.body })));
-const panel = (page: Page, name: string) => page.getByRole("dialog", { name: `${name} details` });
 const active = (page: Page) => page.evaluate(() => `${document.activeElement?.tagName}:${(document.activeElement as HTMLInputElement | null)?.value ?? ""}`);
 
 const three = () =>
@@ -76,48 +67,51 @@ test("the_needs_you_list_has_every_waiting_character_cards_first_then_oldest_fir
   await expect(panel(page, "Explore-1")).toBeVisible();
 });
 
-test("option_n_opens_the_first_in_the_list_then_the_next_and_wraps_and_does_nothing_with_nothing_waiting", async ({ page }) => {
+test("space_opens_the_first_in_the_list_then_the_next_and_wraps_and_does_nothing_with_nothing_waiting", async ({ page }) => {
   const stream = await open(page, town([house("alpha", [lead({})])]));
-  await page.keyboard.press("Alt+KeyN");
+  await page.keyboard.press("Space");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
   stream.send(three());
   await page.reload();
   await expect(rows(page)).toHaveCount(3);
-  // Catches the jump firing on a plain `n` again.
+  // Catches the jump firing on any other plain key.
   await page.keyboard.press("n");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.keyboard.press("Alt+KeyN");
+  await page.keyboard.press("Space");
   await expect(panel(page, "Explore-1")).toBeVisible();
-  await page.keyboard.press("Alt+KeyN");
+  await page.keyboard.press("Space");
   await expect(panel(page, "lead-1")).toBeVisible();
-  await page.keyboard.press("Alt+KeyN");
+  await page.keyboard.press("Space");
   await expect(panel(page, "lead-2")).toBeVisible();
-  await page.keyboard.press("Alt+KeyN");
+  await page.keyboard.press("Space");
   await expect(panel(page, "Explore-1")).toBeVisible();
 });
 
-test("option_n_in_a_card_text_box_opens_nothing_and_n_is_text_and_a_new_card_or_waiting_character_leaves_focus_and_text_alone", async ({ page }) => {
+test("space_in_a_card_text_box_opens_nothing_and_is_text_and_a_new_card_or_waiting_character_leaves_focus_and_text_alone", async ({ page }) => {
   const plan = {
     id: "p1", lead: "b1", agent: null, kind: "plan", tool: "ExitPlanMode", input: { plan: "1. Do it" }, cwd: "/work/alpha", at: NOW - 1000,
+    severity: { level: "medium", reason: "Funtown's rule: every plan is medium", source: "kind" },
   };
   const bg = waiting("b1", "bg-1", NOW - 1000, { kind: "background", shortId: "b1b1b1b1", needs: "plan", tty: null, termProgram: null });
   const stream = await open(page, town([house("alpha", [bg])], [plan]));
+  // Keep planning opens the plan card's note box.
+  await page.locator('section[aria-label="alpha"]').getByRole("radio", { name: "Keep planning" }).check();
   const box = page.locator('section[aria-label="alpha"]').getByRole("textbox").first();
   await box.click();
   await page.keyboard.type("ab");
-  await page.keyboard.press("n");
-  await expect(box).toHaveValue("abn");
+  await page.keyboard.press("Space");
+  await expect(box).toHaveValue("ab ");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
   stream.send(town([house("alpha", [bg, waiting("s2", "lead-2", NOW)]), house("beta", [waiting("s3", "lead-3", NOW)])], [plan, { ...plan, id: "p2", at: NOW }]));
   await expect(rows(page)).toHaveCount(3);
   await expect(page.getByRole("status").getByText("lead-3 needs you")).toBeVisible();
-  expect(await active(page)).toBe("TEXTAREA:abn");
+  expect(await active(page)).toBe("TEXTAREA:ab ");
   await page.keyboard.type("c");
-  await expect(box).toHaveValue("abnc");
+  await expect(box).toHaveValue("ab c");
   // Catches the jump key firing while the user types in a text box.
-  await page.keyboard.press("Alt+KeyN");
+  await page.keyboard.press("Space");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
@@ -202,4 +196,66 @@ test("a_state_from_a_restarted_server_shows_a_reload_banner_and_the_same_server_
   stream.send({ ...town([house("alpha", [lead({})])]), started: 2 });
   await expect(page.getByRole("alert").filter({ hasText: "Funtown restarted" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Reload" })).toBeVisible();
+});
+
+const resting = (id: string, name: string, since: number) => waiting(id, name, since, { needs: "turn ended" });
+const limited = (id: string, name: string, since: number) => waiting(id, name, since, { needs: "stuck", reason: "rate limit" });
+
+test("a_resting_lead_and_a_rate_limited_one_join_the_list_last_without_a_toast_a_sound_or_a_pop_up", async ({ page }) => {
+  const stream = await open(page, town([house("alpha", [lead({})])]));
+  stream.send(
+    town([
+      house("alpha", [lead({}), resting("s2", "lead-2", NOW - 600_000), limited("s3", "lead-3", NOW - 300_000)]),
+      house("beta", [waiting("s4", "lead-4", NOW, { needs: "permission" })]),
+    ]),
+  );
+  // The loud one comes first although it waited least; a rate limit comes before a resting lead.
+  await expect(rows(page)).toHaveCount(3);
+  const text = await rows(page).allInnerTexts();
+  expect(text[0]).toMatch(/lead-4/);
+  expect(text[1]).toMatch(/lead-3/);
+  expect(text[2]).toMatch(/lead-2/);
+  await expect(page.getByRole("status").getByText("lead-4 needs you")).toBeVisible();
+  await expect.poll(() => sounds(page)).toBeGreaterThan(0);
+  expect(await popups(page)).toEqual([{ title: "lead-4 needs you", body: "beta: permission" }]);
+  await expect(page.getByRole("status").getByText(/lead-[23] needs you/)).toHaveCount(0);
+
+  // Quiet rows are drawn quieter than the loud one.
+  const style = (row: number) =>
+    rows(page).nth(row).evaluate((el) => ({ size: parseFloat(getComputedStyle(el).fontSize), colour: getComputedStyle(el.querySelector(".need")!).color }));
+  const [loud, rate, rest] = [await style(0), await style(1), await style(2)];
+  expect(rate.size).toBeLessThan(loud.size);
+  expect(rest.size).toBeLessThan(loud.size);
+  expect(rate.colour).not.toBe(loud.colour);
+  expect(rest.colour).not.toBe(loud.colour);
+});
+
+test("a_resting_lead_that_starts_asking_alerts_then_and_one_that_stays_resting_never_does", async ({ page }) => {
+  const stream = await open(page, town([house("alpha", [resting("s1", "lead-1", NOW - 5000)])]));
+  stream.send(town([house("alpha", [resting("s1", "lead-1", NOW - 5000), resting("s2", "lead-2", NOW)])]));
+  await expect(rows(page)).toHaveCount(2);
+  await page.waitForTimeout(400);
+  expect(await sounds(page)).toBe(0);
+  expect(await popups(page)).toEqual([]);
+
+  stream.send(town([house("alpha", [waiting("s1", "lead-1", NOW + 10, { needs: "question" }), resting("s2", "lead-2", NOW)])]));
+  await expect(page.getByRole("status").getByText("lead-1 needs you")).toBeVisible();
+  expect(await popups(page)).toEqual([{ title: "lead-1 needs you", body: "alpha: question" }]);
+  await expect(page.getByRole("status").getByText("lead-2 needs you")).toHaveCount(0);
+});
+
+test("a_resting_lead_stays_at_its_house_in_the_town_and_raises_no_toast_while_an_asker_does", async ({ page }) => {
+  await page.addInitScript(stubs("granted"));
+  const stream = await stubStream(page, town([house("alpha", [lead({ id: "s2", name: "rester" })])]));
+  await page.route("**/letters?*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.goto("/");
+  await expect(page.locator("canvas")).toHaveCount(1);
+  stream.send(
+    town([house("alpha", [waiting("s1", "asker", NOW - 1000, { needs: "permission" }), waiting("s2", "rester", NOW, { needs: "turn ended", letter: NOW })])]),
+  );
+  // The town's hidden list keeps the resting lead in its house; only the asker is loud.
+  await expect(page.getByRole("button", { name: /rester, alpha, lead, needs you: turn ended/ })).toBeVisible();
+  await expect(page.getByRole("status").getByText("asker needs you")).toBeVisible();
+  await expect(page.getByRole("status").getByText("rester needs you")).toHaveCount(0);
+  expect(await popups(page)).toEqual([{ title: "asker needs you", body: "alpha: permission" }]);
 });

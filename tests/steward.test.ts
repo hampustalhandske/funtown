@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { errorLines, ev, fakeClaude, hold, houseAt, inTerminal, jsonLines, listed, listedBg, pastes, post, postPage, pr, realDir, sleep, start, tokenOf, townWhere, until } from "./helpers.ts";
+import { describe, expect, it, vi } from "vitest";
+import { errorLines, ev, fakeClaude, hold, houseAt, inTerminal, jsonLines, listed, listedBg, pastes, post, postPage, pr, realDir, sleep, start, tokenOf, townWhere, until, type Json } from "./helpers.ts";
 import type { FakeClaude, Pr } from "./fake-claude.ts";
 import type { JournalEntry, Letter, Town } from "../server/types.ts";
 
@@ -10,23 +10,27 @@ const TEMPLATE = "Review PR #{number}: {title}\nRead {url}, then diff {url}.";
 /** TEMPLATE filled in for `p`, by hand. */
 const filled = (p: Pr) => `Review PR #${p.number}: ${p.title}\nRead ${p.url}, then diff ${p.url}.`;
 
-/** Fresh folders for one test: the project, the steward's folder (not made yet), the prompt file, the journal and the error log. */
+const CARD_TEMPLATE = "Word for {project}:\n{brief}";
+
+/** Fresh folders for one test: the project, the steward's folder (not made yet), the review and card prompt files, the journal and the error log. */
 function paths(projectName = "app") {
   const root = realDir();
   const project = join(root, projectName);
   mkdirSync(project);
   const promptFile = join(root, "steward.md");
   writeFileSync(promptFile, TEMPLATE);
-  return { project, stewardDir: join(root, "funtown", "steward"), promptFile, journal: join(root, "journal.jsonl"), log: join(root, "errors.log") };
+  const cardFile = join(root, "steward-card.md");
+  writeFileSync(cardFile, CARD_TEMPLATE);
+  return { project, stewardDir: join(root, "funtown", "steward"), promptFile, cardFile, journal: join(root, "journal.jsonl"), log: join(root, "errors.log") };
 }
 type Paths = ReturnType<typeof paths>;
 
 /** A fake listing lead s1 in the project, whose gh lists `prs` there. */
 const fakeWith = (p: Paths, prs: Pr[]) => fakeClaude().list([listed("s1", p.project, { name: "alpha" })]).prs(p.project, prs);
 
-/** A server with reviews on, polling PRs every 100 ms; `more` adds or overrides options. */
+/** A server with reviews and words on, polling PRs every 100 ms; `more` adds or overrides options. */
 const startSteward = (p: Paths, fake: FakeClaude, more: Parameters<typeof start>[0] = {}) =>
-  start({ fake, prMs: 100, stewardDir: p.stewardDir, stewardPrompt: p.promptFile, journal: p.journal, errorLog: p.log, ...more });
+  start({ fake, prMs: 100, stewardDir: p.stewardDir, stewardPrompt: p.promptFile, stewardCardPrompt: p.cardFile, journal: p.journal, errorLog: p.log, ...more });
 
 const SHORT = "5eed0001";
 const SID = `${SHORT}-0000-4000-8000-000000000000`;
@@ -305,6 +309,19 @@ describe("the steward", () => {
     await stewardStop(s.url, p, SID, "Squash title: fix(parser): handle empty input\nMerge text: Handles empty input.");
     await until(() => stewardLines(p).length === 2);
     expect(stewardLines(p)[1].message).toBe("reply to #7 lacks Before merging");
+  });
+
+  it("a_reply_that_names_a_part_in_passing_without_its_colon_is_not_a_review", async () => {
+    // Breaks if the review check finds a label anywhere in the text instead of as a label, as her word's check does.
+    const p = paths();
+    const { fake } = reused(p, [pr(7)]);
+    const s = await startSteward(p, fake);
+    await ask(s, p, 7);
+    await until(() => pastes(fake.attachInput(SHORT)).length === 1, 8000);
+    await stewardStop(s.url, p, SID, "Squash title: fix(parser): handle empty input\nMerge text: Handles empty input.\nBefore merging anything, run the tests.");
+    await until(() => stewardLines(p).length > 0);
+    expect(stewardLines(p).map((l) => l.message)).toEqual(["reply to #7 lacks Before merging"]);
+    expect(reviewOf(await townWhere(s.url, () => true), p, 7)?.state).not.toBe("ready");
   });
 
   it("the_users_own_message_to_the_steward_with_no_request_in_flight_stops_requests_even_if_its_text_matches_the_last_request_and_a_new_request_resumes_them", async () => {
@@ -626,4 +643,344 @@ describe("the steward in the state", () => {
     expect((await postPage(s, "/sessions/stop", { lead: SID })).status).toBe(204);
     expect(fake.stopCalls()).toEqual([["stop", SHORT]]);
   });
+});
+
+const wordOf = (t: Town, card: string) => t.cards.find((c) => c.id === card)?.word;
+
+/** A Bash permission request from `session` in `cwd`: lead s1 in the project unless given. */
+const bash = (p: Paths, command = "npm test", session = "s1", cwd = p.project) =>
+  ev("PermissionRequest", { cwd, tool_name: "Bash", tool_input: { command } }, session);
+
+/** Holds `request` (a Bash permission from s1 unless given); gives its card id once it shows, and `abort`, which closes it. */
+async function cardFrom(s: { url: string }, p: Paths, request: Json = bash(p)) {
+  const before = (await townWhere(s.url, () => true)).cards.map((c) => c.id);
+  const held = hold(s.url, request);
+  const t = await townWhere(s.url, (x) => x.cards.some((c) => !before.includes(c.id)));
+  return { id: t.cards.find((c) => !before.includes(c.id))!.id, abort: held.abort };
+}
+
+/** Asks for the steward's word on `card` as the page would; resolves with the HTTP status. */
+const askWord = async (s: { url: string }, card: string) => (await postPage(s, "/word", { card })).status;
+
+/** A reply holding the three labelled parts the card prompt asks for. */
+const WORD = "app · card\nPick: Allow\nWhy: The tests only read.\nCheck first: nothing";
+
+/** The steward's letters as GET /letters gives them for `query` (`id=` for one by id): the status and, on 200, the list. */
+async function stewardLetters(s: { url: string }, query = "") {
+  const res = await fetch(`${s.url}/letters?lead=${SID}${query}`, { headers: { "x-funtown-token": await tokenOf(s.url) } });
+  return { status: res.status, letters: res.status === 200 ? ((await res.json()) as Letter[]) : [] };
+}
+
+describe("the steward's word on a card", () => {
+  it("a_card_carries_an_idle_word_with_words_on_and_none_with_the_card_prompt_empty_or_on_the_stewards_own_card", async () => {
+    const on = paths();
+    const { fake } = reused(on, []);
+    const s = await startSteward(on, fake);
+    await townWhere(s.url, (t) => houseAt(t, on.stewardDir)?.leads.length === 1 && houseAt(t, on.project)?.leads.length === 1);
+    const mine = await cardFrom(s, on);
+    const hers = await cardFrom(s, on, bash(on, "gh pr view 7", SID, on.stewardDir));
+    const t = await townWhere(s.url, (x) => x.cards.length === 2);
+    expect(wordOf(t, mine.id)).toEqual({ state: "idle" });
+    expect(t.cards.find((c) => c.id === hers.id)).not.toHaveProperty("word");
+    expect(await askWord(s, hers.id)).toBe(409);
+
+    const off = paths();
+    writeFileSync(off.cardFile, "");
+    const second = await startSteward(off, fakeWith(off, []));
+    const card = await cardFrom(second, off);
+    expect((await townWhere(second.url, (x) => x.cards.length === 1)).cards[0]).not.toHaveProperty("word");
+    expect(await askWord(second, card.id)).toBe(409);
+    await sleep(300);
+    expect(second.fake.started()).toEqual([]);
+    expect(fake.attachInput(SHORT)).toBe("");
+  });
+
+  it("with_only_the_card_prompt_on_one_press_starts_the_steward_and_pastes_the_prompt_filled_once_while_reviews_stay_off", async () => {
+    const p = paths();
+    writeFileSync(p.promptFile, "");
+    const s = await startSteward(p, fakeWith(p, [pr(7)]));
+    expect(await askStatus(s, p, 7)).toBe(409);
+    expect(reviewOf(await townWhere(s.url, () => true), p, 7)).toBeUndefined();
+    const card = await cardFrom(s, p);
+    expect(await askWord(s, card.id)).toBe(204);
+    const st = await stewardStarted(s.fake, p);
+    await until(() => pastes(s.fake.attachInput(st.short)).length === 1, 8000);
+    expect(await askWord(s, card.id)).toBe(204); // writing: nothing more is sent
+    await sleep(600);
+    const [text] = pastes(s.fake.attachInput(st.short));
+    expect(text).toMatch(/^Word for app:\n/);
+    expect(text).toContain("npm test");
+    expect(pastes(s.fake.attachInput(st.short))).toHaveLength(1);
+    expect(s.fake.started()).toHaveLength(1);
+  });
+
+  it("a_word_is_queued_while_the_steward_works_writing_once_pasted_and_ready_with_her_letter_and_no_press_in_between_sends_more", async () => {
+    const p = paths();
+    const { lead, steward, fake } = reused(p, [], [], "busy");
+    const s = await startSteward(p, fake);
+    const card = await cardFrom(s, p);
+    expect(await askWord(s, card.id)).toBe(204);
+    expect(wordOf(await townWhere(s.url, (t) => wordOf(t, card.id)?.state === "queued"), card.id)).toEqual({ state: "queued" });
+    expect(await askWord(s, card.id)).toBe(204);
+    await sleep(600); // several polls with the steward busy
+    expect(fake.attachInput(SHORT)).toBe("");
+
+    fake.list([lead, steward("idle")]);
+    expect(wordOf(await townWhere(s.url, (t) => wordOf(t, card.id)?.state === "writing"), card.id)).toEqual({ state: "writing" });
+    await until(() => pastes(fake.attachInput(SHORT)).length === 1, 8000);
+    expect(await askWord(s, card.id)).toBe(204);
+    expect(wordOf(await townWhere(s.url, () => true), card.id)).toEqual({ state: "writing" });
+    await stewardStop(s.url, p, SID, WORD);
+    const ready = wordOf(await townWhere(s.url, (t) => wordOf(t, card.id)?.state === "ready"), card.id);
+    const [letter] = (await stewardLetters(s)).letters;
+    expect(letter.text).toBe(WORD);
+    expect(ready).toEqual({ state: "ready", letter: letter.id });
+    expect(await askWord(s, card.id)).toBe(204);
+    await sleep(600);
+    expect(pastes(fake.attachInput(SHORT))).toHaveLength(1);
+    expect(fake.started()).toEqual([]);
+  });
+
+  it("a_word_asked_after_a_review_is_pasted_before_it", async () => {
+    const p = paths();
+    const { lead, steward, fake } = reused(p, [pr(7)], [], "busy");
+    const s = await startSteward(p, fake);
+    await ask(s, p, 7);
+    const card = await cardFrom(s, p);
+    expect(await askWord(s, card.id)).toBe(204);
+    fake.list([lead, steward("idle")]);
+    await until(() => pastes(fake.attachInput(SHORT)).length === 1, 8000);
+    await sleep(600); // only the word in flight holds the review back
+    expect(pastes(fake.attachInput(SHORT))[0]).toMatch(/^Word for app:\n/);
+    expect(pastes(fake.attachInput(SHORT))).toHaveLength(1);
+    await stewardStop(s.url, p, SID, WORD);
+    await until(() => pastes(fake.attachInput(SHORT)).length === 2, 8000);
+    expect(pastes(fake.attachInput(SHORT))[1]).toBe(filled(pr(7)));
+  }, 15_000);
+
+  it("a_word_still_queued_when_its_card_closes_is_dropped_and_never_sent", async () => {
+    const p = paths();
+    const { lead, steward, fake } = reused(p, [], [], "busy");
+    const s = await startSteward(p, fake);
+    const card = await cardFrom(s, p);
+    expect(await askWord(s, card.id)).toBe(204);
+    card.abort();
+    await townWhere(s.url, (t) => t.cards.length === 0);
+    fake.list([lead, steward("idle")]);
+    await sleep(1500); // longer than the quiet wait before a paste
+    expect(fake.attachInput(SHORT)).toBe("");
+    expect(await askWord(s, card.id)).toBe(404);
+  });
+
+  it("a_word_whose_card_closes_while_the_attach_waits_to_paste_is_dropped_and_never_sent", async () => {
+    const p = paths();
+    const { fake } = reused(p, []);
+    const s = await startSteward(p, fake);
+    const card = await cardFrom(s, p);
+    expect(await askWord(s, card.id)).toBe(204);
+    await until(() => fake.attachPids(SHORT).length === 1, 8000);
+    card.abort(); // within the attach's quiet wait
+    await until(() => fake.attachPids(SHORT).every(gone), 5000);
+    expect(fake.attachInput(SHORT)).toBe("");
+    expect(stewardLines(p)).toEqual([]);
+  });
+
+  it("a_reply_without_all_three_labels_fails_the_word_naming_them_with_one_log_line_and_only_then_may_it_be_asked_again", async () => {
+    const p = paths();
+    const { fake } = reused(p, []);
+    const s = await startSteward(p, fake);
+    const card = await cardFrom(s, p);
+    expect(await askWord(s, card.id)).toBe(204);
+    await until(() => pastes(fake.attachInput(SHORT)).length === 1, 8000);
+    await stewardStop(s.url, p, SID, "I would allow it.");
+    const failed = wordOf(await townWhere(s.url, (t) => wordOf(t, card.id)?.state === "failed"), card.id);
+    expect(failed).toEqual({ state: "failed", reason: "the reply lacks Pick, Why, Check first" });
+    expect(stewardLines(p).map((l) => l.message)).toEqual([`reply on card ${card.id} lacks Pick, Why, Check first`]);
+    await sleep(600);
+    expect(pastes(fake.attachInput(SHORT))).toHaveLength(1);
+
+    expect(await askWord(s, card.id)).toBe(204);
+    await until(() => pastes(fake.attachInput(SHORT)).length === 2, 8000);
+    await stewardStop(s.url, p, SID, "Pick: Allow\nWhy: It only reads.");
+    const again = wordOf(await townWhere(s.url, (t) => wordOf(t, card.id)?.reason === "the reply lacks Check first"), card.id);
+    expect(again).toEqual({ state: "failed", reason: "the reply lacks Check first" });
+    expect(stewardLines(p)).toHaveLength(2);
+  }, 15_000);
+
+  it("a_stop_failure_on_a_word_fails_it_at_once_rather_than_leaving_it_writing", async () => {
+    const p = paths();
+    const { fake } = reused(p, []);
+    const s = await startSteward(p, fake);
+    const card = await cardFrom(s, p);
+    expect(await askWord(s, card.id)).toBe(204);
+    await until(() => pastes(fake.attachInput(SHORT)).length === 1, 8000);
+    expect(await post(s.url, ev("StopFailure", { cwd: p.stewardDir, error: "rate_limit" }, SID))).toBe(204);
+    const t = await townWhere(s.url, (x) => wordOf(x, card.id)?.state === "failed");
+    expect(wordOf(t, card.id)).toEqual({ state: "failed", reason: "the steward's turn failed" });
+  });
+
+  it("a_word_being_written_fails_when_the_steward_leaves_the_list_rather_than_staying_writing", async () => {
+    const p = paths();
+    const { lead, fake } = reused(p, []);
+    const s = await startSteward(p, fake);
+    const card = await cardFrom(s, p);
+    expect(await askWord(s, card.id)).toBe(204);
+    await until(() => pastes(fake.attachInput(SHORT)).length === 1, 8000);
+    fake.list([lead]);
+    const t = await townWhere(s.url, (x) => wordOf(x, card.id)?.state === "failed");
+    expect(wordOf(t, card.id)).toEqual({ state: "failed", reason: "the steward left the list" });
+  });
+
+  it("asking_for_a_word_lifts_the_pause_the_users_own_prompt_set_and_the_word_goes_before_the_review_held_back", async () => {
+    const p = paths();
+    const { fake } = reused(p, [pr(7), pr(9)]);
+    const s = await startSteward(p, fake);
+    await ask(s, p, 7);
+    await until(() => pastes(fake.attachInput(SHORT)).length === 1, 8000);
+    await ask(s, p, 9);
+    await stewardStop(s.url, p, SID, REVIEW);
+    expect(await post(s.url, ev("UserPromptSubmit", { cwd: p.stewardDir, prompt: "How are you?" }, SID))).toBe(204);
+    await stewardStop(s.url, p, SID, "Fine.");
+    await until(() => fake.attachPids(SHORT).every(gone), 5000);
+    await sleep(1500); // #9 would be pasted by now without the pause
+    expect(pastes(fake.attachInput(SHORT))).toHaveLength(1);
+
+    const card = await cardFrom(s, p);
+    expect(await askWord(s, card.id)).toBe(204);
+    await until(() => pastes(fake.attachInput(SHORT)).length === 2, 8000);
+    expect(pastes(fake.attachInput(SHORT))[1]).toMatch(/^Word for app:\n/);
+    await stewardStop(s.url, p, SID, WORD);
+    await until(() => pastes(fake.attachInput(SHORT)).length === 3, 8000);
+    expect(pastes(fake.attachInput(SHORT))[2]).toBe(filled(pr(9)));
+  }, 20_000);
+
+  it("a_word_for_an_unknown_or_closed_card_is_404_and_one_without_the_page_token_or_origin_is_refused_and_nothing_is_sent", async () => {
+    const p = paths();
+    const { fake } = reused(p, []);
+    const s = await startSteward(p, fake);
+    const card = await cardFrom(s, p);
+    const token = await tokenOf(s.url);
+    expect((await postPage(s, "/word", { card: card.id }, { origin: s.url })).status).toBe(403);
+    expect((await postPage(s, "/word", { card: card.id }, { "x-funtown-token": token })).status).toBe(403);
+    expect((await postPage(s, "/word", { card: card.id }, { origin: "http://evil.example", "x-funtown-token": token })).status).toBe(403);
+    expect(await askWord(s, "no-such-card")).toBe(404);
+    expect((await postPage(s, "/word", { card: 7 })).status).toBe(400);
+    await sleep(600);
+    expect(wordOf(await townWhere(s.url, () => true), card.id)).toEqual({ state: "idle" });
+    card.abort();
+    await townWhere(s.url, (t) => t.cards.length === 0);
+    expect(await askWord(s, card.id)).toBe(404);
+    await sleep(600);
+    expect(fake.attachInput(SHORT)).toBe("");
+  });
+
+  it("the_brief_names_who_and_where_the_ask_each_option_the_pick_the_severity_and_the_goal_and_carries_the_raw_input_cut_at_8000_characters_without_control_characters", async () => {
+    const p = paths();
+    mkdirSync(join(p.project, ".claude"));
+    writeFileSync(join(p.project, ".claude", "phase.json"), JSON.stringify({ phase: "build", steps: ["spec", "build", "review"], goal: "Ship the parser", spec: "docs/specs/parser.md" }));
+    const BG = "b0000001-0000-4000-8000-000000000000";
+    const { steward } = reused(p, []);
+    const fake = fakeClaude().list([listedBg(BG, p.project, { name: "beta" }), steward("idle")]).prs(p.project, []);
+    const s = await startSteward(p, fake);
+    await townWhere(s.url, (t) => houseAt(t, p.project)?.leads.length === 1);
+    const questions = [{
+      question: "Keep the old parser?\x1b[201~\x07",
+      header: "medium: data",
+      options: [{ label: "Keep it (Recommended)", description: "Old files still load." }, { label: "Drop it", description: "x".repeat(9_000) }],
+    }];
+    const card = await cardFrom(s, p, ev("PreToolUse", { cwd: p.project, tool_name: "AskUserQuestion", tool_input: { questions } }, BG));
+    expect(await askWord(s, card.id)).toBe(204);
+    await until(() => pastes(fake.attachInput(SHORT)).length === 1, 8000);
+    const [text] = pastes(fake.attachInput(SHORT));
+
+    expect(text).toContain(`Who: beta, in the project app (${p.project})`);
+    expect(text).toContain("Question 1 [medium: data]: Keep the old parser?[201~\n");
+    expect(text).toContain("  Option 1: Keep it (Recommended): Old files still load.\n");
+    expect(text).toContain("  Option 2: Drop it: xxx");
+    expect(text).toContain("  The agent's pick: Keep it (Recommended)\n");
+    expect(text).toContain("Severity: medium; source: agent; reason: the agent's word: medium: data\n");
+    expect(text).toContain("Phase: build, step 2 of 3\nGoal: Ship the parser\nSpec: docs/specs/parser.md\n");
+    const raw = text.slice(text.indexOf("Raw input of AskUserQuestion:\n") + "Raw input of AskUserQuestion:\n".length);
+    expect(raw).toMatch(/\n\(cut at 8,000 of 9,\d{3} characters\)$/);
+    expect(raw.indexOf("\n(cut at")).toBe(8_000);
+    expect(text).not.toMatch(/[\x00-\x08\x0b-\x1f\x7f]/);
+  });
+
+  it("a_plans_brief_names_approve_as_the_agents_pick_as_the_card_does", async () => {
+    // Breaks if the brief she reads says the plan has no pick while the card's ribbon is on Approve.
+    const p = paths();
+    const BG = "b0000001-0000-4000-8000-000000000000";
+    const { steward } = reused(p, []);
+    const fake = fakeClaude().list([listedBg(BG, p.project, { name: "beta" }), steward("idle")]).prs(p.project, []);
+    const s = await startSteward(p, fake);
+    await townWhere(s.url, (t) => houseAt(t, p.project)?.leads.length === 1);
+    const card = await cardFrom(s, p, ev("PreToolUse", { cwd: p.project, tool_name: "ExitPlanMode", tool_input: { plan: "Goal: ship it" } }, BG));
+    expect(await askWord(s, card.id)).toBe(204);
+    await until(() => pastes(fake.attachInput(SHORT)).length === 1, 8000);
+    expect(pastes(fake.attachInput(SHORT))[0]).toContain("  The agent's pick: Approve\n");
+  });
+
+  it("the_shipped_card_prompt_names_the_project_holds_the_brief_and_asks_for_pick_why_and_check_first", async () => {
+    const p = paths("zebra-shop");
+    const { fake } = reused(p, []);
+    const s = await startSteward(p, fake, { stewardCardPrompt: undefined });
+    const card = await cardFrom(s, p);
+    expect(await askWord(s, card.id)).toBe(204);
+    await until(() => pastes(fake.attachInput(SHORT)).length === 1, 8000);
+    const [text] = pastes(fake.attachInput(SHORT));
+    expect(text).toContain("`zebra-shop · card`");
+    expect(text).toContain("Ask: may it run Bash: npm test");
+    expect(text).not.toMatch(/\{(project|brief)\}/);
+    for (const label of ["Pick:", "Why:", "Check first:"]) expect(text).toContain(label);
+  });
+
+  it("a_word_is_served_by_its_letter_id_after_a_review_is_newer_while_a_plain_letters_call_still_gives_only_the_newest", async () => {
+    const p = paths();
+    const { fake } = reused(p, [pr(7)]);
+    const s = await startSteward(p, fake);
+    const card = await cardFrom(s, p);
+    expect(await askWord(s, card.id)).toBe(204);
+    await until(() => pastes(fake.attachInput(SHORT)).length === 1, 8000);
+    await stewardStop(s.url, p, SID, WORD);
+    const word = wordOf(await townWhere(s.url, (t) => wordOf(t, card.id)?.state === "ready"), card.id)!.letter!;
+    await ask(s, p, 7);
+    await until(() => pastes(fake.attachInput(SHORT)).length === 2, 8000);
+    await stewardStop(s.url, p, SID, REVIEW);
+    const review = reviewOf(await townWhere(s.url, (t) => reviewOf(t, p, 7)?.state === "ready"), p, 7)!.letter!;
+
+    expect((await stewardLetters(s)).letters.map((l) => l.text)).toEqual([REVIEW]);
+    expect(await stewardLetters(s, `&id=${word}`)).toEqual({ status: 200, letters: [expect.objectContaining({ id: word, text: WORD })] });
+    expect(await stewardLetters(s, `&id=${review}`)).toEqual({ status: 200, letters: [expect.objectContaining({ id: review, text: REVIEW })] });
+    expect((await stewardLetters(s, "&id=letter-none")).status).toBe(404);
+    const noToken = await fetch(`${s.url}/letters?lead=${SID}&id=${word}`);
+    expect(noToken.status).toBe(403);
+  }, 15_000);
+
+  it("a_word_with_no_reply_in_five_minutes_fails_with_one_log_line_and_the_next_request_goes", async () => {
+    const p = paths();
+    const { fake } = reused(p, [pr(7)]);
+    const s = await startSteward(p, fake);
+    const card = await cardFrom(s, p);
+    expect(await askWord(s, card.id)).toBe(204);
+    await until(() => pastes(fake.attachInput(SHORT)).length === 1, 8000);
+    const pasted = Date.now(); // just after the paste
+    await ask(s, p, 7);
+    await until(() => fake.attachPids(SHORT).every(gone), 5000);
+    // Only the clock is faked: the server's polls and the fake claude keep real time.
+    vi.useFakeTimers({ toFake: ["Date"], now: pasted + 5 * 60_000 - 5_000 });
+    try {
+      await sleep(600); // several polls just before the bound
+      expect(wordOf(await townWhere(s.url, () => true), card.id)).toEqual({ state: "writing" });
+      expect(pastes(fake.attachInput(SHORT))).toHaveLength(1);
+
+      vi.setSystemTime(pasted + 5 * 60_000);
+      const t = await townWhere(s.url, (x) => wordOf(x, card.id)?.state === "failed");
+      expect(wordOf(t, card.id)).toEqual({ state: "failed", reason: "no reply in 5 minutes" });
+      await until(() => pastes(fake.attachInput(SHORT)).length === 2, 8000);
+      expect(pastes(fake.attachInput(SHORT))[1]).toBe(filled(pr(7)));
+      expect(stewardLines(p).map((l) => l.message)).toEqual([`no word on card ${card.id} after 5 min`]);
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 15_000);
 });

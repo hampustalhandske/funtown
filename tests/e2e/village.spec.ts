@@ -129,8 +129,13 @@ test("a_ready_parcel_opens_the_stewards_panel_and_an_unasked_one_a_panel_that_as
     asked.push({ body: req.postDataJSON(), token: req.headers()["x-funtown-token"], origin: req.headers()["origin"] });
     return r.fulfill({ status: 204 });
   });
+  await page.route("**/letters?lead=st1&id=L1", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "L1", from: "st1", name: "steward", text: "Squash title: fix(x): y", at: 1 }]) }),
+  );
   await item(page, /4218/).click();
   await expect(page.getByRole("dialog", { name: "steward details" })).toBeVisible();
+  // her review, fetched by its letter id
+  await expect(page.getByRole("region", { name: "Review of #4218" })).toContainText("Squash title: fix(x): y");
   expect(requested).toEqual([]);
   await page.keyboard.press("Escape");
 

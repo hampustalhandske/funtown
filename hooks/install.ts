@@ -17,7 +17,8 @@ const EVENTS = [
 const MARKER = "funtown-hook.ts";
 const HOLD = "funtown-hold.ts";
 const LETTER = "funtown-letter";
-const MARKERS = [MARKER, HOLD, LETTER];
+const ASK = "funtown-ask";
+const MARKERS = [MARKER, HOLD, LETTER, ASK];
 
 /** `path` as one single-quoted shell word. */
 const shellQuote = (path: string) => `'${path.replaceAll("'", "'\\''")}'`;
@@ -84,9 +85,14 @@ if (action === "install") {
   const hold = { type: "command", command: `node ${shellQuote(join(import.meta.dirname, HOLD))}`, timeout: 7200 };
   settings.hooks.PermissionRequest.push({ hooks: [hold] });
   settings.hooks.PreToolUse.push({ matcher: "AskUserQuestion|ExitPlanMode", hooks: [hold] });
-  // Prints the user's own letter file when there is one (empty = off), else the repo's shape.
-  const shape = `f="$HOME/.funtown/letter.md"; if [ -e "$f" ]; then cat "$f"; else cat ${shellQuote(join(import.meta.dirname, "letter.md"))}; fi # ${LETTER}`;
-  settings.hooks.SessionStart.push({ matcher: "startup|resume|clear|compact", hooks: [{ type: "command", command: shape, timeout: 5 }] });
+  // At SessionStart, prints the user's own copy of `file` in ~/.funtown when there is one (empty = off), else the repo's.
+  const sessionStart = settings.hooks.SessionStart;
+  const printed = (file: string, marker: string) => {
+    const command = `f="$HOME/.funtown/${file}"; if [ -e "$f" ]; then cat "$f"; else cat ${shellQuote(join(import.meta.dirname, file))}; fi # ${marker}`;
+    sessionStart.push({ matcher: "startup|resume|clear|compact", hooks: [{ type: "command", command, timeout: 5 }] });
+  };
+  printed("letter.md", LETTER);
+  printed("ask.md", ASK);
   state[key] = { createdHooksKey, createdEvents };
 } else {
   delete state[key];

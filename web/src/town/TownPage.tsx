@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Character, House, Parcel, Town } from "../../../server/types.ts";
-import { AddProject, askReview, Panel, post, removeProject, useSelection, useTown } from "../App.tsx";
+import { AddProject, askReview, Panel, post, removeProject, stewardOf, usePageKeys, useSelection, useTown } from "../App.tsx";
+import { KeySheet } from "../KeySheet.tsx";
+import { useKey, useLayer } from "../keys.ts";
 import { MorningButton } from "../Morning.tsx";
 import { SwitchButton, type OpenSession } from "../Switch.tsx";
 import { needOf, NotifyButton, Toasts } from "../needs.tsx";
 import { boardOf, interior, type Board, type InPlaced } from "./interior.ts";
 import { AVATARS, avatarFor } from "./kit/avatars.ts";
 import { keyOf, layout, type Placed } from "./layout.ts";
+import { nextHouse, type Direction, type Door, type Move } from "./mark.ts";
 import { Village } from "./Village.tsx";
 
 const REVIEW_WORDS = { idle: "review not asked", queued: "review queued", reviewing: "reviewing", ready: "review ready" } as const;
@@ -77,33 +80,18 @@ const ICONS = {
   settings: <Icon><path d="M4 7h9M17 7h3M4 17h3M11 17h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></Icon>,
   work: <Icon><rect x="4.5" y="4" width="15" height="16" rx="2.5" /><path d="M8.5 9h7M8.5 12.5h7M8.5 16h4" /></Icon>,
   morning: <Icon><path d="M3 18h18M7 18a5 5 0 0 1 10 0M12 7.5v2.5M5.5 10.5l1.6 1.6M18.5 10.5l-1.6 1.6" /></Icon>,
+  keys: <Icon><rect x="3" y="6.5" width="18" height="11" rx="2.5" /><path d="M7 10.5h.01M10.5 10.5h.01M14 10.5h.01M17.5 10.5h.01M8 14h8" /></Icon>,
   reload: <Icon><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4.5H15" /></Icon>,
   close: <Icon><path d="M7 7l10 10M17 7L7 17" /></Icon>,
   back: <Icon><path d="M10 6l-6 6 6 6M4 12h16" /></Icon>,
 };
-
-/**
- * Calls `onClose` on Escape and stops the event there, so a pane closes without the panel under it closing too.
- * It listens on the document, which an event reaches before the window. With `skipInTerminal`, Escape typed in a terminal is left alone.
- */
-function useEscape(onClose: () => void, skipInTerminal = false) {
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || (skipInTerminal && event.target instanceof Element && event.target.closest(".terminal"))) return;
-      event.stopPropagation();
-      onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose, skipInTerminal]);
-}
 
 type SettingsProps = { town: Town | null; muted: boolean; onMute: () => void; open: OpenSession | null; onClose: () => void };
 
 /** The settings pane: add or remove projects, your avatar, sounds and pop-ups, "I had to switch", and Claude version problems. */
 function Settings({ town, muted, onMute, open, onClose }: SettingsProps) {
   const [error, setError] = useState<string | null>(null);
-  useEscape(onClose, true);
+  useLayer("pane", true, onClose);
   async function remove(house: House) {
     setError((await removeProject(house))?.message ?? null);
   }
@@ -162,7 +150,7 @@ type AskTarget = { cwd: string; parcel: Parcel };
 function AskPanel({ target, onClose }: { target: AskTarget; onClose: () => void }) {
   const { cwd, parcel } = target;
   const [error, setError] = useState<string | null>(null);
-  useEscape(onClose);
+  useLayer("pane", true, onClose);
   async function ask() {
     const failed = await askReview(cwd, parcel.number);
     if (failed) setError(failed.message);
@@ -185,13 +173,24 @@ function AskPanel({ target, onClose }: { target: AskTarget; onClose: () => void 
 /** The town page: the village in one canvas, a row of icon buttons, panels on demand, and a hidden list for screen readers. */
 export function TownPage() {
   const [town, restarted] = useTown();
-  const { setSelection, onClose, lead, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop } = useSelection(town);
+  const { selection, setSelection, onClose, lead, house, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop } = useSelection(town);
   const [settings, setSettings] = useState(false);
   const [asking, setAsking] = useState<AskTarget | null>(null);
   const closeAsking = useCallback(() => setAsking(null), []);
   const closeSettings = useCallback(() => setSettings(false), []);
   const placed = useMemo(() => (town ? layout(town, waiting) : []), [town]);
   const index = useMemo(() => indexOf(town), [town]);
+  // The house the keys last reached: it shows its name plate, as a hover does. Gone with its house.
+  const [marked, setMarked] = useState<string | null>(null);
+  // Where the mark last landed, kept after Esc clears it: the first arrow returns there, and the way back follows it.
+  const [last, setLast] = useState<Move | null>(null);
+  const doors = useRef<(() => Door[]) | null>(null);
+  const current = selection && `${selection.lead}/${selection.id}`;
+  const openAndMark = useCallback((w: { lead: string; id: string; cwd: string }) => {
+    openWaiting(w);
+    setMarked(w.cwd);
+    setLast({ to: w.cwd });
+  }, [openWaiting]);
   const name = useCallback((p: Placed | InPlaced) => words(p, index).name, [index]);
 
   // The classroom being shown: the cwd in the page hash, kept in step with Back, reload and pasted links.
@@ -213,23 +212,42 @@ export function TownPage() {
     if (town && inCwd !== null && !classroom) go(null, true);
   }, [town, inCwd, classroom, go]);
   const showing = classroom !== undefined;
-  const shown = lead && selected;
-  useEffect(() => {
-    // Only when nothing above the classroom is open: those panes close on their own Escape first.
-    if (!showing || settings || asking || shown) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !(event.target instanceof Element && event.target.closest(".terminal"))) go(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [showing, settings, asking, shown, go]);
+  const hasMark = marked !== null && index.houses.has(marked);
+  useLayer("mark", hasMark, () => setMarked(null));
+  // The plain list opens at the house you are at: the classroom's, else the marked one.
+  const at = classroom?.cwd ?? (hasMark ? marked : null);
+  const workHref = at === null ? "/work.html" : workLink(at);
+  const [sheet, showSheet, hideSheet] = usePageKeys(town, waiting, current, openAndMark, workHref);
+  const shown = lead && house && selected;
+  useLayer("classroom", showing, () => go(null));
+
+  // The arrows and Enter are the town's alone: not in a classroom, with a pane open (a panel, Settings, a pull request's, the key sheet).
+  const keysOn = !showing && !shown && !settings && !asking && !sheet;
+  /** Moves the mark one house `direction` on the screen as the camera is now, or puts it on the first house. */
+  const move = (direction: Direction) => {
+    const points = doors.current?.() ?? [];
+    const to = nextHouse(points, marked, direction, last);
+    if (to === null) return;
+    const walked = marked !== null && marked !== to && points.some((p) => p.cwd === marked);
+    setMarked(to);
+    if (walked) setLast({ to, from: marked, direction });
+    else if (to !== marked) setLast({ to });
+  };
+  useKey("ArrowLeft", () => move("left"), keysOn);
+  useKey("ArrowRight", () => move("right"), keysOn);
+  useKey("ArrowUp", () => move("up"), keysOn);
+  useKey("ArrowDown", () => move("down"), keysOn);
+  useKey("Enter", () => marked !== null && go(marked), keysOn && hasMark);
 
   /** Opens the review panel, letter or PR of parcel `number` in `cwd`. */
   const openParcel = useCallback(
     (cwd: string, number: number) => {
       const parcel = index.houses.get(cwd)?.parcels?.find((x) => x.number === number);
-      const steward = parcel?.review?.state === "ready" ? parcel.review.steward : undefined;
-      if (steward && index.characters.has(steward)) setSelection({ lead: steward, id: steward });
+      const ready = parcel?.review?.state === "ready" ? parcel.review : undefined;
+      const steward = ready?.steward;
+      if (steward && index.characters.has(steward)) {
+        setSelection({ lead: steward, id: steward, review: ready?.letter === undefined ? undefined : { pr: number, letter: ready.letter } });
+      }
       else if (parcel?.review?.state === "idle") {
         setSettings(false);
         onClose();
@@ -257,7 +275,7 @@ export function TownPage() {
   return (
     <>
       <div className="village" aria-hidden="true">
-        <Village index={index} avatar={town?.avatar} placed={placed} name={name} onPick={pick} inside={inside} />
+        <Village index={index} avatar={town?.avatar} marked={marked} placed={placed} name={name} onPick={pick} inside={inside} doors={doors} />
       </div>
       <ul className="town-list" aria-label="Town">
         {inside
@@ -283,7 +301,8 @@ export function TownPage() {
         )}
         <span className="slot" title="Morning">{ICONS.morning}<MorningButton aria-label="Morning" waiting={waiting} town={town} onOpen={openWaiting} /></span>
         {classroom && <button type="button" className="icon" aria-label="Back to town" title="Back to town" onClick={() => go(null)}>{ICONS.back}</button>}
-        <a className="icon" href={classroom ? workLink(classroom.cwd) : "/work.html"} aria-label="Work view" title="Work view">{ICONS.work}</a>
+        <a className="icon" href={workHref} aria-label="Work view" title="Work view (L)">{ICONS.work}</a>
+        <button type="button" className="icon" aria-label="Key sheet" title="Key sheet (?)" onClick={showSheet}>{ICONS.keys}</button>
         <button
           type="button"
           className={`icon${town && town.claude.problems.length > 0 ? " flagged" : ""}`}
@@ -294,9 +313,10 @@ export function TownPage() {
           {ICONS.settings}
         </button>
       </nav>
+      {sheet && <KeySheet onClose={hideSheet} />}
       {settings && <Settings town={town} muted={muted} onMute={toggleMute} open={openSession} onClose={closeSettings} />}
       {asking && <AskPanel key={`${asking.cwd}/${asking.parcel.number}`} target={asking} onClose={closeAsking} />}
-      {shown && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} cards={town?.cards ?? []} onClose={onClose} />}
+      {shown && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} house={house} cards={town?.cards ?? []} steward={stewardOf(town)} review={selection?.review} onClose={onClose} />}
       <Toasts
         toasts={toasts}
         onOpen={(w) => {

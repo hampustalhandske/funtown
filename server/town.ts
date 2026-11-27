@@ -12,6 +12,8 @@ export type HookEvent = {
   tool_name?: string;
   tool_input?: Record<string, unknown>;
   tool_use_id?: string;
+  /** On a PermissionRequest: the rules Claude Code offers to always allow, as sent. */
+  permission_suggestions?: unknown;
   cwd?: string;
   agent_id?: string;
   agent_type?: string;
@@ -344,6 +346,11 @@ export class TownState {
     this.phases = phases;
   }
 
+  /** The phase file of the project in `cwd`, if it has one. */
+  phase(cwd: string): PhaseFile | undefined {
+    return this.phases.get(cwd);
+  }
+
   /** Sets the folders the user added as projects, in the order added. */
   setProjects(projects: readonly string[]): void {
     this.projects = projects;
@@ -376,7 +383,12 @@ export class TownState {
       if (!found) {
         const phase = this.phases.get(cwd);
         found = { project: basename(cwd) || cwd, cwd, leads: [] };
-        if (phase) found.phase = { phase: phase.phase, ...(phase.note !== undefined ? { note: phase.note } : {}), ...(phase.steps ? { steps: phase.steps } : {}) };
+        if (phase) {
+          // parsePhase never sets a field to undefined, so every field but the tags is shown as read.
+          const { tags, ...shown } = phase;
+          void tags;
+          found.phase = shown;
+        }
         if (this.seen.has(cwd)) found.seen = true;
         houses.set(cwd, found);
       }

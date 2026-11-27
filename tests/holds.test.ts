@@ -1,26 +1,8 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import type { Card } from "../server/types.ts";
-import { hold, jsonLines, leadsOf, listed, listedBg, post, sleep, start, tokenOf, townWhere, until, type Json } from "./helpers.ts";
+import { describe, expect, it, onTestFinished } from "vitest";
+import { cardsWhere, connectPage, CWD, evAt as ev, held, hold, leadsOf, listed, listedBg, post, sleep, start, tokenOf, townWhere, type Json } from "./helpers.ts";
 
-
-const CWD = "/work/demo-app";
 const BG = "bg111111-0000-4000-8000-000000000000";
 
-const aborts: AbortController[] = [];
-afterEach(() => {
-  for (const a of aborts.splice(0)) a.abort();
-});
-
-const ev = (name: string, at: number, extra: Json = {}, session = "s1") => ({
-  hook_event_name: name,
-  session_id: session,
-  cwd: CWD,
-  funtown: { at },
-  ...extra,
-});
 const permission = (at: number, command = "rm -rf build", extra: Json = {}) =>
   ev("PermissionRequest", at, { tool_name: "Bash", tool_input: { command }, ...extra });
 const question = (at: number, extra: Json = {}) =>
@@ -45,26 +27,9 @@ async function room(opts: Parameters<typeof start>[0] = {}) {
   return { ...s, token };
 }
 
-/** Keeps a /stream open for the rest of the test, as an open page does. */
-function connectPage(url: string) {
-  const ctl = new AbortController();
-  aborts.push(ctl);
-  fetch(`${url}/stream`, { signal: ctl.signal }).then((r) => r.body!.pipeTo(new WritableStream())).catch(() => {});
-}
-
-const cardsWhere = async (url: string, ok: (c: Card[]) => boolean) => (await townWhere(url, (t) => ok(t.cards))).cards;
-
 type S = Awaited<ReturnType<typeof room>>;
 const answer = (s: S, body: Json, headers: Record<string, string> = { origin: s.url, "x-funtown-token": s.token }) =>
   fetch(`${s.url}/answer`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
-
-/** Holds `payload`, waits for its card and returns the card and the pending reply. */
-async function held(s: { url: string }, payload: Json) {
-  const before = (await cardsWhere(s.url, () => true)).length;
-  const h = hold(s.url, payload);
-  const cards = await cardsWhere(s.url, (c) => c.length === before + 1);
-  return { card: cards[cards.length - 1], reply: h.reply, abort: h.abort };
-}
 
 describe("POST /hold + POST /answer: the hook output per answer", () => {
   it("a_permission_card_carries_the_payload_and_allow_replies_with_the_exact_allow_output", async () => {
@@ -84,6 +49,16 @@ describe("POST /hold + POST /answer: the hook output per answer", () => {
     expect(await (await reply).json()).toEqual({
       hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "deny", message: "The user denied this in Funtown." } },
     });
+  });
+
+  it("a_permission_card_carries_the_permission_suggestions_as_sent_and_a_card_without_them_has_none", async () => {
+    // Breaks if the raw detail can't show what Claude Code offered to always allow (story 15).
+    const s = await room();
+    const suggestions = [{ type: "addRules", rules: [{ toolName: "Bash", ruleContent: "npm test:*" }], behavior: "allow", destination: "localSettings" }];
+    const { card } = await held(s, permission(100, "npm test", { permission_suggestions: suggestions }));
+    expect(card.suggestions).toEqual(suggestions);
+    const bare = await held(s, permission(200, "ls"));
+    expect(bare.card).not.toHaveProperty("suggestions");
   });
 
   it("a_subagents_permission_card_carries_its_agent_id", async () => {
@@ -238,7 +213,7 @@ describe("when a card is released", () => {
     const s = await start({ pollMs: 100, unlistedMs: 400 });
     s.fake.list([listedBg(BG, CWD)]);
     const page = new AbortController();
-    aborts.push(page);
+    onTestFinished(() => page.abort());
     fetch(`${s.url}/stream`, { signal: page.signal }).then((r) => r.body!.pipeTo(new WritableStream())).catch(() => {});
     await sleep(250);
     const { card, reply } = await held(s, question(100));
@@ -274,31 +249,5 @@ describe("when a card is released", () => {
     s.fake.list([listed("s1", CWD), listedBg(BG, CWD, { status: "busy" }), listed("late", CWD)]);
     const cards = await cardsWhere(s.url, (c) => c.length === 1);
     expect(cards[0]).toMatchObject({ lead: "late", kind: "permission" });
-  });
-});
-
-describe("the answer log", () => {
-  it("each_way_a_card_closes_adds_one_line_with_the_right_by", async () => {
-    const log = join(mkdtempSync(join(tmpdir(), "funtown-answers-")), "answers.jsonl");
-    const s = await room({ answerLog: log });
-    const lines = () => jsonLines(log);
-    const line = (kind: string, by: string) => ({ at: expect.any(Number), lead: "s1", project: "demo-app", kind, by });
-
-    const a = await held(s, permission(100));
-    await answer(s, { card: a.card.id, decision: "allow" });
-    await until(() => lines().length === 1);
-    expect(lines()).toEqual([line("permission", "funtown")]);
-
-    const b = await held(s, permission(200));
-    await post(s.url, ev("PostToolUse", 300, { tool_name: "Bash", tool_input: { command: "rm -rf build" } }));
-    await until(() => lines().length === 2);
-    expect(lines()[1]).toEqual(line("permission", "elsewhere"));
-    await b.reply;
-
-    const c = await held(s, permission(400));
-    c.abort();
-    await until(() => lines().length === 3);
-    expect(lines()[2]).toEqual(line("permission", "dropped"));
-    expect(await cardsWhere(s.url, (cs) => cs.length === 0)).toEqual([]);
   });
 });

@@ -42,6 +42,39 @@ export const LetterView = memo(function LetterView({ letter, name }: { letter: L
 });
 
 /**
+ * One letter of `lead` by its id, as written, with no heading, in a `className` box: the Queen's word on a card, or
+ * her review of a PR. Line breaks stay, so her labelled parts stay on their own lines. A missing letter or a failed
+ * fetch says so in a line.
+ */
+export function LetterById({ lead, id, className }: { lead: string; id: string; className: string }) {
+  const [text, setText] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let current = true;
+    setText(null);
+    setError("");
+    fetch(`/letters?lead=${encodeURIComponent(lead)}&id=${encodeURIComponent(id)}`, { headers: { "x-funtown-token": funtownToken() } })
+      .then(async (reply) => {
+        if (!current) return;
+        if (reply.status === 404) setError("This letter is no longer kept.");
+        else if (!reply.ok) setError(`This letter failed to load (${reply.status}).`);
+        else setText(((await reply.json()) as Letter[])[0]?.text ?? "");
+      })
+      .catch(() => current && setError("This letter failed to load."));
+    return () => {
+      current = false;
+    };
+  }, [lead, id]);
+  if (error) return <p role="alert" className="error">{error}</p>;
+  if (text === null) return null;
+  return (
+    <div className={className}>
+      <Markdown remarkPlugins={[remarkGfm]} components={components}>{text}</Markdown>
+    </div>
+  );
+}
+
+/**
  * The letters of `lead`, newest first, refetched whenever `stamp` changes (the newest letter times
  * of the lead and its subagents). With `only`, just that character's. A heading shows the writer's name
  * from `names` (character id to current name) when listed there. A 404 means no letters; any other

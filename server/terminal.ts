@@ -21,9 +21,10 @@ export const isSize = (n: unknown): n is number => Number.isInteger(n) && (n as 
  * folder shares: it starts with the first socket, outlives its sockets, and closes them all when
  * it exits. Frames are JSON text of at most 1 MB: `{"t":"in","d"}` and `{"t":"resize","c","r"}`
  * in, `{"t":"out","d"}` out, and `{"t":"shared","n"}` to every socket on a session or shell
- * whenever the number of sockets on it changes. `changed` runs when a shell starts or ends.
+ * whenever the number of sockets on it changes. `changed` runs when a shell starts or ends;
+ * `typed` runs with the session id on every input frame a session's socket sends.
  */
-export function createTerminals(claude: string, shell: string | undefined, logError: LogError, changed: () => void) {
+export function createTerminals(claude: string, shell: string | undefined, logError: LogError, changed: () => void, typed: (sessionId: string) => void) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
   const bySession = new Map<string, Set<WebSocket>>();
   // cwd -> its shell, while it runs: its latest output as chunks of `size` units in all, and
@@ -37,8 +38,8 @@ export function createTerminals(claude: string, shell: string | undefined, logEr
     for (const ws of sockets) ws.send(frame);
   };
 
-  /** Adds `ws` to the `sockets` on `pty`: its frames reach the pty while it runs, and every socket hears the new count; `left` runs when it closes. */
-  const join = (ws: WebSocket, sockets: Set<WebSocket>, pty: IPty, about: string, left: () => void) => {
+  /** Adds `ws` to the `sockets` on `pty`: its frames reach the pty while it runs, and every socket hears the new count; `onInput` runs on each input frame and `left` when it closes. */
+  const join = (ws: WebSocket, sockets: Set<WebSocket>, pty: IPty, about: string, left: () => void, onInput?: () => void) => {
     ws.on("error", (err) => {
       logError("term", err, about);
       ws.close();
@@ -51,7 +52,10 @@ export function createTerminals(claude: string, shell: string | undefined, logEr
       } catch {
         // not JSON: refused below like any other unknown frame
       }
-      if (f?.t === "in" && typeof f.d === "string") pty.write(f.d);
+      if (f?.t === "in" && typeof f.d === "string") {
+        onInput?.();
+        pty.write(f.d);
+      }
       else if (f?.t === "resize" && isSize(f.c) && isSize(f.r)) pty.resize(f.c, f.r);
       else ws.close(1007, "unknown frame");
     });
@@ -117,7 +121,7 @@ export function createTerminals(claude: string, shell: string | undefined, logEr
         join(ws, sockets, pty, shortId, () => {
           if (ptys.delete(pty)) pty.kill();
           if (sockets.size === 0) bySession.delete(sessionId);
-        });
+        }, () => typed(sessionId));
       });
     },
 

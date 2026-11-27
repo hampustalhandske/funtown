@@ -1,9 +1,12 @@
 import { lazy, Suspense, useCallback, useEffect, useState, useRef, type FormEvent } from "react";
 import type { Card, Character, House, Lead, Parcel, Stage, Town } from "../../server/types.ts";
-import { AnswerCard } from "./AnswerCard.tsx";
+import { AnswerCard, LetterById } from "./AnswerCard.tsx";
+import { askOf } from "./brief.ts";
 import { MorningButton } from "./Morning.tsx";
 import { LazyBoundary } from "./LazyBoundary.tsx";
-import { NeedsList, NotifyButton, Toasts, useAlerts, useMute, useNextKey, waitingList, type Waiting } from "./needs.tsx";
+import { NeedsList, NotifyButton, Toasts, useAlerts, useLetterKey, useMute, urgencyList, type Lettered, type Waiting } from "./needs.tsx";
+import { useKey, useLayer, useWalk } from "./keys.ts";
+import { KeySheet, useKeySheet } from "./KeySheet.tsx";
 import { funtownToken } from "./token.ts";
 import { SwitchButton } from "./Switch.tsx";
 import { ReplyBox } from "./ReplyBox.tsx";
@@ -106,8 +109,11 @@ export function askReview(cwd: string, number: number): Promise<Failure | null> 
   return post("/review", { cwd, number }, [204]);
 }
 
-/** An open PR: number, title, draft mark, a link, and its review: a button to ask for one, or (when ready) the steward's panel. */
-function ParcelItem({ parcel, cwd, onOpen }: { parcel: Parcel; cwd: string; onOpen: (steward: string) => void }) {
+/** A ready review to show in the steward's panel: the PR's number and her review letter's id. */
+export type Review = { pr: number; letter: string };
+
+/** An open PR: number, title, draft mark, a link, and its review: a button to ask for one, or (when ready) the steward's panel with it. */
+function ParcelItem({ parcel, cwd, onOpen }: { parcel: Parcel; cwd: string; onOpen: (steward: string, review?: Review) => void }) {
   const { review } = parcel;
   const [error, setError] = useState<string | null>(null);
   async function ask() {
@@ -119,7 +125,11 @@ function ParcelItem({ parcel, cwd, onOpen }: { parcel: Parcel; cwd: string; onOp
       {parcel.draft && <span className="badge">draft</span>}
       {review &&
         (review.state === "idle" || review.steward ? (
-          <button type="button" className="review" data-state={review.state} onClick={() => (review.state === "idle" ? void ask() : onOpen(review.steward as string))}>
+          <button
+            type="button"
+            className="review"
+            data-state={review.state}
+            onClick={() => (review.state === "idle" ? void ask() : onOpen(review.steward as string, review.letter === undefined ? undefined : { pr: parcel.number, letter: review.letter }))}>
             {REVIEW_LABEL[review.state]}
           </button>
         ) : (
@@ -130,22 +140,37 @@ function ParcelItem({ parcel, cwd, onOpen }: { parcel: Parcel; cwd: string; onOp
   );
 }
 
-type Select = (lead: string, id: string) => void;
+type Select = (lead: string, id: string, review?: Review) => void;
+
+/** The listed steward (the Queen's session), if there is one: the card's slot tells "starting" from "busy" by it and fetches her word from it. */
+export const stewardOf = (town: Town | null): Lead | undefined => town?.houses.flatMap((house) => house.leads).find((lead) => lead.steward);
 
 /**
- * Cards of `lead`, each naming its subagent when a subagent asks; with `only`, just the cards
- * of that character. A card from a subagent the lead doesn't list yet counts as the lead's.
+ * Cards of `lead` in `house`, each with its brief's facts; with `only`, just the cards of that character.
+ * A card from a subagent the lead doesn't list yet counts as the lead's. `onLetter` gets the asker's id. In a `pane`,
+ * the only card there takes the card keys. Outside one, a card of `inPane` (the character whose pane is open) is one
+ * line pointing there, so the same card never shows two choices.
  */
-function Cards({ lead, cards, only }: { lead: Lead; cards: Card[]; only?: string }) {
-  const owner = (card: Card) => (card.agent && lead.subagents.some((s) => s.id === card.agent) ? card.agent : lead.id);
-  return cards
-    .filter((card) => card.lead === lead.id && (only === undefined || owner(card) === only))
-    .map((card) => (
-      <AnswerCard key={card.id} card={card} who={card.agent ? (lead.subagents.find((s) => s.id === card.agent)?.name ?? "A subagent") : undefined} />
-    ));
+function Cards({ lead, house, cards, steward, only, pane = false, inPane, onLetter }: {
+  lead: Lead; house: House; cards: Card[]; steward?: Lead; only?: string; pane?: boolean; inPane?: string; onLetter: (id: string) => void;
+}) {
+  const subagentOf = (card: Card) => lead.subagents.find((s) => s.id === card.agent);
+  const mine = cards.filter((card) => card.lead === lead.id && (only === undefined || (subagentOf(card)?.id ?? lead.id) === only));
+  return mine.map((card) => {
+    const asker = subagentOf(card) ?? lead;
+    if (!pane && asker.id === inPane) {
+      const questions = Array.isArray(card.input.questions) ? (card.input.questions as { question: string }[]) : [];
+      return <p key={card.id} className="in-pane">{asker.name}: {askOf(card, questions)} · open in the panel</p>;
+    }
+    const facts = { asker, under: asker === lead ? undefined : lead.name, project: house.project, phase: house.phase };
+    return <AnswerCard key={card.id} card={card} facts={facts} keys={pane && mine.length === 1} steward={steward} onLetter={() => onLetter(asker.id)} />;
+  });
 }
 
-function LeadItem({ lead, cards, onSelect }: { lead: Lead; cards: Card[]; onSelect: Select }) {
+/** The character whose pane is open, if any. */
+type Open = { lead: string; id: string } | null;
+
+function LeadItem({ lead, house, cards, steward, open, onSelect }: { lead: Lead; house: House; cards: Card[]; steward?: Lead; open: Open; onSelect: Select }) {
   return (
     <li className="lead">
       <CharacterRow character={lead} avatar="🧑‍💻" onSelect={(id) => onSelect(lead.id, id)} />
@@ -158,7 +183,7 @@ function LeadItem({ lead, cards, onSelect }: { lead: Lead; cards: Card[]; onSele
           ))}
         </ul>
       )}
-      <Cards lead={lead} cards={cards} />
+      <Cards lead={lead} house={house} cards={cards} steward={steward} inPane={open?.lead === lead.id ? open.id : undefined} onLetter={(id) => onSelect(lead.id, id)} />
     </li>
   );
 }
@@ -213,12 +238,16 @@ export function AddProject() {
 function HouseCard({
   house,
   cards,
+  steward,
+  open,
   onSelect,
   onNew,
   notice,
 }: {
   house: House;
   cards: Card[];
+  steward?: Lead;
+  open: Open;
   onSelect: Select;
   onNew: (cwd: string) => Promise<Failure | null>;
   notice?: string;
@@ -269,16 +298,18 @@ function HouseCard({
         🏠 {house.project}
         {house.phase && <span className="badge phase">{house.phase.phase}</span>}
         {house.phase?.note && <span className="phase-note">{house.phase.note}</span>}
+        {house.phase?.goal && <span className="phase-line">goal: {house.phase.goal}</span>}
+        {house.phase?.spec && <span className="phase-line">spec: {house.phase.spec}</span>}
       </h2>
       <ul>
         {house.leads.map((lead) => (
-          <LeadItem key={lead.id} lead={lead} cards={cards} onSelect={onSelect} />
+          <LeadItem key={lead.id} lead={lead} house={house} cards={cards} steward={steward} open={open} onSelect={onSelect} />
         ))}
       </ul>
       {house.parcels && house.parcels.length > 0 && (
         <ul className="parcels" aria-label={`${house.project} pull requests`}>
           {house.parcels.map((parcel) => (
-            <ParcelItem key={parcel.number} parcel={parcel} cwd={house.cwd} onOpen={(id) => onSelect(id, id)} />
+            <ParcelItem key={parcel.number} parcel={parcel} cwd={house.cwd} onOpen={(id, review) => onSelect(id, id, review)} />
           ))}
         </ul>
       )}
@@ -330,8 +361,13 @@ function endOf(code: number, lastLine: string): { failed: string } | "detached" 
   return { failed: unknown };
 }
 
-/** Details of one character: stage, need, its subagents (for a lead) and a button that focuses its terminal. */
-export function Panel({ character, lead, cards, onClose }: { character: Character; lead: Lead; cards: Card[]; onClose: () => void }) {
+/**
+ * Details of one character of `lead` in `house`: stage, need, its cards, a steward's `review` fetched by its letter id
+ * (so a later letter never hides it), its letters, its subagents (for a lead) and a button that focuses its terminal.
+ */
+export function Panel({ character, lead, house, cards, steward, review, onClose }: {
+  character: Character; lead: Lead; house: House; cards: Card[]; steward?: Lead; review?: Review; onClose: () => void;
+}) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [terminal, setTerminal] = useState(false);
@@ -361,14 +397,12 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
   const leaveTerminal = useCallback(() => column.current?.focus(), []);
   const reply = useRef<((text: string) => string | null) | null>(null);
   const stamp = [lead, ...lead.subagents].map((c) => c.letter ?? 0).join(",");
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const inTerminal = event.target instanceof Element && event.target.closest(".terminal");
-      if (event.key === "Escape" && !inTerminal) onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useLayer("pane", true, onClose);
+  // R is for a background lead's own pane: the cursor goes where a reply is typed, the terminal when it is shown, else the reply box.
+  useKey("r", () => {
+    const target = terminal ? screen.current : column.current?.querySelector(".reply");
+    target?.querySelector("textarea")?.focus();
+  }, background);
   // Showing a terminal that was hidden gives it the keyboard again (a new one focuses itself).
   useEffect(() => {
     if (terminal) screen.current?.querySelector("textarea")?.focus();
@@ -421,7 +455,7 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
             </p>
           )}
           {character.id === lead.id && <Overlaps overlaps={lead.overlaps} />}
-          <Cards lead={lead} cards={cards} only={character.id} />
+          <Cards lead={lead} house={house} cards={cards} steward={steward} only={character.id} pane onLetter={() => column.current?.querySelector(".letters")?.scrollIntoView({ block: "nearest" })} />
           {character.id === lead.id && lead.subagents.length > 0 && (
             <ul aria-label="Subagents">
               {lead.subagents.map((sub) => (
@@ -430,6 +464,16 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
                 </li>
               ))}
             </ul>
+          )}
+          {review && (
+            <section className="review-letter" aria-label={`Review of #${review.pr}`}>
+              <h3>Review of #{review.pr}</h3>
+              <LazyBoundary>
+                <Suspense fallback={null}>
+                  <LetterById lead={lead.id} id={review.letter} className="letter" />
+                </Suspense>
+              </LazyBoundary>
+            </section>
           )}
           <LazyBoundary>
             <Suspense fallback={null}>
@@ -481,24 +525,34 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
 
 /**
  * The character whose panel is open, and the Needs you wiring both pages share: the waiting list,
- * mute, sound and toasts, and ⌥N. A selection whose character leaves the town closes.
+ * mute, sound and toasts. A selection whose character leaves the town closes.
  */
 export function useSelection(town: Town | null) {
-  const [selection, setSelection] = useState<{ lead: string; id: string } | null>(null);
+  const [selection, setSelection] = useState<{ lead: string; id: string; review?: Review } | null>(null);
   const onClose = useCallback(() => setSelection(null), []);
   const lead = selection ? town?.houses.flatMap((house) => house.leads).find((l) => l.id === selection.lead) : undefined;
   const selected = lead && [lead, ...lead.subagents].find((c) => c.id === selection?.id);
   useEffect(() => {
     if (town && selection && !selected) setSelection(null);
   }, [town, selection, selected]);
-  const openCwd = lead && town?.houses.find((house) => house.leads.includes(lead))?.cwd;
-  const openSession = selected && openCwd ? { id: selected.id, name: selected.name, cwd: openCwd } : null;
-  const waiting = waitingList(town);
+  const house = lead && town?.houses.find((h) => h.leads.includes(lead));
+  const openSession = selected && house ? { id: selected.id, name: selected.name, cwd: house.cwd } : null;
+  const waiting = urgencyList(town);
   const [muted, toggleMute] = useMute();
-  const openWaiting = useCallback((w: Waiting) => setSelection({ lead: w.lead, id: w.id }), []);
+  const openWaiting = useCallback((w: Pick<Waiting, "lead" | "id">) => setSelection({ lead: w.lead, id: w.id }), []);
   const { toasts, drop } = useAlerts(waiting, town !== null, muted, openWaiting);
-  useNextKey(waiting, selection && `${selection.lead}/${selection.id}`, openWaiting);
-  return { selection, setSelection, onClose, lead, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop };
+  return { selection, setSelection, onClose, lead, house, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop };
+}
+
+/**
+ * The keys both pages share: Space walks `waiting` and M the letters of `town`, from the pane `current` (`lead/id`),
+ * each opening with `open`; L loads `flip`, the other page; ? opens the key sheet. Gives the key sheet's state.
+ */
+export function usePageKeys(town: Town | null, waiting: Waiting[], current: string | null, open: (entry: Lettered) => void, flip: string) {
+  useWalk(waiting, current, open);
+  useLetterKey(town, current, open);
+  useKey("l", () => location.assign(flip));
+  return useKeySheet();
 }
 
 /** The house `/work.html#<cwd>` names, or "" when the hash isn't a valid encoded folder. */
@@ -513,7 +567,8 @@ function hashedHouse(): string {
 /** The town page: one house per project, its leads and their subagents, with a list of everyone waiting for you. */
 export function App() {
   const [town, restarted] = useTown();
-  const { selection, setSelection, onClose, lead, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop } = useSelection(town);
+  const { selection, setSelection, onClose, lead, house, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop } = useSelection(town);
+  const [sheet, showSheet, hideSheet] = usePageKeys(town, waiting, selection && `${selection.lead}/${selection.id}`, openWaiting, "/");
   // The selection when each New session was clicked; a session opens itself only if that is still it (or nothing is open).
   const selectionNow = useRef(selection);
   selectionNow.current = selection;
@@ -568,7 +623,8 @@ export function App() {
     <>
       <header>
         <h1>Funtown</h1>
-        <a href="/" aria-label="Town" title="Town">🏘️</a>
+        <a href="/" aria-label="Town" title="Town (L)">🏘️</a>
+        <button type="button" aria-label="Key sheet" title="Key sheet (?)" onClick={showSheet}>⌨️</button>
         <button type="button" aria-pressed={muted} onClick={toggleMute}>
           {muted ? "Unmute" : "Mute"}
         </button>
@@ -600,13 +656,16 @@ export function App() {
             key={house.cwd}
             house={house}
             cards={town.cards}
-            onSelect={(leadId, id) => setSelection({ lead: leadId, id })}
+            steward={stewardOf(town)}
+            open={selection}
+            onSelect={(leadId, id, review) => setSelection({ lead: leadId, id, review })}
             onNew={startSession}
             notice={missing.includes(house.cwd) ? "The new session didn't appear." : undefined}
           />
         ))}
       </main>
-      {lead && selected && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} cards={town?.cards ?? []} onClose={onClose} />}
+      {lead && house && selected && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} house={house} cards={town?.cards ?? []} steward={stewardOf(town)} review={selection?.review} onClose={onClose} />}
+      {sheet && <KeySheet onClose={hideSheet} />}
       <Toasts
         toasts={toasts}
         onOpen={(w) => {

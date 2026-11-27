@@ -1,7 +1,7 @@
 import { execFileAsync } from "./agents.ts";
 
 /** What Funtown reads from a project's `.claude/phase.json`. */
-export type PhaseFile = { phase: string; note?: string; steps?: string[]; tags: Map<string, string[]> };
+export type PhaseFile = { phase: string; note?: string; steps?: string[]; goal?: string; spec?: string; tags: Map<string, string[]> };
 
 /** An open pull request as `gh pr list` gives it. */
 export type Pr = { number: number; title: string; url: string; draft: boolean; head: string };
@@ -11,12 +11,12 @@ const MAX_STEPS = 24;
 
 /**
  * The phase file's `text`: its phase, its note when that is a string, its `steps` when that is a
- * list of at most 24 strings, and under `tags` each role or name whose value is a list, with its
- * string labels. Throws when the text isn't JSON
+ * list of at most 24 strings, its `goal` and `spec` when each is a string, and under `tags` each
+ * role or name whose value is a list, with its string labels. Throws when the text isn't JSON
  * or has no string `phase`; other fields are ignored.
  */
 export function parsePhase(text: string): PhaseFile {
-  const raw = JSON.parse(text) as { phase?: unknown; note?: unknown; steps?: unknown; tags?: unknown } | null;
+  const raw = JSON.parse(text) as { phase?: unknown; note?: unknown; steps?: unknown; goal?: unknown; spec?: unknown; tags?: unknown } | null;
   if (typeof raw?.phase !== "string") throw new Error('the file has no string "phase"');
   const tags = new Map<string, string[]>();
   if (typeof raw.tags === "object" && raw.tags !== null) {
@@ -29,6 +29,8 @@ export function parsePhase(text: string): PhaseFile {
     phase: raw.phase,
     ...(typeof raw.note === "string" ? { note: raw.note } : {}),
     ...(steps ? { steps: raw.steps as string[] } : {}),
+    ...(typeof raw.goal === "string" ? { goal: raw.goal } : {}),
+    ...(typeof raw.spec === "string" ? { spec: raw.spec } : {}),
     tags,
   };
 }

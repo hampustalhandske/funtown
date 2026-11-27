@@ -62,7 +62,7 @@ describe("interior", () => {
     const { interior } = await load();
     const asking = char("x1", { stage: "needs_you", needs: "permission", since: 5 });
     const stuck = char("x2", { stage: "needs_you", needs: "stuck", reason: "rate limit", since: 6 });
-    const all = interior(house([lead("a1", { stage: "needs_you", needs: "turn ended", since: 4 }, [asking, stuck, char("x3")])]));
+    const all = interior(house([lead("a1", { stage: "needs_you", needs: "question", since: 4 }, [asking, stuck, char("x3")])]));
     const pose = (id: string) => (of(all, "hat").find((h) => h.id === id) ?? of(all, "lead").find((l) => l.id === id))!.pose;
     expect(pose("x1")).toBe(poseOf(asking));
     expect(pose("x2")).toBe("stuck");

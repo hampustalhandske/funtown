@@ -70,6 +70,10 @@ test("the_box_opens_only_on_click_esc_closes_it_without_saving_and_note_it_saves
   await switchButton(page).click();
   await expect(why(page)).toBeFocused();
   await page.keyboard.type("not this one");
+  // The first Esc only leaves the text box, with its text.
+  await page.keyboard.press("Escape");
+  await expect(why(page)).toHaveValue("not this one");
+  await expect(why(page)).not.toBeFocused();
   await page.keyboard.press("Escape");
   await expect(why(page)).toHaveCount(0);
   await page.waitForTimeout(300);
@@ -97,12 +101,13 @@ test("note_it_can_be_clicked_while_a_wide_panel_is_open", async ({ page }) => {
   expect(sent).toHaveLength(1);
 });
 
-test("esc_in_the_box_closes_the_box_and_leaves_the_open_panel_open", async ({ page }) => {
+test("esc_leaves_the_box_then_closes_it_and_leaves_the_open_panel_open", async ({ page }) => {
   await openPage(page);
   await row(page).click({ position: { x: 5, y: 5 } });
   await expect(panel(page)).toBeVisible();
   await switchButton(page).click();
   await expect(why(page)).toBeFocused();
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await expect(why(page)).toHaveCount(0);
   await expect(panel(page)).toBeVisible();

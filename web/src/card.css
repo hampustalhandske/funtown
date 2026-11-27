@@ -1,0 +1,112 @@
+/* The card: one look on the town and in the plain list. `--sev` is set from SEVERITY in brief.ts. */
+
+/* A panel widens to 32rem while it holds a card, so a medium card fits at 1280 x 800; beside a shown terminal the card keeps the 19rem column. */
+.panel:not(.sheet):has(.answer-card) { width: min(32rem, calc(100vw - 2rem)); }
+
+.answer-card { --ink: #2b2230; --muted: #6d6270; --edge: #d9cdb9; --paper: #fffaf0;
+  container-type: inline-size; margin-block: 0.6rem; color: var(--ink); font-size: 15px; line-height: 1.35;
+  font-family: "Recursive Variable", system-ui, sans-serif; font-variation-settings: "CASL" 0.2; }
+.answer-card p { margin: 0; }
+.answer-card .who { font-size: 0.85rem; color: var(--muted); }
+.answer-card .who b { color: var(--ink); }
+.answer-card .weigh { display: flex; flex-wrap: wrap; align-items: center; gap: 0.1rem 0.45rem; margin-top: 0.3rem; font-size: 0.78rem; color: var(--muted); }
+.answer-card .weigh > b { color: var(--sev); font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.72rem; }
+.answer-card .marks { display: flex; gap: 2px; }
+.answer-card .marks i { width: 0.9rem; height: 0.42rem; border-radius: 2px; border: 1.5px solid var(--sev); box-sizing: border-box; }
+.answer-card .marks i.on { background: var(--sev); }
+.answer-card[data-sev="unstated"] .marks i { border-style: dashed; }
+.answer-card .ask { margin: 0.3rem 0 0; font-size: 1.05rem; line-height: 1.28; font-weight: 640; text-wrap: pretty; }
+.answer-card[data-sev="low"] .ask { font-size: 0.98rem; }
+.answer-card .goal { margin-top: 0.25rem; font-size: 0.8rem; color: var(--muted); }
+.answer-card .goal b { color: var(--ink); font-weight: 600; }
+.answer-card .cmd { margin: 0.35rem 0 0; padding: 0.4rem 0.55rem; background: #fff; border: 1.5px solid #e6dccc; border-radius: 0.45rem; max-height: none;
+  font: 600 0.88rem/1.35 "Recursive Variable", monospace; font-variation-settings: "MONO" 1, "CASL" 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.answer-card .topic { margin-top: 0.3rem; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.answer-card .topic + .ask { margin-top: 0.05rem; }
+/* A heavy card's stakes: why it is heavy, the agent's own words, the exact command and the last step, before the options. */
+.answer-card .stakes { margin-top: 0.6rem; padding: 0.55rem 0.7rem; border: 1.5px solid #e2c3bd; border-radius: 0.6rem; background: #f8ece9; font-size: 0.85rem; color: #4c4350; }
+.answer-card[data-sev="unstated"] .stakes { border-color: #d6d1d9; background: #f1eff2; }
+.answer-card .stakes .why { font-weight: 760; color: var(--sev); }
+.answer-card .stakes > p + p { margin-top: 0.3rem; }
+.answer-card .stakes .words { font-style: italic; overflow-wrap: anywhere; }
+.answer-card[data-sev="high"] .desc, .answer-card[data-sev="unstated"] .desc { font-size: 0.9rem; color: var(--ink); }
+.answer-card[data-sev="low"] :is(.lab) { font-size: 0.92rem; }
+.answer-card[data-sev="low"] .desc { font-size: 0.78rem; }
+/* Low: the options in one row, where the card has the room (not in the 19rem column). */
+@container (min-width: 24rem) {
+  .answer-card[data-sev="low"] .tiles { grid-template-columns: repeat(var(--n), minmax(0, 1fr)); }
+  .answer-card[data-sev="low"] .tile.other { grid-column: 1 / -1; }
+}
+.answer-card legend small { font-weight: 500; color: var(--muted); }
+.answer-card fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+.answer-card legend { padding: 0; margin-top: 0.75rem; font-size: 0.92rem; font-weight: 680; }
+.answer-card .tiles { display: grid; grid-template-columns: 1fr; gap: 0.45rem; margin-top: 0.65rem; }
+.answer-card .tile { position: relative; display: block; padding: 0.5rem 0.65rem 0.55rem; background: #fff; border: 2px solid var(--edge); border-radius: 0.7rem; cursor: pointer; }
+.answer-card .tile.on { border-color: var(--ink); box-shadow: 0 3px 0 var(--ink); }
+.answer-card .tile:has(input:focus-visible) { outline: 3px solid #c94f4f; outline-offset: 2px; }
+/* The tile is the control: its radio or checkbox covers it, unseen. */
+.answer-card .tile > input:is([type="radio"], [type="checkbox"]) { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.answer-card .lab { display: block; font-weight: 720; font-size: 1rem; line-height: 1.2; }
+.answer-card .desc { display: block; margin-top: 0.2rem; font-size: 0.84rem; color: #4f4556; text-wrap: pretty; }
+.answer-card .ribbon { position: absolute; top: -0.55rem; right: 0.6rem; padding: 0.08rem 0.4rem; border-radius: 0.3rem; background: #2f6f4f; color: #fff;
+  font-size: 0.64rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; }
+.answer-card .tile.other { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0.65rem; border-style: dashed; color: var(--muted); font-size: 0.85rem; cursor: text; }
+.answer-card .tile.other input { flex: 1; min-width: 0; padding: 0.15rem 0.4rem; border: 0; border-radius: 0.3rem; background: transparent; font: inherit; color: var(--ink); }
+
+.answer-card .act { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.6rem; margin-top: 0.7rem; }
+.answer-card .act .go { max-width: 100%; padding: 0.38rem 0.9rem; border: 2px solid var(--ink); border-radius: 0.6rem; background: var(--ink); color: #fff;
+  box-shadow: 0 2px 0 #000; font: inherit; font-weight: 720; text-align: left; cursor: pointer; }
+.answer-card .act .go.ghost { background: #f7f4ee; color: var(--ink); }
+.answer-card .act .go:disabled { opacity: 0.45; cursor: default; }
+.answer-card .act .hint { font-size: 0.78rem; font-weight: 500; color: var(--muted); }
+.answer-card:is([data-sev="high"], [data-sev="unstated"]) .act .hint { font-weight: 650; color: var(--sev); }
+.answer-card .act .note { flex-basis: 100%; font-size: 0.78rem; color: var(--muted); }
+.answer-card .tile.other { margin-top: 0.45rem; }
+.answer-card .plantop { margin-top: 0.5rem; font-size: 0.84rem; white-space: pre-wrap; }
+.answer-card .plantop p { margin: 0.1rem 0; }
+.answer-card textarea.note { display: block; width: 100%; box-sizing: border-box; margin-top: 0.45rem; padding: 0.3rem 0.5rem; border: 2px solid var(--ink); border-radius: 0.5rem;
+  background: #fff; font: inherit; font-size: 0.85rem; }
+/* Long text: cut at --lines with a "more" that opens the rest in place. */
+.answer-card .clamp:not(.open) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--lines); overflow: hidden; }
+.answer-card .more { position: relative; z-index: 1; padding: 0; border: 0; background: none; color: #6b4a8a; font: inherit; font-size: 0.8rem; font-weight: 700;
+  text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+/* The act stays on screen: when the brief is longer than the panel or column, the act row (or the undo window, or "Sent") sticks to its bottom edge. */
+.panel .answer-card :is(.act, .sent) { position: sticky; bottom: 0; z-index: 2; margin-top: 0.25rem; padding: 0.45rem 0; background: var(--paper); }
+.panel .answer-card .sending { position: sticky; bottom: 0; z-index: 2; }
+/* Keycaps: the keys the card takes right now (Enter only while armed, 1 to 4 on a one-question card, D). */
+.answer-card kbd { display: inline-block; min-width: 1.35em; padding: 0 0.35em; background: transparent; color: inherit; border: 1.5px solid currentColor; border-bottom-width: 2.5px; border-radius: 0.35em;
+  font: 700 0.72em/1.45 "Recursive Variable", system-ui, sans-serif; font-variation-settings: "CASL" 0, "MONO" 1; text-align: center; opacity: 0.85; vertical-align: 0.12em; }
+.answer-card .lab kbd { margin-right: 0.4rem; color: var(--muted); }
+.answer-card .go kbd, .answer-card .tail kbd { margin-left: 0.45rem; }
+/* The undo window: what is about to go, and a line that drains over the 1.5 s (UNDO_MS in keys.ts). */
+.answer-card .sending { position: relative; overflow: hidden; margin-top: 0.7rem; padding: 0.5rem 0.75rem; border-radius: 0.6rem; background: var(--ink); color: #fff; font-weight: 650; }
+.answer-card .sending small { margin-left: 0.4rem; font-weight: 500; opacity: 0.85; }
+.answer-card .sending::after { content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: #f0c060; animation: drain 1.5s linear forwards; }
+@keyframes drain { to { width: 0; } }
+.answer-card .sent { margin-top: 0.7rem; font-weight: 650; color: #2f6f4f; }
+.answer-card.dim .tiles { opacity: 0.5; }
+.answer-card .tail { display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; margin-top: 0.6rem; font-size: 0.78rem; color: var(--muted); }
+.answer-card .tail button { padding: 0; border: 0; background: none; color: var(--ink); font: inherit; font-weight: 700; cursor: pointer; }
+.answer-card .raw { margin: 0.45rem 0 0; padding: 0.55rem 0.65rem; max-height: 12rem; overflow: auto; border-radius: 0.5rem; background: #2b2230; color: #efe7f4;
+  font: 0.75rem/1.4 "Recursive Variable", monospace; font-variation-settings: "MONO" 1, "CASL" 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* The Queen's slot: her colour, a left rule and a pale ground when it holds more than the button. */
+.answer-card .queen { --queen: #6b4a8a; margin-top: 0.6rem; color: var(--queen); font-size: 0.84rem; }
+.answer-card .queen:not(.idle) { padding: 0.5rem 0.65rem; border-left: 3px solid var(--queen); background: #f7f2fb; border-radius: 0 0.5rem 0.5rem 0; }
+.answer-card .queen .q-title { font-weight: 760; }
+.answer-card .queen .q-title small { margin-left: 0.4rem; font-weight: 500; font-size: 0.78rem; }
+.answer-card .queen .q-line { color: #6f6180; font-size: 0.78rem; }
+.answer-card .queen.idle { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.15rem 0.5rem; }
+.answer-card .queen .q-btn { padding: 0.1rem 0.55rem; border: 1.5px solid var(--queen); border-radius: 0.5rem; background: none; color: var(--queen); font: inherit; font-weight: 700; cursor: pointer; }
+.answer-card .queen .q-btn kbd { margin-left: 0.45rem; }
+.answer-card .queen .q-btn:disabled { opacity: 0.5; cursor: default; }
+.answer-card .queen.failed .q-btn { margin-top: 0.25rem; }
+/* A heavy card offers her before the act, so her button is the louder one there. */
+.answer-card:is([data-sev="high"], [data-sev="unstated"]) .queen.idle .q-btn { background: var(--queen); color: #fff; }
+.answer-card .queen .q-spin { display: inline-block; width: 0.7em; height: 0.7em; margin-right: 0.4em; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: q-turn 0.9s linear infinite; }
+@keyframes q-turn { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .answer-card .queen .q-spin { animation: none; } }
+.answer-card .queen .q-word { margin-top: 0.25rem; color: var(--ink); overflow-wrap: anywhere; }
+/* Her labelled parts keep their own lines. */
+.answer-card .queen .q-word p { white-space: pre-line; }
+.answer-card .queen .error { margin-top: 0.3rem; color: #a02c2c; font-size: 0.8rem; }
