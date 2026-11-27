@@ -17,7 +17,8 @@ const EVENTS = [
 const MARKER = "funtown-hook.ts";
 const HOLD = "funtown-hold.ts";
 const LETTER = "funtown-letter";
-const MARKERS = [MARKER, HOLD, LETTER];
+const ASK = "funtown-ask";
+const MARKERS = [MARKER, HOLD, LETTER, ASK];
 
 /** `path` as one single-quoted shell word. */
 const shellQuote = (path: string) => `'${path.replaceAll("'", "'\\''")}'`;
@@ -87,6 +88,9 @@ if (action === "install") {
   // Prints the user's own letter file when there is one (empty = off), else the repo's shape.
   const shape = `f="$HOME/.funtown/letter.md"; if [ -e "$f" ]; then cat "$f"; else cat ${shellQuote(join(import.meta.dirname, "letter.md"))}; fi # ${LETTER}`;
   settings.hooks.SessionStart.push({ matcher: "startup|resume|clear|compact", hooks: [{ type: "command", command: shape, timeout: 5 }] });
+  // Prints the user's own ask file when there is one (empty = off), else the repo's ask text.
+  const askText = `f="$HOME/.funtown/ask.md"; if [ -e "$f" ]; then cat "$f"; else cat ${shellQuote(join(import.meta.dirname, "ask.md"))}; fi # ${ASK}`;
+  settings.hooks.SessionStart.push({ matcher: "startup|resume|clear|compact", hooks: [{ type: "command", command: askText, timeout: 5 }] });
   state[key] = { createdHooksKey, createdEvents };
 } else {
   delete state[key];

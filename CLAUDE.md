@@ -9,7 +9,8 @@ note's Reproduce before relying on it.
 ## Map
 - `hooks/`: `funtown-hook.ts` (async, every event to `/events` with tty and `at`; 800 ms, exits 0);
   `funtown-hold.ts` (sync, 2 h, PermissionRequest, AskUserQuestion, ExitPlanMode: waits on `/hold`);
-  `letter.md` (printed at SessionStart; `~/.funtown/letter.md` overrides, empty = off); `install.ts`.
+  `letter.md` (printed at SessionStart; `~/.funtown/letter.md` overrides, empty = off); `ask.md` (the ask text, printed at
+  SessionStart the same way; `~/.funtown/ask.md` overrides, empty = off); `install.ts`.
 - `server/` on 127.0.0.1:4777: `agents.ts` runs `claude`; `town.ts` merges the 2 s poll and hook
   events; `journal.ts`; `holds.ts` cards; `terminal.ts` `claude attach` and shells; `errors.ts` the error log;
   `workflow.ts` phase file, `gh pr list`; `steward.ts` the steward; `projects.ts` added projects; `avatar.ts` the chosen avatar file;
