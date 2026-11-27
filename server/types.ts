@@ -91,6 +91,12 @@ export type House = {
   /** True once a session has been listed here since the server started. */
   seen?: boolean;
 };
+/** How much a decision can cost if it goes wrong; `unstated` is shown as "not stated". */
+export type Level = "low" | "medium" | "high" | "unstated";
+/** A card's severity: where the level came from (`rule` Funtown's permission rule, `agent` a header word or a plan's "How serious" line, `kind` a plan's default) and why, in one line. */
+export type Severity = { level: Level; reason: string; source: "rule" | "agent" | "kind" };
+/** What one question of a question card carries: the agent's level for it and the index of its recommended option, or null. */
+export type QuestionRating = { level: Level; pick: number | null };
 /** A held request waiting for the user's answer. */
 export type Card = {
   /** Server-made, unique per start. */
@@ -107,6 +113,10 @@ export type Card = {
   cwd: string;
   /** The hook's `funtown.at`. */
   at: number;
+  /** How serious the card is; on a question card, the several-questions rule over `questions`. */
+  severity: Severity;
+  /** On a question card only: one entry per question of `input.questions`, in order. */
+  questions?: QuestionRating[];
 };
 export type Town = {
   houses: House[];

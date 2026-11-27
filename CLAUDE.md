@@ -26,7 +26,9 @@ note's Reproduce before relying on it.
 Contracts (source of truth: this list)
 - Event: POST `/events`, hook JSON + `funtown: { tty, term_program, at }`; stale ones ignored.
 - State (`server/types.ts`, SSE `state`): leads only while listed; the steward's lead has `steward:
-  true`; `cards` oldest first, a carded character is needs_you with `needs` = card kind; waiting has
+  true`; `cards` oldest first, each with `severity: { level low|medium|high|unstated, reason, source
+  rule|agent|kind }` (`server/severity.ts`) and, on a question card, `questions: [{ level, pick }]`, one per
+  question in order, `pick` the index of the " (Recommended)" option or null; a carded character is needs_you with `needs` = card kind; waiting has
   `since`; stuck has `needs` "stuck" and `reason`; `letter` = newest letter's `at`; a Stop with
   running `background_tasks` stays working; a Stop, or a poll saying idle, marks every subagent not still running done.
 - Letters: Stop `last_assistant_message`; a subagent's handback report, else its SubagentStop message;

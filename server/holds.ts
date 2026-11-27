@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { ServerResponse } from "node:http";
 import { basename, dirname } from "node:path";
 import type { LogError } from "./errors.ts";
+import { rate } from "./severity.ts";
 import type { HookEvent, TownState } from "./town.ts";
 import type { Card } from "./types.ts";
 
@@ -108,7 +109,7 @@ export function createHolds(town: TownState, opts: { unlistedMs: number; answerL
         return;
       }
       const input = event.tool_input;
-      const card: Card = {
+      const made = {
         id: randomUUID(),
         lead: sid,
         agent: event.agent_id ?? null,
@@ -118,6 +119,7 @@ export function createHolds(town: TownState, opts: { unlistedMs: number; answerL
         cwd: typeof event.cwd === "string" ? event.cwd : "",
         at: typeof event.funtown?.at === "number" ? event.funtown.at : Date.now(),
       };
+      const card: Card = { ...made, ...rate(made) };
       const hold: Hold = { card, toolUseId: event.tool_use_id, res, shown: lead !== undefined };
       if (!lead) hold.timer = setTimeout(() => void close(hold, "elsewhere"), unlistedMs);
       holds.set(card.id, hold);
