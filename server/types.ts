@@ -117,7 +117,11 @@ export type Card = {
   severity: Severity;
   /** On a question card only: one entry per question of `input.questions`, in order. */
   questions?: QuestionRating[];
+  /** The steward's word on this card; absent when words are off and on the steward's own cards. */
+  word?: Word;
 };
+/** The steward's word on a card: "idle" until asked, "writing" once pasted, "ready" with her letter's id, "failed" with why. */
+export type Word = { state: "idle" | "queued" | "writing" | "ready" | "failed"; letter?: string; reason?: string };
 export type Town = {
   houses: House[];
   /** The open cards of listed leads, oldest first. */

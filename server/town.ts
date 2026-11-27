@@ -344,6 +344,11 @@ export class TownState {
     this.phases = phases;
   }
 
+  /** The phase file of the project in `cwd`, if it has one. */
+  phase(cwd: string): PhaseFile | undefined {
+    return this.phases.get(cwd);
+  }
+
   /** Sets the folders the user added as projects, in the order added. */
   setProjects(projects: readonly string[]): void {
     this.projects = projects;

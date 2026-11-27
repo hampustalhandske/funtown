@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:net";
 import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, expect, it } from "vitest";
-import { errorLines, houseAt, listed, mainEnv, pastes, postPage, pr, realDir, sleep, townWhere, until } from "./helpers.ts";
+import { errorLines, hold, houseAt, listed, mainEnv, pastes, postPage, pr, realDir, sleep, townWhere, until } from "./helpers.ts";
 
 const MAIN = resolve(import.meta.dirname, "../server/main.ts");
 
@@ -134,19 +134,42 @@ it("a_run_file_that_does_not_parse_logs_unclean_exit_instead_of_passing_for_a_cl
 
 /**
  * Starts main with a lead listed in a real added project whose gh lists the ready PR #7;
- * `homePrompt` is ~/.funtown/steward.md, if any.
+ * `homePrompt` is ~/.funtown/steward.md and `homeCardPrompt` ~/.funtown/steward-card.md, if any.
  */
-async function mainWithReadyPr(homePrompt?: string) {
+async function mainWithReadyPr(homePrompt?: string, homeCardPrompt?: string) {
   const m = mainEnv();
   const project = realDir();
   m.fake.list([listed("s1", project)]).prs(project, [pr(7)]);
   mkdirSync(join(m.home, ".funtown"), { recursive: true });
   writeFileSync(join(m.home, ".funtown", "projects.json"), JSON.stringify([project]));
   if (homePrompt !== undefined) writeFileSync(join(m.home, ".funtown", "steward.md"), homePrompt);
+  if (homeCardPrompt !== undefined) writeFileSync(join(m.home, ".funtown", "steward-card.md"), homeCardPrompt);
   const main = startMain(m.env);
   await main.running();
   return { ...m, main, project };
 }
+
+/** Holds a Bash permission from s1 in `project` on the server at `url`; resolves with the town once its card shows. */
+async function cardIn(url: string, project: string) {
+  hold(url, { hook_event_name: "PermissionRequest", session_id: "s1", cwd: project, tool_name: "Bash", tool_input: { command: "npm test" } });
+  return townWhere(url, (t) => t.cards.length === 1, 8000);
+}
+
+it("a_home_steward_card_md_overrides_the_shipped_card_prompt_and_an_empty_one_turns_words_off", async () => {
+  const on = await mainWithReadyPr(undefined, "Mine: {project}");
+  const card = (await cardIn(on.main.url(), on.project)).cards[0];
+  expect(card.word).toEqual({ state: "idle" });
+  expect((await postPage({ url: on.main.url() }, "/word", { card: card.id })).status).toBe(204);
+  await until(() => on.fake.sessions().some((x) => x.cwd === on.steward), 10_000);
+  const short = on.fake.sessions().find((x) => x.cwd === on.steward)!.id!;
+  await until(() => pastes(on.fake.attachInput(short)).length === 1, 10_000);
+  expect(pastes(on.fake.attachInput(short))).toEqual([`Mine: ${basename(on.project)}`]);
+
+  const off = await mainWithReadyPr(undefined, "");
+  const offCard = (await cardIn(off.main.url(), off.project)).cards[0];
+  expect(offCard).not.toHaveProperty("word");
+  expect((await postPage({ url: off.main.url() }, "/word", { card: offCard.id })).status).toBe(409);
+}, 30_000);
 
 it("an_empty_steward_md_in_the_home_folder_turns_reviews_off", async () => {
   const m = await mainWithReadyPr("");

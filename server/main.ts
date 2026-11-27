@@ -8,6 +8,7 @@ const errorLog = process.env.FUNTOWN_LOG ?? defaultErrorLog();
 const runFile = process.env.FUNTOWN_RUN ?? join(homedir(), ".funtown", "running.json");
 const logError = serverLogger(errorLog);
 const stewardPrompt = join(homedir(), ".funtown", "steward.md");
+const stewardCardPrompt = join(homedir(), ".funtown", "steward-card.md");
 const fail = (step: string, err: unknown) => {
   logError(step, err);
   process.exit(1);
@@ -42,6 +43,7 @@ try {
     gh: process.env.FUNTOWN_GH,
     stewardDir: process.env.FUNTOWN_STEWARD ?? join(homedir(), ".funtown", "steward"),
     stewardPrompt: existsSync(stewardPrompt) ? stewardPrompt : undefined,
+    stewardCardPrompt: existsSync(stewardCardPrompt) ? stewardCardPrompt : undefined,
     projects: process.env.FUNTOWN_PROJECTS ?? join(homedir(), ".funtown", "projects.json"),
     avatar: process.env.FUNTOWN_AVATAR ?? join(homedir(), ".funtown", "avatar.json"),
     shell: process.env.SHELL || "/bin/zsh",

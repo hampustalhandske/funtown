@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { TownState, type HookEvent } from "./town.ts";
-import type { Town } from "./types.ts";
+import type { Letter, Town } from "./types.ts";
 import { checkVersion, execFileAsync, listAgents, startBackground, stopBackground, type Listed } from "./agents.ts";
 import { createTerminals, isSize } from "./terminal.ts";
 import { createHolds } from "./holds.ts";
@@ -19,6 +19,7 @@ import { projectFolder, readProjects, writeProjects } from "./projects.ts";
 
 const DEFAULT_DIST = fileURLToPath(new URL("../web/dist/", import.meta.url));
 const DEFAULT_STEWARD_PROMPT = fileURLToPath(new URL("./steward.md", import.meta.url));
+const DEFAULT_CARD_PROMPT = fileURLToPath(new URL("./steward-card.md", import.meta.url));
 const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -119,7 +120,11 @@ async function readJson(req: IncomingMessage, max = Infinity): Promise<{ value: 
  * token; 409 for a draft or with reviews off) using the text of `stewardPrompt` (a path, default
  * server/steward.md; an empty file turns reviews off); an attach that isn't ready within
  * `stewardReadyMs` (default 15 s) is given up, and a request with no answer after
- * `stewardAnswerMs` (default 30 min) no longer holds back the next. `projects` (a path) holds the folders added with `POST /projects`,
+ * `stewardAnswerMs` (default 30 min) no longer holds back the next. The same steward gives her
+ * word on a card asked for with `POST /word { card }` (page Origin and token; 404 for an unknown
+ * or closed card, 409 for her own card or with words off) using `stewardCardPrompt` (a path,
+ * default server/steward-card.md; an empty file turns words off); she is started when either
+ * prompt is on. `GET /letters?lead=&id=` (page token) serves one of her letters from the journal. `projects` (a path) holds the folders added with `POST /projects`,
  * each a house even with no session; without one, adding answers 500. `POST /runs` starts
  * `claude --bg <prompt>` in a house's folder. `/term?shell=<cwd>` connects to that house's one
  * login shell, `shell` (an executable) started there on first connect; `POST /shells/close`
@@ -141,6 +146,7 @@ export async function startServer(opts: {
   gh?: string;
   prMs?: number;
   stewardPrompt?: string;
+  stewardCardPrompt?: string;
   stewardDir?: string;
   stewardReadyMs?: number;
   stewardAnswerMs?: number;
@@ -188,13 +194,20 @@ export async function startServer(opts: {
   const prFailing = new Set<string>();
   // cwd -> what its last unreadable phase file held (or the read error), logged once until it changes
   const phaseFailed = new Map<string, string>();
-  const prompt = opts.stewardDir ? readFileSync(opts.stewardPrompt ?? DEFAULT_STEWARD_PROMPT, "utf8") : "";
+  /** The text of the prompt file at `path`, or undefined when it is empty (its requests are off) or there is no steward folder. */
+  const stewardText = (path: string) => {
+    const read = opts.stewardDir ? readFileSync(path, "utf8") : "";
+    return read.trim() === "" ? undefined : read;
+  };
+  const prompt = stewardText(opts.stewardPrompt ?? DEFAULT_STEWARD_PROMPT);
+  const cardPrompt = stewardText(opts.stewardCardPrompt ?? DEFAULT_CARD_PROMPT);
   const steward =
-    opts.stewardDir && prompt.trim() !== ""
+    opts.stewardDir && (prompt || cardPrompt)
       ? createSteward({
           claude,
           dir: opts.stewardDir,
           prompt,
+          cardPrompt,
           town,
           lists: prLists,
           cards: () => holds.cards(),
@@ -212,7 +225,10 @@ export async function startServer(opts: {
   let port = 0;
 
   const snapshot = () => {
-    const state = town.snapshot(holds.cards());
+    const state = town.snapshot(holds.cards().map((card) => {
+      const word = steward?.word(card);
+      return word ? { ...card, word } : card;
+    }));
     const stewardId = steward?.lead()?.id;
     if (avatar !== undefined) state.avatar = avatar;
     for (const house of state.houses) {
@@ -495,6 +511,18 @@ export async function startServer(opts: {
       return;
     }
 
+    if (req.method === "POST" && path === "/word") {
+      const card = await pageField(req, res, "card");
+      if (card === null) return;
+      const status = steward?.askWord(card) ?? 409;
+      if (status === 204) {
+        steward!.pump();
+        broadcast();
+      }
+      res.writeHead(status).end();
+      return;
+    }
+
     if (req.method === "POST" && path === "/sessions") {
       const cwd = await pageField(req, res, "cwd");
       if (cwd === null) return;
@@ -668,7 +696,23 @@ export async function startServer(opts: {
         res.writeHead(403).end();
         return;
       }
-      const letters = town.letters(new URL(req.url ?? "/", "http://127.0.0.1").searchParams.get("lead") ?? "");
+      const query = new URL(req.url ?? "/", "http://127.0.0.1").searchParams;
+      const lead = query.get("lead") ?? "";
+      const id = query.get("id");
+      let letters: Letter[] | undefined;
+      if (id === null) {
+        letters = town.letters(lead);
+      } else {
+        // One of the steward's letters by id, from the journal, so a word and a review never push each other out.
+        try {
+          const found = journal?.read().find((e) => e.kind === "letter" && e.cwd === opts.stewardDir && e.lead === lead && e.letter.id === id);
+          letters = found?.kind === "letter" ? [found.letter] : undefined;
+        } catch (err) {
+          logError("journal", err);
+          res.writeHead(500).end();
+          return;
+        }
+      }
       if (!letters) {
         res.writeHead(404).end();
         return;
