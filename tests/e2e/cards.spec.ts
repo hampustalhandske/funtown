@@ -1,9 +1,8 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { stubStream } from "./stream.ts";
-
-const NOW = Date.now();
-const MIN = 60_000;
-const claude = { version: "2.1.325", problems: [] };
+import {
+  asker, asks, cardIn, claude, EXTRAS, HIGH, implementer, ledger, LOW, MEDIUM, MEDIUM_PLAN, MIN, NO_PICK, NOW, permission, PHASE, PLAN, planned, tile, UNSTATED, type Q,
+} from "./briefs.ts";
 const lead = (over: Record<string, unknown>) => ({
   id: "s1", name: "lead-1", stage: "needs_you", activity: null, step: null, needs: "permission", tty: "ttys001", termProgram: "TestTerm",
   kind: "terminal", shortId: null, subagents: [], ...over,
@@ -78,55 +77,18 @@ test("a_card_from_an_agent_the_lead_does_not_list_shows_in_the_leads_panel", asy
   await expect(panel.getByRole("button", { name: "Allow" })).toBeVisible();
 });
 
-test("after_a_successful_answer_both_buttons_stay_disabled_until_the_card_leaves", async ({ page }) => {
+test("after_a_successful_answer_the_card_says_sent_and_offers_no_button_until_it_leaves", async ({ page }) => {
+  // Catches a second answer sent for the same ask.
   await open(page, town([lead({})], [card({})]));
   const under = house(page);
   await under.getByRole("button", { name: "Allow" }).click();
-  await expect(under.getByRole("button", { name: "Allow" })).toBeDisabled();
-  await expect(under.getByRole("button", { name: "Deny" })).toBeDisabled();
+  await expect(under.getByRole("status")).toHaveText("Sent. The agent goes on.");
+  await expect(under.getByRole("button", { name: /^(Allow|Deny)/ })).toHaveCount(0);
   await page.waitForTimeout(500);
-  await expect(under.getByRole("button", { name: "Allow" })).toBeDisabled();
+  await expect(under.getByRole("button", { name: /^(Allow|Deny)/ })).toHaveCount(0);
 });
 
-// The brief on a card, take C "Weighed": made-up asks from a project named ledgerline.
-const PHASE = {
-  phase: "implement", steps: ["spec", "tickets", "implement", "review", "merge", "ship"],
-  goal: "Invoices export from one button", spec: "docs/specs/csv-export.md",
-};
-const asker = (over: Record<string, unknown> = {}) => ({
-  id: "s1", name: "csv-export", stage: "needs_you", activity: null, step: "Edit: src/invoices/export.ts", needs: "question", since: NOW - 4 * MIN,
-  tty: null, termProgram: null, kind: "terminal", shortId: null, subagents: [], ...over,
-});
-const ledger = (leads: unknown[], cards: unknown[], phase: unknown = PHASE) => ({
-  claude, cards, houses: [{ project: "ledgerline", cwd: "/work/ledgerline", leads, ...(phase ? { phase } : {}) }],
-});
-type Q = { question: string; header: string; multiSelect: boolean; options: { label: string; description: string }[] };
-const MEDIUM: Q = {
-  question: "Keep the old invoice table while the new one is built?", header: "medium: data", multiSelect: false,
-  options: [
-    { label: "Keep both (Recommended)", description: "Nothing breaks meanwhile; one more table to drop later." },
-    { label: "New table only", description: "Smaller change; the old CSV export stops until step 5." },
-    { label: "Migrate now", description: "One step; about 40 minutes of downtime on the test server." },
-  ],
-};
-/** A question card as the server sends it: `levels` and `picks` per question, the card's level by the several-questions rule. */
-const asks = (questions: Q[], levels: string[], picks: (number | null)[], over: Record<string, unknown> = {}) => {
-  const level = ["high", "unstated", "medium", "low"].find((l) => levels.includes(l))!;
-  const header = questions[levels.indexOf(level)].header;
-  return {
-    id: "q1", lead: "s1", agent: null, kind: "question", tool: "AskUserQuestion", cwd: "/work/ledgerline", at: NOW - 4 * MIN,
-    input: { questions },
-    severity: level === "unstated" ? { level, reason: "the agent didn't say", source: "agent" } : { level, reason: `the agent's word: ${header}`, source: "agent" },
-    questions: levels.map((l, i) => ({ level: l, pick: picks[i] })),
-    ...over,
-  };
-};
-/** Opens `name`'s panel from the plain list and gives the card in it. */
-async function cardIn(page: Page, name: string) {
-  await page.locator(".character").filter({ hasText: name }).first().click({ position: { x: 5, y: 5 } });
-  return page.getByRole("dialog", { name: `${name} details` }).getByRole("group", { name: /request$/ });
-}
-
+// The brief on a card, take C "Weighed".
 test("a_medium_question_shows_who_asks_its_weight_the_ask_the_goal_and_stacked_options_with_the_pick_chosen", async ({ page }) => {
   // Catches a card that hides whose work it is, the severity, the goal, or the agent's pick.
   const { answers } = await open(page, ledger([asker()], [asks([MEDIUM], ["medium"], [0])]));
@@ -149,42 +111,6 @@ test("a_medium_question_shows_who_asks_its_weight_the_ask_the_goal_and_stacked_o
   await brief.getByRole("button", { name: "Send: Keep both" }).click();
   await expect.poll(() => answers).toEqual([{ card: "q1", decision: "allow", answers: { [MEDIUM.question]: "Keep both (Recommended)" } }]);
 });
-
-const LOW: Q = {
-  question: "Call the new settings module prefs or settings?", header: "low: naming", multiSelect: false,
-  options: [
-    { label: "prefs (Recommended)", description: "Matches the /prefs route; 4 imports change." },
-    { label: "settings", description: "Clearer to a new reader; 11 imports change." },
-    { label: "user-config", description: "Matches the docs' word; the env var is renamed too." },
-  ],
-};
-const HIGH: Q = {
-  question: "Run the invoice migration on the shared staging database?", header: "high: data", multiSelect: false,
-  options: [
-    { label: "Dry run first (Recommended)", description: "Prints the 3 changes and touches nothing; about 5 minutes more." },
-    { label: "Run it now", description: "Alters 2 tables other people use; undoing it needs last night's backup." },
-    { label: "Wait for review", description: "The agent stops here until the PR is reviewed." },
-  ],
-};
-const UNSTATED: Q = {
-  question: "Which date library should the report page use?", header: "Library", multiSelect: false,
-  options: [
-    { label: "date-fns (Recommended)", description: "Small; the invoice page already uses it." },
-    { label: "Keep moment.js", description: "No change now; it stays the biggest package in the bundle." },
-  ],
-};
-const NO_PICK: Q = {
-  question: "Which customer list should the import test use?", header: "medium: tests", multiSelect: false,
-  options: [
-    { label: "The 20-row sample", description: "Fast; misses the odd names in real data." },
-    { label: "The anonymised export", description: "Slow (2 minutes); catches real edge cases." },
-  ],
-};
-const EXTRAS: Q = {
-  question: "Which checks run on every retry?", header: "low: config", multiSelect: true,
-  options: [{ label: "Card limit", description: "One call to the bank." }, { label: "Fraud score", description: "Adds 300 ms." }],
-};
-const tile = (brief: Locator, label: string) => brief.locator(".tile").filter({ hasText: label });
 
 test.describe("at 1280 x 800", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
@@ -282,20 +208,6 @@ test("two_questions_each_show_their_own_level_toggle_on_a_multi_select_and_send_
   expect((answers[1] as { answers: Record<string, string> }).answers[MEDIUM.question]).toBe("Drop the old table");
 });
 
-const PLAN = [
-  "Goal: invoices export as CSV and PDF from one button.",
-  "What changes: a new export service, two routes; the old PDF button goes.",
-  "How serious: medium; the old button's link stops working.",
-  "",
-  "## Steps",
-  "1. Add src/invoices/export-service.ts with toCsv and toPdf.",
-].join("\n");
-const planned = (severity: Record<string, string>) => ({
-  id: "p1", lead: "s1", agent: null, kind: "plan", tool: "ExitPlanMode", cwd: "/work/ledgerline", at: NOW - MIN,
-  input: { plan: PLAN, planFilePath: "/home/me/.claude/plans/export-button.md" }, severity,
-});
-const MEDIUM_PLAN = { level: "medium", reason: "Funtown's rule: every plan is medium", source: "kind" };
-
 test("a_plan_shows_its_top_lines_as_written_approve_is_the_pick_and_keep_planning_takes_a_note_that_enter_never_sends", async ({ page }) => {
   // Catches approving a plan without its gist on screen, or a note sent before it is finished.
   const { answers } = await open(page, ledger([asker({ needs: "plan" })], [planned(MEDIUM_PLAN)]));
@@ -326,11 +238,6 @@ test("a_high_plan_opens_its_stakes", async ({ page }) => {
   await expect(brief.locator(".stakes")).toContainText("The agent marked this high.");
   await expect(brief).toContainText("Click to answer");
 });
-
-const permission = (input: Record<string, unknown>, severity: Record<string, string>) => ({
-  id: "c1", lead: "s1", agent: "x1", kind: "permission", tool: "Bash", cwd: "/work/ledgerline", at: NOW - MIN, input, severity,
-});
-const implementer = { id: "x1", name: "implementer-1", stage: "needs_you", needs: "permission", since: NOW - MIN, activity: null, step: "Bash: npm test", role: "implementer" };
 
 test("a_subagents_high_permission_says_who_asks_under_which_lead_its_description_and_the_command_in_its_stakes", async ({ page }) => {
   // Catches a permission that hides whose it is, what it is for, or what exactly runs.

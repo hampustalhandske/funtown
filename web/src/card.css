@@ -70,8 +70,21 @@
 .answer-card .clamp:not(.open) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--lines); overflow: hidden; }
 .answer-card .more { position: relative; z-index: 1; padding: 0; border: 0; background: none; color: #6b4a8a; font: inherit; font-size: 0.8rem; font-weight: 700;
   text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
-/* The act stays on screen: when the brief is longer than the panel or column, the act row sticks to its bottom edge. */
-.panel .answer-card .act { position: sticky; bottom: 0; z-index: 2; margin-top: 0.25rem; padding: 0.45rem 0; background: var(--paper); }
+/* The act stays on screen: when the brief is longer than the panel or column, the act row (or the undo window, or "Sent") sticks to its bottom edge. */
+.panel .answer-card :is(.act, .sent) { position: sticky; bottom: 0; z-index: 2; margin-top: 0.25rem; padding: 0.45rem 0; background: var(--paper); }
+.panel .answer-card .sending { position: sticky; bottom: 0; z-index: 2; }
+/* Keycaps: the keys the card takes right now (Enter only while armed, 1 to 4 on a one-question card, D). */
+.answer-card kbd { display: inline-block; min-width: 1.35em; padding: 0 0.35em; background: transparent; color: inherit; border: 1.5px solid currentColor; border-bottom-width: 2.5px; border-radius: 0.35em;
+  font: 700 0.72em/1.45 "Recursive Variable", system-ui, sans-serif; font-variation-settings: "CASL" 0, "MONO" 1; text-align: center; opacity: 0.85; vertical-align: 0.12em; }
+.answer-card .lab kbd { margin-right: 0.4rem; color: var(--muted); }
+.answer-card .go kbd, .answer-card .tail kbd { margin-left: 0.45rem; }
+/* The undo window: what is about to go, and a line that drains over the 1.5 s (UNDO_MS in keys.ts). */
+.answer-card .sending { position: relative; overflow: hidden; margin-top: 0.7rem; padding: 0.5rem 0.75rem; border-radius: 0.6rem; background: var(--ink); color: #fff; font-weight: 650; }
+.answer-card .sending small { margin-left: 0.4rem; font-weight: 500; opacity: 0.85; }
+.answer-card .sending::after { content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: #f0c060; animation: drain 1.5s linear forwards; }
+@keyframes drain { to { width: 0; } }
+.answer-card .sent { margin-top: 0.7rem; font-weight: 650; color: #2f6f4f; }
+.answer-card.dim .tiles { opacity: 0.5; }
 .answer-card .tail { display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; margin-top: 0.6rem; font-size: 0.78rem; color: var(--muted); }
 .answer-card .tail button { padding: 0; border: 0; background: none; color: var(--ink); font: inherit; font-weight: 700; cursor: pointer; }
 .answer-card .raw { margin: 0.45rem 0 0; padding: 0.55rem 0.65rem; max-height: 12rem; overflow: auto; border-radius: 0.5rem; background: #2b2230; color: #efe7f4;

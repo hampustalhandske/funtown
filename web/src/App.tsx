@@ -136,17 +136,19 @@ type Select = (lead: string, id: string) => void;
 
 /**
  * Cards of `lead` in `house`, each with its brief's facts; with `only`, just the cards of that character.
- * A card from a subagent the lead doesn't list yet counts as the lead's. `onLetter` gets the asker's id.
+ * A card from a subagent the lead doesn't list yet counts as the lead's. `onLetter` gets the asker's id. In a `pane`,
+ * the only card there takes the card keys.
  */
-function Cards({ lead, house, cards, only, onLetter }: { lead: Lead; house: House; cards: Card[]; only?: string; onLetter: (id: string) => void }) {
+function Cards({ lead, house, cards, only, pane = false, onLetter }: {
+  lead: Lead; house: House; cards: Card[]; only?: string; pane?: boolean; onLetter: (id: string) => void;
+}) {
   const subagentOf = (card: Card) => lead.subagents.find((s) => s.id === card.agent);
-  return cards
-    .filter((card) => card.lead === lead.id && (only === undefined || (subagentOf(card)?.id ?? lead.id) === only))
-    .map((card) => {
-      const asker = subagentOf(card) ?? lead;
-      const facts = { asker, under: asker === lead ? undefined : lead.name, project: house.project, phase: house.phase };
-      return <AnswerCard key={card.id} card={card} facts={facts} onLetter={() => onLetter(asker.id)} />;
-    });
+  const mine = cards.filter((card) => card.lead === lead.id && (only === undefined || (subagentOf(card)?.id ?? lead.id) === only));
+  return mine.map((card) => {
+    const asker = subagentOf(card) ?? lead;
+    const facts = { asker, under: asker === lead ? undefined : lead.name, project: house.project, phase: house.phase };
+    return <AnswerCard key={card.id} card={card} facts={facts} keys={pane && mine.length === 1} onLetter={() => onLetter(asker.id)} />;
+  });
 }
 
 function LeadItem({ lead, house, cards, onSelect }: { lead: Lead; house: House; cards: Card[]; onSelect: Select }) {
@@ -425,7 +427,7 @@ export function Panel({ character, lead, house, cards, onClose }: { character: C
             </p>
           )}
           {character.id === lead.id && <Overlaps overlaps={lead.overlaps} />}
-          <Cards lead={lead} house={house} cards={cards} only={character.id} onLetter={() => column.current?.querySelector(".letters")?.scrollIntoView({ block: "nearest" })} />
+          <Cards lead={lead} house={house} cards={cards} only={character.id} pane onLetter={() => column.current?.querySelector(".letters")?.scrollIntoView({ block: "nearest" })} />
           {character.id === lead.id && lead.subagents.length > 0 && (
             <ul aria-label="Subagents">
               {lead.subagents.map((sub) => (

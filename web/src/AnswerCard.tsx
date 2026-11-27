@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ElementType, type ReactNode } from "react";
 import type { Card, Character, House } from "../../server/types.ts";
 import { askOf, goalOf, isHeavy, planTop, SEVERITY, shownLabel, stakesOf, topicOf } from "./brief.ts";
+import { useArmed, useKey, useUndo } from "./keys.ts";
 import { waited } from "./needs.tsx";
 import { funtownToken } from "./token.ts";
 import "./card.css";
@@ -15,6 +16,9 @@ const PLAN_OPTIONS: Option[] = [
   { label: "Approve", description: "The agent leaves plan mode and starts editing." },
   { label: "Keep planning", description: "Your note goes back; nothing is edited." },
 ];
+
+/** 1 to 4 choose an option on a one-question card. */
+const NUMBER_KEYS = 4;
 
 /** The facts Funtown adds to a card: who asks (the lead, or its subagent and the lead it works under), the project and its phase file. */
 export type Facts = { asker: Character; under?: string; project: string; phase?: House["phase"] };
@@ -74,9 +78,12 @@ function Clamp({ as: El, className, lines, id, children }: { as: ElementType; cl
   );
 }
 
-/** One question's options as tiles: label, then where it leads (cut at `cut` lines when given); the agent's pick wears a ribbon. */
-function Tiles({ options, pick, chosen, multi, cut, onToggle }: {
-  options: Option[]; pick: number | null; chosen: string[]; multi: boolean; cut?: number; onToggle: (label: string) => void;
+/**
+ * One question's options as tiles: label, then where it leads (cut at `cut` lines when given); the agent's pick wears a
+ * ribbon. With `numbered`, the first four carry their number key's keycap.
+ */
+function Tiles({ options, pick, chosen, multi, cut, numbered = false, onToggle }: {
+  options: Option[]; pick: number | null; chosen: string[]; multi: boolean; cut?: number; numbered?: boolean; onToggle: (label: string) => void;
 }) {
   const id = useId();
   return (
@@ -92,7 +99,10 @@ function Tiles({ options, pick, chosen, multi, cut, onToggle }: {
             onChange={() => onToggle(option.label)}
           />
           {pick === i && <span className="ribbon">Agent's pick</span>}
-          <span className="lab">{shownLabel(option.label)}</span>
+          <span className="lab">
+            {numbered && i < NUMBER_KEYS && <kbd aria-hidden="true">{i + 1}</kbd>}
+            {shownLabel(option.label)}
+          </span>
           {option.description && <Clamp as="span" className="desc" id={`${id}-${i}`} lines={cut}>{option.description}</Clamp>}
         </label>
       ))}
@@ -103,11 +113,13 @@ function Tiles({ options, pick, chosen, multi, cut, onToggle }: {
 /**
  * One held ask as its decision brief (take C, "Weighed"): who asks and where, the weight meter, the ask in one line, the
  * goal it serves, a heavy card's stakes, the options as tiles with the agent's pick chosen, the act row, and the raw
- * input one button away. `onLetter` opens the asker's newest letter. No form: nothing sends but the act's own buttons.
+ * input one button away. `onLetter` opens the asker's newest letter. No form: nothing sends but the act's own buttons,
+ * and, with `keys` (the only card in an open pane), Enter while armed, 1 to 4 and D.
  */
-export function AnswerCard({ card, facts, onLetter }: { card: Card; facts: Facts; onLetter?: () => void }) {
+export function AnswerCard({ card, facts, keys = false, onLetter }: { card: Card; facts: Facts; keys?: boolean; onLetter?: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [sent, setSent] = useState(false);
   const [raw, setRaw] = useState(false);
   const [approve, setApprove] = useState(true);
   const [note, setNote] = useState("");
@@ -125,9 +137,10 @@ export function AnswerCard({ card, facts, onLetter }: { card: Card; facts: Facts
     setError(null);
     setPending(true);
     const failed = await answer(card, body);
-    // Once answered, the buttons stay off until the next state removes the card.
+    // Once answered, the card says so and offers no button until the next state removes it.
     setError(failed);
-    if (failed) setPending(false);
+    setPending(false);
+    setSent(!failed);
   }
   const { level, reason } = card.severity;
   const sev = SEVERITY[level];
@@ -148,9 +161,39 @@ export function AnswerCard({ card, facts, onLetter }: { card: Card; facts: Facts
     setChosen(chosen.map((c, j) => (j === i ? next : c)));
   }
   const chosenWords = questions.map((_, i) => typed[i].trim() || chosen[i].map(shownLabel).join(", ")).join("; ");
+  // What the act button sends, and its words; a permission has no one act, so no key answers it.
+  const act =
+    card.kind === "question" ? { body: { decision: "allow", answers: Object.fromEntries(questions.map((q, i) => [q.question, valueOf(i)])) }, words: chosenWords }
+    : card.kind === "plan" ? { body: approve ? { decision: "allow" } : { decision: "deny", feedback: note.trim() || undefined }, words: approve ? "Approve" : "Keep planning" }
+    : null;
+  const [waiting, startUndo] = useUndo((what: NonNullable<typeof act>) => void send(what.body));
+  const open = !pending && !sent && waiting === null;
+  // Armed (ADR 0004): a low or medium question with a choice in every question, or a medium plan, alone in its pane.
+  const armed = useArmed(keys && open && act !== null && !heavy && complete);
+  useKey("Enter", () => act && startUndo(act), armed);
+  const numbered = keys && open && card.kind === "question" && questions.length === 1;
+  const options = questions[0]?.options ?? [];
+  const numberKey = (i: number) => () => toggle(0, options[i].label);
+  useKey("1", numberKey(0), numbered && options.length > 0);
+  useKey("2", numberKey(1), numbered && options.length > 1);
+  useKey("3", numberKey(2), numbered && options.length > 2);
+  useKey("4", numberKey(3), numbered && options.length > 3);
+  useKey("d", () => setRaw((shown) => !shown), keys);
+  const enterCap = armed && <kbd aria-hidden="true">Enter</kbd>;
+  /** The act row, or in its place the undo window while a send waits, or the word that it went. */
+  const actOr = (row: ReactNode) =>
+    waiting ? (
+      <div className="sending" role="status">
+        Sending {waiting.words}... <small><kbd>Esc</kbd> to undo</small>
+      </div>
+    ) : sent ? (
+      <p className="sent" role="status">Sent. The agent goes on.</p>
+    ) : (
+      row
+    );
 
   return (
-    <div className={`answer-card ${card.kind}`} data-sev={level} style={{ "--sev": sev.colour } as CSSProperties} role="group" aria-label={`${card.kind} request`}>
+    <div className={`answer-card ${card.kind}${waiting || sent ? " dim" : ""}`} data-sev={level} style={{ "--sev": sev.colour } as CSSProperties} role="group" aria-label={`${card.kind} request`}>
       <p className="who">
         <b>{asker.name}</b>
         {asker.role && ` (${asker.role})`} · {project}
@@ -190,19 +233,22 @@ export function AnswerCard({ card, facts, onLetter }: { card: Card; facts: Facts
                   {q.question} <small>· {[topicOf(q.header), SEVERITY[card.questions?.[i]?.level ?? "unstated"].word].filter(Boolean).join(" · ")}</small>
                 </legend>
               )}
-              <Tiles options={q.options ?? []} pick={card.questions?.[i]?.pick ?? null} chosen={chosen[i]} multi={!!q.multiSelect} cut={cut} onToggle={(label) => toggle(i, label)} />
+              <Tiles options={q.options ?? []} pick={card.questions?.[i]?.pick ?? null} chosen={chosen[i]} multi={!!q.multiSelect} cut={cut} numbered={numbered} onToggle={(label) => toggle(i, label)} />
               <label className="tile other">
                 Other
                 <input type="text" aria-label={`Other: ${q.question}`} placeholder="your own answer" value={typed[i]} onChange={(e) => setTyped(typed.map((t, j) => (j === i ? e.target.value : t)))} />
               </label>
             </fieldset>
           ))}
-          <div className="act">
-            <button type="button" className="go" disabled={pending || !complete} onClick={() => send({ decision: "allow", answers: Object.fromEntries(questions.map((q, i) => [q.question, valueOf(i)])) })}>
-              {complete ? `${heavy ? "Answer" : "Send"}: ${chosenWords}` : "Send"}
-            </button>
-            {!complete ? <p className="hint">Choose an option to send</p> : heavy && <p className="hint">{CLICK_ONLY}</p>}
-          </div>
+          {actOr(
+            <div className="act">
+              <button type="button" className="go" disabled={pending || !complete} onClick={() => send(act!.body)}>
+                {complete ? `${heavy ? "Answer" : "Send"}: ${chosenWords}` : "Send"}
+                {enterCap}
+              </button>
+              {!complete ? <p className="hint">Choose an option to send</p> : heavy && <p className="hint">{CLICK_ONLY}</p>}
+            </div>,
+          )}
         </>
       )}
       {card.kind === "plan" && (
@@ -214,25 +260,32 @@ export function AnswerCard({ card, facts, onLetter }: { card: Card; facts: Facts
           )}
           <Tiles options={PLAN_OPTIONS} pick={0} chosen={[approve ? "Approve" : "Keep planning"]} multi={false} onToggle={(label) => setApprove(label === "Approve")} />
           {!approve && <textarea className="note" aria-label="Note to the agent" placeholder="Your note to the agent (optional)" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />}
-          <div className="act">
-            <button type="button" className="go" disabled={pending} onClick={() => send(approve ? { decision: "allow" } : { decision: "deny", feedback: note.trim() || undefined })}>
-              {approve ? "Approve" : "Keep planning"}
-            </button>
-            {heavy && <p className="hint">{CLICK_ONLY}</p>}
-          </div>
+          {actOr(
+            <div className="act">
+              <button type="button" className="go" disabled={pending} onClick={() => send(act!.body)}>
+                {act!.words}
+                {enterCap}
+              </button>
+              {heavy && <p className="hint">{CLICK_ONLY}</p>}
+            </div>,
+          )}
         </>
       )}
-      {card.kind === "permission" && (
-        <div className="act">
-          <button type="button" className="go ghost" disabled={pending} onClick={() => send({ decision: "allow" })}>{heavy ? "Allow once" : "Allow"}</button>
-          <button type="button" className="go ghost" disabled={pending} onClick={() => send({ decision: "deny" })}>Deny</button>
-          <p className="hint">{CLICK_ONLY}</p>
-          <p className="note">Allow runs it once; Deny tells the agent no.</p>
-        </div>
-      )}
+      {card.kind === "permission" &&
+        actOr(
+          <div className="act">
+            <button type="button" className="go ghost" disabled={pending} onClick={() => send({ decision: "allow" })}>{heavy ? "Allow once" : "Allow"}</button>
+            <button type="button" className="go ghost" disabled={pending} onClick={() => send({ decision: "deny" })}>Deny</button>
+            <p className="hint">{CLICK_ONLY}</p>
+            <p className="note">Allow runs it once; Deny tells the agent no.</p>
+          </div>,
+        )}
       {error && <p role="alert" className="error">{error}</p>}
       <div className="tail">
-        <button type="button" aria-expanded={raw} onClick={() => setRaw(!raw)}>{raw ? "Hide raw detail" : "Raw detail"}</button>
+        <button type="button" aria-expanded={raw} onClick={() => setRaw(!raw)}>
+          {raw ? "Hide raw detail" : "Raw detail"}
+          {keys && <kbd aria-hidden="true">D</kbd>}
+        </button>
         {!heavy && asker.step && <span>Last step: {asker.step}</span>}
         {asker.letter !== undefined && onLetter && <button type="button" onClick={onLetter}>Newest letter</button>}
       </div>
