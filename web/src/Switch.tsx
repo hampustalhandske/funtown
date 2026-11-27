@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useLayer } from "./keys.ts";
 import { funtownToken } from "./token.ts";
 
 export type OpenSession = { id: string; name: string; cwd: string };
@@ -22,6 +23,7 @@ export function SwitchButton({ open }: { open: OpenSession | null }) {
     setError(null);
     if (box.current?.contains(document.activeElement)) button.current?.focus();
   };
+  useLayer("pane", asking, close);
   const save = async () => {
     try {
       const reply = await fetch("/switch", {
@@ -50,12 +52,6 @@ export function SwitchButton({ open }: { open: OpenSession | null }) {
           onSubmit={(e) => {
             e.preventDefault();
             void save();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              e.stopPropagation();
-              close();
-            }
           }}
         >
           <label>

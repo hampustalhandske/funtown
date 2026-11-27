@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Character, House, Parcel, Town } from "../../../server/types.ts";
 import { AddProject, askReview, Panel, post, removeProject, useSelection, useTown } from "../App.tsx";
+import { useLayer, useWalk } from "../keys.ts";
 import { MorningButton } from "../Morning.tsx";
 import { SwitchButton, type OpenSession } from "../Switch.tsx";
 import { needOf, NotifyButton, Toasts } from "../needs.tsx";
@@ -82,28 +83,12 @@ const ICONS = {
   back: <Icon><path d="M10 6l-6 6 6 6M4 12h16" /></Icon>,
 };
 
-/**
- * Calls `onClose` on Escape and stops the event there, so a pane closes without the panel under it closing too.
- * It listens on the document, which an event reaches before the window. With `skipInTerminal`, Escape typed in a terminal is left alone.
- */
-function useEscape(onClose: () => void, skipInTerminal = false) {
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || (skipInTerminal && event.target instanceof Element && event.target.closest(".terminal"))) return;
-      event.stopPropagation();
-      onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose, skipInTerminal]);
-}
-
 type SettingsProps = { town: Town | null; muted: boolean; onMute: () => void; open: OpenSession | null; onClose: () => void };
 
 /** The settings pane: add or remove projects, your avatar, sounds and pop-ups, "I had to switch", and Claude version problems. */
 function Settings({ town, muted, onMute, open, onClose }: SettingsProps) {
   const [error, setError] = useState<string | null>(null);
-  useEscape(onClose, true);
+  useLayer("pane", true, onClose);
   async function remove(house: House) {
     setError((await removeProject(house))?.message ?? null);
   }
@@ -162,7 +147,7 @@ type AskTarget = { cwd: string; parcel: Parcel };
 function AskPanel({ target, onClose }: { target: AskTarget; onClose: () => void }) {
   const { cwd, parcel } = target;
   const [error, setError] = useState<string | null>(null);
-  useEscape(onClose);
+  useLayer("pane", true, onClose);
   async function ask() {
     const failed = await askReview(cwd, parcel.number);
     if (failed) setError(failed.message);
@@ -185,13 +170,19 @@ function AskPanel({ target, onClose }: { target: AskTarget; onClose: () => void 
 /** The town page: the village in one canvas, a row of icon buttons, panels on demand, and a hidden list for screen readers. */
 export function TownPage() {
   const [town, restarted] = useTown();
-  const { setSelection, onClose, lead, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop } = useSelection(town);
+  const { selection, setSelection, onClose, lead, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop } = useSelection(town);
   const [settings, setSettings] = useState(false);
   const [asking, setAsking] = useState<AskTarget | null>(null);
   const closeAsking = useCallback(() => setAsking(null), []);
   const closeSettings = useCallback(() => setSettings(false), []);
   const placed = useMemo(() => (town ? layout(town, waiting) : []), [town]);
   const index = useMemo(() => indexOf(town), [town]);
+  // The house the keys last reached: it shows its name plate, as a hover does. Gone with its house.
+  const [marked, setMarked] = useState<string | null>(null);
+  useWalk(waiting, selection && `${selection.lead}/${selection.id}`, (w) => {
+    openWaiting(w);
+    setMarked(w.cwd);
+  });
   const name = useCallback((p: Placed | InPlaced) => words(p, index).name, [index]);
 
   // The classroom being shown: the cwd in the page hash, kept in step with Back, reload and pasted links.
@@ -214,15 +205,7 @@ export function TownPage() {
   }, [town, inCwd, classroom, go]);
   const showing = classroom !== undefined;
   const shown = lead && selected;
-  useEffect(() => {
-    // Only when nothing above the classroom is open: those panes close on their own Escape first.
-    if (!showing || settings || asking || shown) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !(event.target instanceof Element && event.target.closest(".terminal"))) go(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [showing, settings, asking, shown, go]);
+  useLayer("classroom", showing, () => go(null));
 
   /** Opens the review panel, letter or PR of parcel `number` in `cwd`. */
   const openParcel = useCallback(
@@ -257,7 +240,7 @@ export function TownPage() {
   return (
     <>
       <div className="village" aria-hidden="true">
-        <Village index={index} avatar={town?.avatar} placed={placed} name={name} onPick={pick} inside={inside} />
+        <Village index={index} avatar={town?.avatar} marked={marked} placed={placed} name={name} onPick={pick} inside={inside} />
       </div>
       <ul className="town-list" aria-label="Town">
         {inside

@@ -150,6 +150,8 @@ type Props = {
   /** The id of the king's chosen preset (`Town.avatar`); absent or unknown shows the default. */
   avatar?: string;
   placed: Placed[];
+  /** The folder of the marked house, whose name plate shows as a hover's does. */
+  marked?: string | null;
   /** The words a thing's hover plate shows. */
   name: (p: Placed) => string;
   onPick: (p: Placed) => void;
@@ -158,12 +160,12 @@ type Props = {
 };
 
 /** The village: the castle with the king (in the chosen avatar) at his desk, a building per house, and everyone placed by `layout`. */
-export function Village({ index, avatar, placed, name, onPick, inside }: Props) {
+export function Village({ index, avatar, placed, marked, name, onPick, inside }: Props) {
   const look = avatarFor(avatar);
   const bounds = useMemo(() => (inside ? roomBounds(inside.placed) : boundsOf(placed)), [inside?.placed, placed]);
   const [hover, setHover] = useHover(inside ? inside.placed.filter((p) => p.kind !== "observer").map(keyOf) : placed.map(keyOf));
   const pick = (p: Placed, children: ReactNode) => (
-    <Pick id={keyOf(p)} height={plateHeight(p)} plate={keyOf(p) === hover ? name(p) : null} onPick={() => onPick(p)} onHover={setHover}>{children}</Pick>
+    <Pick id={keyOf(p)} height={plateHeight(p)} plate={keyOf(p) === hover || (p.kind === "building" && p.cwd === marked) ? name(p) : null} onPick={() => onPick(p)} onHover={setHover}>{children}</Pick>
   );
 
   // Hats on racks, one rail per row of pegs (cwd and z).

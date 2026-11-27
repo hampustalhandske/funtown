@@ -76,28 +76,28 @@ test("the_needs_you_list_has_every_waiting_character_cards_first_then_oldest_fir
   await expect(panel(page, "Explore-1")).toBeVisible();
 });
 
-test("option_n_opens_the_first_in_the_list_then_the_next_and_wraps_and_does_nothing_with_nothing_waiting", async ({ page }) => {
+test("space_opens_the_first_in_the_list_then_the_next_and_wraps_and_does_nothing_with_nothing_waiting", async ({ page }) => {
   const stream = await open(page, town([house("alpha", [lead({})])]));
-  await page.keyboard.press("Alt+KeyN");
+  await page.keyboard.press("Space");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
   stream.send(three());
   await page.reload();
   await expect(rows(page)).toHaveCount(3);
-  // Catches the jump firing on a plain `n` again.
+  // Catches the jump firing on any other plain key.
   await page.keyboard.press("n");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.keyboard.press("Alt+KeyN");
+  await page.keyboard.press("Space");
   await expect(panel(page, "Explore-1")).toBeVisible();
-  await page.keyboard.press("Alt+KeyN");
+  await page.keyboard.press("Space");
   await expect(panel(page, "lead-1")).toBeVisible();
-  await page.keyboard.press("Alt+KeyN");
+  await page.keyboard.press("Space");
   await expect(panel(page, "lead-2")).toBeVisible();
-  await page.keyboard.press("Alt+KeyN");
+  await page.keyboard.press("Space");
   await expect(panel(page, "Explore-1")).toBeVisible();
 });
 
-test("option_n_in_a_card_text_box_opens_nothing_and_n_is_text_and_a_new_card_or_waiting_character_leaves_focus_and_text_alone", async ({ page }) => {
+test("space_in_a_card_text_box_opens_nothing_and_is_text_and_a_new_card_or_waiting_character_leaves_focus_and_text_alone", async ({ page }) => {
   const plan = {
     id: "p1", lead: "b1", agent: null, kind: "plan", tool: "ExitPlanMode", input: { plan: "1. Do it" }, cwd: "/work/alpha", at: NOW - 1000,
   };
@@ -106,18 +106,18 @@ test("option_n_in_a_card_text_box_opens_nothing_and_n_is_text_and_a_new_card_or_
   const box = page.locator('section[aria-label="alpha"]').getByRole("textbox").first();
   await box.click();
   await page.keyboard.type("ab");
-  await page.keyboard.press("n");
-  await expect(box).toHaveValue("abn");
+  await page.keyboard.press("Space");
+  await expect(box).toHaveValue("ab ");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
   stream.send(town([house("alpha", [bg, waiting("s2", "lead-2", NOW)]), house("beta", [waiting("s3", "lead-3", NOW)])], [plan, { ...plan, id: "p2", at: NOW }]));
   await expect(rows(page)).toHaveCount(3);
   await expect(page.getByRole("status").getByText("lead-3 needs you")).toBeVisible();
-  expect(await active(page)).toBe("TEXTAREA:abn");
+  expect(await active(page)).toBe("TEXTAREA:ab ");
   await page.keyboard.type("c");
-  await expect(box).toHaveValue("abnc");
+  await expect(box).toHaveValue("ab c");
   // Catches the jump key firing while the user types in a text box.
-  await page.keyboard.press("Alt+KeyN");
+  await page.keyboard.press("Space");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 

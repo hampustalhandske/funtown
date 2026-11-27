@@ -146,27 +146,6 @@ export function useAlerts(waiting: Waiting[], loaded: boolean, muted: boolean, o
   return { toasts, drop: (w: Waiting) => setToasts((all) => all.filter((t) => t !== w)) };
 }
 
-/** Option+N (⌥N) opens the first entry of the urgency list, then the next, wrapping; ignored while typing. */
-export function useNextKey(waiting: Waiting[], current: string | null, open: (w: Waiting) => void) {
-  const latest = useRef({ waiting, current, open });
-  latest.current = { waiting, current, open };
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      // `code`, since on a Mac Option+N gives `key` "˜" (a dead key).
-      if (event.code !== "KeyN" || !event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-      const target = event.target;
-      if (target instanceof Element && target.closest("input, textarea, select, [contenteditable], .terminal")) return;
-      const { waiting: list, current: cur, open: go } = latest.current;
-      event.preventDefault();
-      if (list.length === 0) return;
-      const at = list.findIndex((w) => w.key === cur);
-      go(list[(at + 1) % list.length]);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-}
-
 /** The "Needs you" list: one row per waiting character, in urgency order; quiet rows (tier 4) are drawn quieter. */
 export function NeedsList({ waiting, onOpen }: { waiting: Waiting[]; onOpen: (w: Waiting) => void }) {
   const [now, setNow] = useState(Date.now());
@@ -177,7 +156,7 @@ export function NeedsList({ waiting, onOpen }: { waiting: Waiting[]; onOpen: (w:
   if (waiting.length === 0) return null;
   return (
     <section className="needs-list" aria-label="Needs you">
-      <h2>Needs you <span className="hint">⌥N opens the next</span></h2>
+      <h2>Needs you <span className="hint">Space: next</span></h2>
       <ol>
         {waiting.map((w) => (
           <li key={w.key} className={w.tier === 4 ? "quiet" : undefined}>

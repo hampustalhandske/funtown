@@ -3,7 +3,8 @@ import type { Card, Character, House, Lead, Parcel, Stage, Town } from "../../se
 import { AnswerCard } from "./AnswerCard.tsx";
 import { MorningButton } from "./Morning.tsx";
 import { LazyBoundary } from "./LazyBoundary.tsx";
-import { NeedsList, NotifyButton, Toasts, useAlerts, useMute, useNextKey, urgencyList, type Waiting } from "./needs.tsx";
+import { NeedsList, NotifyButton, Toasts, useAlerts, useMute, urgencyList, type Waiting } from "./needs.tsx";
+import { useLayer, useWalk } from "./keys.ts";
 import { funtownToken } from "./token.ts";
 import { SwitchButton } from "./Switch.tsx";
 import { ReplyBox } from "./ReplyBox.tsx";
@@ -363,14 +364,7 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
   const leaveTerminal = useCallback(() => column.current?.focus(), []);
   const reply = useRef<((text: string) => string | null) | null>(null);
   const stamp = [lead, ...lead.subagents].map((c) => c.letter ?? 0).join(",");
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const inTerminal = event.target instanceof Element && event.target.closest(".terminal");
-      if (event.key === "Escape" && !inTerminal) onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useLayer("pane", true, onClose);
   // Showing a terminal that was hidden gives it the keyboard again (a new one focuses itself).
   useEffect(() => {
     if (terminal) screen.current?.querySelector("textarea")?.focus();
@@ -483,7 +477,7 @@ export function Panel({ character, lead, cards, onClose }: { character: Characte
 
 /**
  * The character whose panel is open, and the Needs you wiring both pages share: the waiting list,
- * mute, sound and toasts, and ⌥N. A selection whose character leaves the town closes.
+ * mute, sound and toasts. A selection whose character leaves the town closes.
  */
 export function useSelection(town: Town | null) {
   const [selection, setSelection] = useState<{ lead: string; id: string } | null>(null);
@@ -499,7 +493,6 @@ export function useSelection(town: Town | null) {
   const [muted, toggleMute] = useMute();
   const openWaiting = useCallback((w: Waiting) => setSelection({ lead: w.lead, id: w.id }), []);
   const { toasts, drop } = useAlerts(waiting, town !== null, muted, openWaiting);
-  useNextKey(waiting, selection && `${selection.lead}/${selection.id}`, openWaiting);
   return { selection, setSelection, onClose, lead, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop };
 }
 
@@ -516,6 +509,7 @@ function hashedHouse(): string {
 export function App() {
   const [town, restarted] = useTown();
   const { selection, setSelection, onClose, lead, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop } = useSelection(town);
+  useWalk(waiting, selection && `${selection.lead}/${selection.id}`, openWaiting);
   // The selection when each New session was clicked; a session opens itself only if that is still it (or nothing is open).
   const selectionNow = useRef(selection);
   selectionNow.current = selection;
