@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Character, House, Parcel, Town } from "../../../server/types.ts";
 import { AddProject, askReview, Panel, post, removeProject, useSelection, useTown } from "../App.tsx";
 import { KeySheet, useKeySheet } from "../KeySheet.tsx";
@@ -9,6 +9,7 @@ import { needOf, NotifyButton, Toasts, useLetterKey } from "../needs.tsx";
 import { boardOf, interior, type Board, type InPlaced } from "./interior.ts";
 import { AVATARS, avatarFor } from "./kit/avatars.ts";
 import { keyOf, layout, type Placed } from "./layout.ts";
+import { nextHouse, type Direction, type Door, type Move } from "./mark.ts";
 import { Village } from "./Village.tsx";
 
 const REVIEW_WORDS = { idle: "review not asked", queued: "review queued", reviewing: "reviewing", ready: "review ready" } as const;
@@ -181,10 +182,14 @@ export function TownPage() {
   const index = useMemo(() => indexOf(town), [town]);
   // The house the keys last reached: it shows its name plate, as a hover does. Gone with its house.
   const [marked, setMarked] = useState<string | null>(null);
+  // Where the mark last landed, kept after Esc clears it: the first arrow returns there, and the way back follows it.
+  const [last, setLast] = useState<Move | null>(null);
+  const doors = useRef<(() => Door[]) | null>(null);
   const current = selection && `${selection.lead}/${selection.id}`;
   const openAndMark = useCallback((w: { lead: string; id: string; cwd: string }) => {
     openWaiting(w);
     setMarked(w.cwd);
+    setLast({ to: w.cwd });
   }, [openWaiting]);
   useWalk(waiting, current, openAndMark);
   useLetterKey(town, current, openAndMark);
@@ -210,12 +215,32 @@ export function TownPage() {
     if (town && inCwd !== null && !classroom) go(null, true);
   }, [town, inCwd, classroom, go]);
   const showing = classroom !== undefined;
+  const hasMark = marked !== null && index.houses.has(marked);
+  useLayer("mark", hasMark, () => setMarked(null));
   // The plain list opens at the house you are at: the classroom's, else the marked one.
   const at = classroom?.cwd ?? (marked !== null && index.houses.has(marked) ? marked : null);
   const workHref = at === null ? "/work.html" : workLink(at);
   useKey("l", () => location.assign(workHref));
   const shown = lead && house && selected;
   useLayer("classroom", showing, () => go(null));
+
+  // The arrows and Enter are the town's alone: not in a classroom, with a pane open (a panel, Settings, a pull request's, the key sheet).
+  const keysOn = !showing && !shown && !settings && !asking && !sheet;
+  /** Moves the mark one house `direction` on the screen as the camera is now, or puts it on the first house. */
+  const move = (direction: Direction) => {
+    const points = doors.current?.() ?? [];
+    const to = nextHouse(points, marked, direction, last);
+    if (to === null) return;
+    const walked = marked !== null && marked !== to && points.some((p) => p.cwd === marked);
+    setMarked(to);
+    if (walked) setLast({ to, from: marked, direction });
+    else if (to !== marked) setLast({ to });
+  };
+  useKey("ArrowLeft", () => move("left"), keysOn);
+  useKey("ArrowRight", () => move("right"), keysOn);
+  useKey("ArrowUp", () => move("up"), keysOn);
+  useKey("ArrowDown", () => move("down"), keysOn);
+  useKey("Enter", () => marked !== null && go(marked), keysOn && hasMark);
 
   /** Opens the review panel, letter or PR of parcel `number` in `cwd`. */
   const openParcel = useCallback(
@@ -250,7 +275,7 @@ export function TownPage() {
   return (
     <>
       <div className="village" aria-hidden="true">
-        <Village index={index} avatar={town?.avatar} marked={marked} placed={placed} name={name} onPick={pick} inside={inside} />
+        <Village index={index} avatar={town?.avatar} marked={marked} placed={placed} name={name} onPick={pick} inside={inside} doors={doors} />
       </div>
       <ul className="town-list" aria-label="Town">
         {inside

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { PerspectiveCamera, Vector3, type DirectionalLight, type Group } from "three";
 import { Classroom, roomOf, type ClassroomProps } from "./Classroom.tsx";
@@ -10,6 +10,7 @@ import { Hat } from "./kit/hats.tsx";
 import { PALETTE, type HatKind } from "./kit/palette.ts";
 import { Castle, Desk, Figure, HouseModel, Parcel } from "./kit/parts.tsx";
 import { CASTLE, DESK, KING, QUEUE_HEAD, keyOf, poseOf, type Placed, type Spot } from "./layout.ts";
+import type { Door } from "./mark.ts";
 import type { TownIndex } from "./TownPage.tsx";
 
 const GROUND = "#efe6d6";
@@ -140,6 +141,31 @@ function Rail({ pegs }: { pegs: Spot[] }) {
   );
 }
 
+/** Where a house's door is, from the house's spot: the door is on the front wall. */
+const DOOR = { y: 0.3, z: 0.6 };
+
+/** Gives `where` a function that reads each house's door on the screen with the camera as it is when called, or null while the town is not shown. */
+function Doors({ placed, where }: { placed: Placed[]; where: MutableRefObject<(() => Door[]) | null> }) {
+  const camera = useThree((s) => s.camera);
+  const size = useThree((s) => s.size);
+  const latest = useRef(placed);
+  latest.current = placed;
+  useEffect(() => {
+    where.current = () => {
+      camera.updateMatrixWorld();
+      return latest.current.flatMap((p) => {
+        if (p.kind !== "building") return [];
+        const v = new Vector3(p.at.x, DOOR.y, p.at.z + DOOR.z).project(camera);
+        return [{ cwd: p.cwd, x: (v.x * size.width) / 2, y: (-v.y * size.height) / 2 }];
+      });
+    };
+    return () => {
+      where.current = null;
+    };
+  }, [camera, size, where]);
+  return null;
+}
+
 /** How high above its spot a thing's name plate floats. */
 const plateHeight = (p: Placed) =>
   p.kind === "building" ? 2.3 : p.kind === "parcel" ? 0.9 : p.kind === "steward" ? 1.8 : p.pose === "work" && p.kind === "hat" ? 1.4 : p.pose === "queue" ? 2.2 : 1.8;
@@ -157,10 +183,12 @@ type Props = {
   onPick: (p: Placed) => void;
   /** When set, the canvas shows this house's classroom in place of the town. */
   inside?: ClassroomProps;
+  /** Filled while the town shows with a function that gives every house's door on the screen, in pixels from its middle, as the camera is now. */
+  doors?: MutableRefObject<(() => Door[]) | null>;
 };
 
 /** The village: the castle with the king (in the chosen avatar) at his desk, a building per house, and everyone placed by `layout`. */
-export function Village({ index, avatar, placed, marked, name, onPick, inside }: Props) {
+export function Village({ index, avatar, placed, marked, name, onPick, inside, doors }: Props) {
   const look = avatarFor(avatar);
   const bounds = useMemo(() => (inside ? roomBounds(inside.placed) : boundsOf(placed)), [inside?.placed, placed]);
   const [hover, setHover] = useHover(inside ? inside.placed.filter((p) => p.kind !== "observer").map(keyOf) : placed.map(keyOf));
@@ -239,6 +267,7 @@ export function Village({ index, avatar, placed, marked, name, onPick, inside }:
             <Clay colour={TONES.paper} position={[0.3, 0.64, 0]} rotation-y={0.2}><boxGeometry args={[0.32, 0.06, 0.24]} /></Clay>
           </group>
           <group position={[KING.x, 0, KING.z]}><Bob speed={1.2}><Figure colour={look.coat} hat={look.hat} skin={look.skin} /></Bob></group>
+          {doors && <Doors placed={placed} where={doors} />}
           {[...rails].map(([rail, pegs]) => <Rail key={rail} pegs={pegs} />)}
           {placed.map((p) => <group key={keyOf(p)}>{thing(p)}</group>)}
         </>

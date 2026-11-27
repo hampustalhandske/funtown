@@ -33,6 +33,9 @@ function textBox(target: EventTarget | null): target is HTMLElement {
   return target.matches("textarea, select, [contenteditable]:not([contenteditable=false])") || target.isContentEditable;
 }
 
+/** Whether `target` is something Enter presses (a button, a link, a summary): a Tab-focused one keeps its Enter. */
+const presses = (target: EventTarget | null): boolean => target instanceof Element && target.closest("button, a[href], summary") !== null;
+
 /** Whether `target` is somewhere typing goes (a text box, or a terminal), so Funtown takes no key there. */
 const typingPlace = (target: EventTarget | null): boolean => inTerminal(target) || textBox(target);
 
@@ -69,6 +72,7 @@ function onKeyDown(event: KeyboardEvent) {
   }
   // A letter, digit or sign by the character typed (so any layout works); Shift is only the way to type "?", never a letter's.
   if (typingPlace(event.target) || (event.shiftKey && /^[a-z]$/i.test(event.key))) return;
+  if (event.key === "Enter" && presses(event.target)) return;
   const run = keys.get(event.key.toLowerCase())?.at(-1);
   if (!run) return;
   event.preventDefault();
