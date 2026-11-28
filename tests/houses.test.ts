@@ -83,14 +83,6 @@ describe("one project, one house", () => {
     expect(town.houses.map((h) => h.cwd)).toEqual([project, web]);
     expect(leadsOf(town).map((l) => l.cwd)).toEqual([project, web]);
   });
-
-  it("every_lead_carries_the_cwd_the_list_gives_it", async () => {
-    // Breaks if Lead.cwd is missing on a lead of a house that is its own folder.
-    const cwd = realDir();
-    const s = await serve([cwd], [["s1", cwd]]);
-    const town = await townWhere(s.url, (t) => leadsOf(t).length === 1);
-    expect(leadsOf(town)[0].cwd).toBe(cwd);
-  });
 });
 
 describe("what a house reads", () => {

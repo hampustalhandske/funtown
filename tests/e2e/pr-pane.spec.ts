@@ -1,39 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
-import { house, lead, stubStream, town, waiting } from "./stream.ts";
+import { alertStubs, house, lead, pr, prUrl, red, stubStream, town, waiting, withPrs } from "./stream.ts";
 
 const NOW = Date.now();
-const url = (n: number) => `https://example.test/pull/${n}`;
-const pr = (number: number, over: Record<string, unknown> = {}) => ({ number, title: `PR ${number}`, url: url(number), draft: false, checks: "green", ...over });
-const red = (number: number, minutesAgo = 12) => pr(number, { title: "Broken build", checks: "red", redAt: NOW - minutesAgo * 60_000 });
-/** A house in `/work/<project>` with `parcels`, read just now unless `over` says otherwise (a house with no `parcelsAt` is under fog). */
-const withPrs = (project: string, leads: unknown[], parcels: unknown[], over: Record<string, unknown> = {}) => ({ ...house(project, leads), parcels, parcelsAt: Date.now(), ...over });
-
 /** Alpha burns (#12 failed) with a green draft #13 beside it; beta holds a green #21 nobody has reviewed. Alpha's lead rests. */
 const burning = (beta: Record<string, unknown> = {}) =>
   town([
     withPrs("alpha", [waiting("s1", "rester", NOW - 1000, { needs: "turn ended" })], [red(12), pr(13, { draft: true, title: "Draft work" })]),
     withPrs("beta", [], [pr(21, { review: { state: "idle" }, ...beta })]),
   ]);
-
-/** Counts what the page asks of Notification (granted) and of Web Audio, which a burning house triggers. */
-const stubs = `
-  window.__notes = [];
-  const param = () => ({ value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} });
-  class AudioContext {
-    constructor() { this.currentTime = 0; this.destination = {}; }
-    resume() { return Promise.resolve(); }
-    createGain() { return { gain: param(), connect: (x) => x }; }
-    createOscillator() { return { frequency: param(), connect: (x) => x, start() {}, stop() {} }; }
-  }
-  window.AudioContext = AudioContext;
-  class Notification {
-    constructor(title, opts = {}) { this.title = title; this.body = opts.body; window.__notes.push(this); }
-    close() {}
-    static requestPermission() { return Promise.resolve("granted"); }
-  }
-  Notification.permission = "granted";
-  window.Notification = Notification;
-`;
 
 /** Opens `path` on a stubbed stream; every request for GitHub is recorded and answered with a bare page. */
 async function open(page: Page, path: string, initial: unknown) {
@@ -42,7 +16,7 @@ async function open(page: Page, path: string, initial: unknown) {
     requested.push(r.request().url());
     return r.fulfill({ status: 200, contentType: "text/html", body: "<title>pr</title>" });
   });
-  await page.addInitScript(stubs);
+  await page.addInitScript(alertStubs);
   await page.route("**/letters?*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   const stream = await stubStream(page, initial);
   await page.goto(path);
@@ -94,7 +68,7 @@ for (const [path, where] of [["/work.html", "the work view"], ["/", "the town"]]
     await expect(p).toContainText(/checks failed 12\s?m ago/);
     await expect(p).toContainText("burning");
     await expect(p).not.toContainText("draft");
-    await expect(p.getByRole("link", { name: "Open PR" })).toHaveAttribute("href", url(12));
+    await expect(p.getByRole("link", { name: "Open PR" })).toHaveAttribute("href", prUrl(12));
 
     await page.keyboard.press("Space");
     const q = pane(page, 13);
@@ -108,6 +82,20 @@ for (const [path, where] of [["/work.html", "the work view"], ["/", "the town"]]
     expect(requested, "no key opens GitHub").toEqual([]);
     await page.getByRole("dialog").getByRole("link", { name: "Open PR" }).click();
     await expect.poll(() => requested.length).toBeGreaterThan(0);
+  });
+
+  test(`${where}: the_pane_says_the_houses_word_naming_the_project_and_the_prs_own_word_on_its_own_line`, async ({ page }) => {
+    // Catches "burning, waits for you" on a green PR in a burning house, as if that PR burned.
+    await open(page, path, burning());
+    await page.keyboard.press("Space");
+    const failed = pane(page, 12);
+    await expect(failed.getByText("alpha is burning", { exact: true })).toBeVisible();
+    await expect(failed.getByText("waits for you")).toHaveCount(0);
+    await page.keyboard.press("Space");
+    const green = pane(page, 13);
+    await expect(green.getByText("alpha is burning", { exact: true })).toBeVisible();
+    await expect(green.getByText("waits for you", { exact: true })).toBeVisible();
+    await expect(green).not.toContainText("burning, waits");
   });
 
   test(`${where}: the_panes_review_part_asks_when_idle_says_its_state_and_reads_her_review_when_ready`, async ({ page }) => {
@@ -212,7 +200,7 @@ test("the_work_views_parcel_rows_stay_links_to_github", async ({ page }) => {
   // Catches a click on a work-view parcel row opening the pane instead of the link.
   await open(page, "/work.html", burning());
   const link = page.locator("section.house", { hasText: "alpha" }).getByRole("link", { name: /#12 Broken build/ });
-  await expect(link).toHaveAttribute("href", url(12));
+  await expect(link).toHaveAttribute("href", prUrl(12));
   await expect(link).toHaveAttribute("target", "_blank");
 });
 
@@ -266,4 +254,14 @@ test("the_towns_hidden_list_gives_each_house_its_state_words", async ({ page }) 
   await expect(label("gamma")).toHaveAccessibleName("gamma, house, 2 PRs waiting");
   await expect(label("delta")).toHaveAccessibleName("delta, house, 1 PR waiting");
   await expect(label("epsilon")).toHaveAccessibleName("epsilon, house");
+});
+
+test("the_towns_hidden_list_gives_each_pr_its_check_words", async ({ page }) => {
+  // Catches a PR label with no word on whether its checks failed, passed or never ran.
+  await open(page, "/", town([withPrs("alpha", [], [red(12), pr(13), pr(14, { checks: "running" }), pr(15, { checks: "none" })])]));
+  const label = (n: number) => page.getByRole("button", { name: new RegExp(`^#${n} `) });
+  await expect(label(12)).toHaveAccessibleName(/^#12 Broken build, alpha, pull request, open, checks failed 1\dm ago$/);
+  await expect(label(13)).toHaveAccessibleName("#13 PR 13, alpha, pull request, open, checks passed");
+  await expect(label(14)).toHaveAccessibleName("#14 PR 14, alpha, pull request, open, checks running");
+  await expect(label(15)).toHaveAccessibleName("#15 PR 15, alpha, pull request, open, no checks");
 });

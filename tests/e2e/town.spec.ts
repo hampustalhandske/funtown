@@ -10,7 +10,7 @@ const town = {
       leads: [
         {
           id: "s1", name: "lead-1", stage: "needs_you", activity: null, needs: "permission",
-          tty: "ttys001", termProgram: "TestTerm", kind: "terminal", shortId: null,
+          cwd: "/work/demo-app", tty: "ttys001", termProgram: "TestTerm", kind: "terminal", shortId: null,
           subagents: [{ id: "x1", name: "Explore-1", stage: "working", activity: "Bash: npm test" }],
         },
       ],
@@ -19,7 +19,7 @@ const town = {
       project: "other-app",
       cwd: "/work/other-app",
       leads: [
-        { id: "s2", name: "lead-2", stage: "working", activity: "Edit", tty: null, termProgram: null, kind: "terminal", shortId: null, subagents: [] },
+        { id: "s2", name: "lead-2", stage: "working", activity: "Edit", cwd: "/work/other-app", tty: null, termProgram: null, kind: "terminal", shortId: null, subagents: [] },
       ],
     },
   ],

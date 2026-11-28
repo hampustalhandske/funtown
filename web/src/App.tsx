@@ -6,7 +6,7 @@ import { MorningButton } from "./Morning.tsx";
 import { LazyBoundary } from "./LazyBoundary.tsx";
 import { NeedsList, NotifyButton, Toasts, useAlerts, useLetterKey, useMute, urgencyList, useNow, waited, type Entry, type Lettered } from "./needs.tsx";
 import { useKey, useLayer, useWalk } from "./keys.ts";
-import { fogLine, fogWords, glanceOf, LOST_MS, townFog, type Glance } from "./glance.ts";
+import { FIRE_UNDER_FOG, fogLine, fogWords, glanceOf, LOST_MS, townFog, WAITS, type Glance } from "./glance.ts";
 import { KeySheet, useKeySheet } from "./KeySheet.tsx";
 import { funtownToken } from "./token.ts";
 import { SwitchButton } from "./Switch.tsx";
@@ -127,7 +127,7 @@ function Overlaps({ overlaps }: { overlaps: Lead["overlaps"] }) {
   ));
 }
 
-const REVIEW_LABEL = { idle: "Ask for review", queued: "queued", reviewing: "reviewing", ready: "review ready ✉" } as const;
+const REVIEW_LABEL = { idle: "Ask steward to review", queued: "queued", reviewing: "reviewing", ready: "review ready ✉" } as const;
 
 /** Asks the steward to review PR `number` of the house in `cwd`; gives the failure, or null once it is queued. */
 export function askReview(cwd: string, number: number): Promise<Failure | null> {
@@ -140,25 +140,28 @@ export type Review = { pr: number; letter: string };
 const CHECK_WORDS = { red: "checks failed", running: "checks running", green: "checks passed", none: "no checks" } as const;
 
 /** What a PR's checks say in words: "checks failed 12m ago" (plain "checks failed" without a time), "checks running", "checks passed", "no checks". */
-function checkWords(parcel: Pick<Parcel, "checks" | "redAt">, now: number): string {
+export function checkWords(parcel: Pick<Parcel, "checks" | "redAt">, now: number): string {
   const words = CHECK_WORDS[parcel.checks];
   return parcel.checks === "red" && parcel.redAt !== undefined ? `${words} ${waited(parcel.redAt, now)} ago` : words;
+}
+
+/** The failure of the last ask for a review of PR `number` in the house at `cwd` (null while none), and the function that asks. */
+function useAskReview(cwd: string, number: number): [string | null, () => Promise<void>] {
+  const [error, setError] = useState<string | null>(null);
+  return [error, async () => setError((await askReview(cwd, number))?.message ?? null)];
 }
 
 /** An open PR: number, title, draft mark, its checks in words, "waits for you" when `waits`, a link, and its review: a button to ask for one, or (when ready) the steward's panel with it. */
 function ParcelItem({ parcel, cwd, waits, onOpen }: { parcel: Parcel; cwd: string; waits: boolean; onOpen: (steward: string, review?: Review) => void }) {
   const { review } = parcel;
-  const [error, setError] = useState<string | null>(null);
+  const [error, ask] = useAskReview(cwd, parcel.number);
   const now = useNow(15_000);
-  async function ask() {
-    setError((await askReview(cwd, parcel.number))?.message ?? null);
-  }
   return (
     <li className="parcel">
       <a href={parcel.url} target="_blank" rel="noreferrer">#{parcel.number} {parcel.title}</a>
-      {parcel.draft && <span className="badge">draft</span>}
+      {parcel.draft && <>{" "}<span className="badge">draft</span></>}{" "}
       <span className="checks" data-checks={parcel.checks}>{checkWords(parcel, now)}</span>
-      {waits && <span className="waits">waits for you</span>}
+      {waits && <>{" "}<span className="waits">{WAITS}</span></>}
       {review &&
         (review.state === "idle" || review.steward ? (
           <button
@@ -176,45 +179,42 @@ function ParcelItem({ parcel, cwd, waits, onOpen }: { parcel: Parcel; cwd: strin
   );
 }
 
-/**
- * What `house` says of itself at a glance, in words, for the PR pane and the town's list: its fire ("burning",
- * "handled"; a burning fire under fog, which Funtown can't be sure of, says "failed when last read") and, under fog,
- * when its PRs were last read. Empty for a calm house.
- */
-export function houseState(house: House, glance: Glance): string[] {
-  const fire = glance.fire === "burning" && glance.fog ? "failed when last read" : glance.fire;
-  return [...(fire === "none" ? [] : [fire]), ...(glance.fog ? [fogWords(house)] : [])];
+/** What a house's fire says: "burning", "handled", or under fog, which can't be sure of a fire, "failed when last read"; null with no fire. */
+function fireWord(glance: Glance): string | null {
+  return glance.fire === "none" ? null : glance.fire === "burning" && glance.fog ? FIRE_UNDER_FOG : glance.fire;
 }
 
-/** What the house says of PR `parcel` for the PR pane: its state words, then "waits for you" when the PR waits. */
-const houseWords = (house: House, glance: Glance, parcel: Parcel): string[] => [...houseState(house, glance), ...(glance.waiting.includes(parcel) ? ["waits for you"] : [])];
+/** What `house` says of itself, for the PR pane and the town's list: its fire word and, under fog, when its PRs were last read. Empty for a calm house. */
+export function houseState(house: House, glance: Glance): string[] {
+  const fire = fireWord(glance);
+  return [...(fire === null ? [] : [fire]), ...(glance.fog ? [fogWords(house)] : [])];
+}
 
 /** The PR a pane shows: its number in the house at `cwd`. */
 export type PrTarget = { cwd: string; number: number };
 
 /**
- * A small pane for one PR of `house`, shared by both pages: number and title, a draft mark, its checks and when they
- * failed, what the house says of it, its review (a button to ask for one while none is asked, its state while queued
- * or being written, a button to read it when ready) and an "Open PR" link that only a click follows. `onReview` gets
- * the steward's id and her review's letter. Opening the pane asks and opens nothing.
+ * A small pane for one PR of `house`, shared by both pages: its facts, the house's word and the PR's own, its review,
+ * and an "Open PR" link only a click follows. `now` is the page's clock; `onReview` gets the steward's id and her
+ * review's letter. Opening the pane asks and opens nothing.
  */
-export function PrPane({ house, parcel, onReview, onClose }: { house: House; parcel: Parcel; onReview: (steward: string, review: Review) => void; onClose: () => void }) {
-  const [error, setError] = useState<string | null>(null);
-  const now = useNow(5000);
+export function PrPane({ house, parcel, now, onReview, onClose }: { house: House; parcel: Parcel; now: number; onReview: (steward: string, review: Review) => void; onClose: () => void }) {
+  const [error, ask] = useAskReview(house.cwd, parcel.number);
   useLayer("pane", true, onClose);
   const { review } = parcel;
-  const words = houseWords(house, glanceOf(house, now), parcel);
-  async function ask() {
-    setError((await askReview(house.cwd, parcel.number))?.message ?? null);
-  }
+  const glance = glanceOf(house, now);
+  const state = houseState(house, glance);
+  // The house's word names the project and stays apart from the PR's own: a green PR in a burning house doesn't burn.
+  const houseLine = state.length === 0 ? null : glance.fog ? `${house.project}: ${state.join(", ")}` : `${house.project} is ${state[0]}`;
   return (
     <aside className="panel pr-pane" role="dialog" aria-label={`Pull request ${parcel.number}`}>
       <button type="button" className="close" aria-label="Close" onClick={onClose}>✕</button>
       <h2>#{parcel.number} {parcel.title}</h2>
       {parcel.draft && <p><span className="badge">draft</span></p>}
       <p className="checks" data-checks={parcel.checks}>{checkWords(parcel, now)}</p>
-      {words.length > 0 && <p className="house-word">{words.join(", ")}</p>}
-      {review?.state === "idle" && <button type="button" onClick={() => void ask()}>Ask steward to review</button>}
+      {houseLine && <p className="house-word">{houseLine}</p>}
+      {glance.waiting.includes(parcel) && <p className="waits">{WAITS}</p>}
+      {review?.state === "idle" && <button type="button" onClick={() => void ask()}>{REVIEW_LABEL.idle}</button>}
       {(review?.state === "queued" || review?.state === "reviewing") && <p className="review" data-state={review.state}>{REVIEW_LABEL[review.state]}</p>}
       {review?.state === "ready" &&
         (review.steward && review.letter !== undefined ? (
@@ -261,7 +261,7 @@ type Open = { lead: string; id: string } | null;
 function LeadItem({ lead, house, cards, steward, open, onSelect }: { lead: Lead; house: House; cards: Card[]; steward?: Lead; open: Open; onSelect: Select }) {
   return (
     <li className="lead">
-      <CharacterRow character={lead} avatar="🧑‍💻" worktree={lead.cwd && lead.cwd !== house.cwd ? lead.cwd.split("/").pop() : undefined} onSelect={(id) => onSelect(lead.id, id)} />
+      <CharacterRow character={lead} avatar="🧑‍💻" worktree={lead.cwd !== house.cwd ? lead.cwd.split("/").pop() : undefined} onSelect={(id) => onSelect(lead.id, id)} />
       {lead.subagents.length > 0 && (
         <ul className="subagents" aria-label={`${lead.name} subagents`}>
           {lead.subagents.map((sub) => (
@@ -325,6 +325,7 @@ export function AddProject() {
 
 function HouseCard({
   house,
+  now,
   cards,
   steward,
   open,
@@ -333,6 +334,8 @@ function HouseCard({
   notice,
 }: {
   house: House;
+  /** The page's clock, which the house's glance is judged by. */
+  now: number;
   cards: Card[];
   steward?: Lead;
   open: Open;
@@ -380,12 +383,13 @@ function HouseCard({
     setError((await removeProject(house))?.message ?? null);
   }
   const needsYou = house.leads.some((lead) => lead.stage === "needs_you");
-  const glance = glanceOf(house, useNow(5000));
+  const glance = glanceOf(house, now);
+  const fire = fireWord(glance);
   return (
     <section className={`house${needsYou ? " needs_you" : ""}`} aria-label={house.project} title={house.cwd}>
       <h2>
         🏠 {house.project}
-        {glance.fire !== "none" && <span className={`badge fire ${glance.fire}`}>{glance.fire}</span>}
+        {fire && <span className={`badge ${fire === "burning" || fire === "handled" ? fire : "fog"}`}>{fire}</span>}
         {glance.fog && <span className="badge fog">{fogWords(house)}</span>}
         {house.phase && <span className="badge phase">{house.phase.phase}</span>}
         {house.phase?.note && <span className="phase-note">{house.phase.note}</span>}
@@ -619,23 +623,23 @@ export function Panel({ character, lead, house, cards, steward, review, onClose 
  * mute, sound and toasts. A selection whose character leaves the town closes.
  */
 export function useSelection(town: Town | null, lostAt: number | null) {
-  const [selection, setSel] = useState<{ lead: string; id: string; review?: Review } | null>(null);
+  const [selection, setSelectionOnly] = useState<{ lead: string; id: string; review?: Review } | null>(null);
   const [prTarget, setPrTarget] = useState<PrTarget | null>(null);
-  // One pane at a time: a character's panel and a PR's pane replace each other.
+  // One pane at a time: a character's panel and a PR's pane replace each other. `setSelectionOnly` leaves the PR pane be.
   const setSelection = useCallback((next: { lead: string; id: string; review?: Review } | null) => {
-    setSel(next);
+    setSelectionOnly(next);
     if (next) setPrTarget(null);
   }, []);
   const openPr = useCallback((cwd: string, number: number) => {
-    setSel(null);
+    setSelectionOnly(null);
     setPrTarget({ cwd, number });
   }, []);
   const closePr = useCallback(() => setPrTarget(null), []);
-  const onClose = useCallback(() => setSel(null), []);
+  const onClose = useCallback(() => setSelectionOnly(null), []);
   const lead = selection ? town?.houses.flatMap((house) => house.leads).find((l) => l.id === selection.lead) : undefined;
   const selected = lead && [lead, ...lead.subagents].find((c) => c.id === selection?.id);
   useEffect(() => {
-    if (town && selection && !selected) setSel(null);
+    if (town && selection && !selected) setSelectionOnly(null);
   }, [town, selection, selected]);
   const house = lead && town?.houses.find((h) => h.leads.includes(lead));
   const openSession = selected && house ? { id: selected.id, name: selected.name, cwd: house.cwd } : null;
@@ -648,7 +652,8 @@ export function useSelection(town: Town | null, lostAt: number | null) {
   }, [town, prTarget, pr]);
   /** The open pane's key in the urgency list: a character's `lead/id` or a PR's `<cwd>#<number>`; null with none open. */
   const current = selection ? `${selection.lead}/${selection.id}` : prTarget && `${prTarget.cwd}#${prTarget.number}`;
-  const now = useNow(5000);
+  // The page's clock, judging every frame by the time it arrives; the pages and their panes take it from here.
+  const now = useNow(5000, town);
   const waiting = urgencyList(town, now);
   const fog = townFog(town, lostAt, now);
   const [muted, toggleMute] = useMute();
@@ -659,7 +664,7 @@ export function useSelection(town: Town | null, lostAt: number | null) {
   }, [setSelection, openPr]);
   // While the page has lost the server nothing alerts; what the list held before stays "seen", so it doesn't alert again on return.
   const { toasts, drop } = useAlerts(waiting, town !== null && lostAt === null, muted, openWaiting);
-  return { selection, setSelection, onClose, lead, house, selected, openSession, waiting, fog, muted, toggleMute, openWaiting, openPr, pr, closePr, current, toasts, drop };
+  return { selection, setSelection, onClose, lead, house, selected, openSession, waiting, fog, now, muted, toggleMute, openWaiting, openPr, pr, closePr, current, toasts, drop };
 }
 
 /**
@@ -686,7 +691,7 @@ function hashedHouse(): string {
 /** The town page: one house per project, its leads and their subagents, with a list of everyone waiting for you. */
 export function App() {
   const [town, restarted, lostAt] = useTown();
-  const { selection, setSelection, onClose, lead, house, selected, openSession, waiting, fog, muted, toggleMute, openWaiting, pr, closePr, current, toasts, drop } = useSelection(town, lostAt);
+  const { selection, setSelection, onClose, lead, house, selected, openSession, waiting, fog, now, muted, toggleMute, openWaiting, pr, closePr, current, toasts, drop } = useSelection(town, lostAt);
   const [sheet, showSheet, hideSheet] = usePageKeys(town, waiting, current, openWaiting, "/");
   // The selection when each New session was clicked; a session opens itself only if that is still it (or nothing is open).
   const selectionNow = useRef(selection);
@@ -775,6 +780,7 @@ export function App() {
           <HouseCard
             key={house.cwd}
             house={house}
+            now={now}
             cards={town.cards}
             steward={stewardOf(town)}
             open={selection}
@@ -785,7 +791,7 @@ export function App() {
         ))}
       </main>
       {lead && house && selected && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} house={house} cards={town?.cards ?? []} steward={stewardOf(town)} review={selection?.review} onClose={onClose} />}
-      {pr && <PrPane key={`${pr.house.cwd}#${pr.parcel.number}`} house={pr.house} parcel={pr.parcel} onReview={(id, review) => setSelection({ lead: id, id, review })} onClose={closePr} />}
+      {pr && <PrPane key={`${pr.house.cwd}#${pr.parcel.number}`} house={pr.house} parcel={pr.parcel} now={now} onReview={(id, review) => setSelection({ lead: id, id, review })} onClose={closePr} />}
       {sheet && <KeySheet onClose={hideSheet} />}
       <Toasts
         toasts={toasts}

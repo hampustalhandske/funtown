@@ -85,7 +85,7 @@ export function openJournal(path: string, logError: LogError): Journal {
 }
 
 /** The morning view of the letter and stuck `entries` at or after `since`, grouped by the house of each entry's cwd given the added `projects`. */
-export function morning(entries: JournalEntry[], since: number, projects: readonly string[] = []): Morning {
+export function morning(entries: JournalEntry[], since: number, projects: readonly string[]): Morning {
   const houses = new Map<string, Morning["projects"][number]>();
   for (const e of entries.filter((x): x is Extract<JournalEntry, { kind: "letter" | "stuck" }> => (x.kind === "letter" || x.kind === "stuck") && x.at >= since).sort((a, b) => b.at - a.at)) {
     const cwd = houseOf(e.cwd, projects);

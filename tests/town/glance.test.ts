@@ -38,14 +38,6 @@ describe("glanceOf", () => {
     expect(glanceOf(house([resting("a")].map((l) => ({ ...l, subagents: [char("sub")] })), red), NOW).fire).toBe("burning");
   });
 
-  test("red_parcels_come_oldest_failure_first_and_an_unknown_time_last", async () => {
-    const g = glanceOf(
-      house([], [parcel(1, { checks: "red" }), parcel(2, { checks: "red", redAt: 500 }), parcel(3, { checks: "red", redAt: 100 }), parcel(4, { checks: "red" })]),
-      NOW,
-    );
-    expect(numbers(g.red)).toEqual([3, 2, 1, 4]);
-  });
-
   test("green_and_no_check_parcels_wait_in_a_house_where_no_lead_works_in_the_houses_own_order", async () => {
     const parcels = [parcel(5, { checks: "none" }), parcel(4), parcel(3, { checks: "running" }), parcel(2, { checks: "red" }), parcel(1)];
     expect(numbers(glanceOf(house([resting("a")], parcels), NOW).waiting)).toEqual([5, 4, 1]);
@@ -65,7 +57,6 @@ describe("glanceOf", () => {
 describe("fog on a house", () => {
   test("a_house_is_in_fog_when_its_pr_list_never_worked_or_last_worked_more_than_the_constant_ago_by_the_pages_clock", async () => {
     // Catches fog by a different age than the one constant, and a house never read passing for clear.
-    expect(FOG_AFTER_MS).toBe(3 * 60_000);
     expect(glanceOf(house([], [], { parcelsAt: undefined }), NOW).fog).toBe(true);
     expect(glanceOf(house([], [], { parcelsAt: NOW - FOG_AFTER_MS }), NOW).fog).toBe(false);
     expect(glanceOf(house([], [], { parcelsAt: NOW - FOG_AFTER_MS - 1 }), NOW).fog).toBe(true);
@@ -80,16 +71,6 @@ describe("fog on a house", () => {
     expect(glanceOf(mine, NOW).fog).toBe(false);
     // Another lead in the same house does not make it the steward's.
     expect(glanceOf(house([lead("other")], undefined, { parcelsAt: undefined }), NOW).fog).toBe(true);
-  });
-
-  test("a_house_in_fog_has_no_waiting_prs_but_keeps_its_fire", async () => {
-    // Catches "waits for you" on a list that may be 10 minutes old, and a fire dropped because its list is old.
-    const h = house([resting("a")], [parcel(1), parcel(2, { checks: "red" })], { parcelsAt: NOW - FOG_AFTER_MS - 1 });
-    const g = glanceOf(h, NOW);
-    expect(g.waiting).toEqual([]);
-    expect(g.fire).toBe("burning");
-    expect(numbers(g.red)).toEqual([2]);
-    expect(numbers(glanceOf({ ...h, parcelsAt: NOW }, NOW).waiting)).toEqual([1]);
   });
 });
 

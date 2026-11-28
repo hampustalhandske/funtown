@@ -1,10 +1,11 @@
 import { execFileAsync } from "./agents.ts";
+import type { Parcel } from "./types.ts";
 
 /** What Funtown reads from a project's `.claude/phase.json`. */
 export type PhaseFile = { phase: string; note?: string; steps?: string[]; goal?: string; spec?: string; tags: Map<string, string[]> };
 
-/** The state of a PR's checks: any failed (red), else any running, else all settled (green); none when it has no checks. */
-export type Checks = "red" | "running" | "green" | "none";
+/** The state of a PR's checks (see `Parcel`). */
+export type Checks = Parcel["checks"];
 
 /** An open pull request as `gh pr list` gives it; `redAt` is when its earliest failed check finished (ms), when one carries a time. */
 export type Pr = { number: number; title: string; url: string; draft: boolean; head: string; checks: Checks; redAt?: number };
@@ -69,12 +70,12 @@ export function parsePhase(text: string): PhaseFile {
 }
 
 /**
- * The three things gh says on stderr, found on gh 2.103.3, when a folder has no GitHub repo: not a git
- * repository, no remotes, and no remote that points to a GitHub host. They are matched by text, so a
- * gh that words one differently puts that house in fog, never on fire.
+ * What gh says on stderr when a folder has no GitHub repo: not a git repository, no remotes, and no remote
+ * that points to a GitHub host. Matched by text, so a changed text makes that house fog, never fire. The
+ * first is gh's full text, because git's "not a git repository: <path>" also names a broken worktree.
  */
 const NO_GITHUB = [
-  "not a git repository",
+  "not a git repository (or any of the parent directories)",
   "no git remotes found",
   "none of the git remotes configured for this repository point to a known GitHub host",
 ];

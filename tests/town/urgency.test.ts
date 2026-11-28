@@ -129,7 +129,7 @@ describe("urgencyList", () => {
     const red = (n: number, redAt?: number) => parcel(n, { checks: "red", redAt });
     const t = town([
       withParcels(house("h1", []), [red(1)]),
-      withParcels(house("h2", []), [red(5, 500), red(6, 50)]),
+      withParcels(house("h2", []), [red(7), red(5, 500), red(6, 50)]),
       withParcels(house("h3", [lead("fixer", { kind: "background" })]), [red(3, 20)]),
       withParcels(house("h4", []), [red(4, 300)]),
     ]);

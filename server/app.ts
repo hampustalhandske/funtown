@@ -15,7 +15,7 @@ import { morning, openJournal } from "./journal.ts";
 import { createSteward } from "./steward.ts";
 import { listPrs, parsePhase, type PhaseFile, type Pr } from "./workflow.ts";
 import { AVATAR_ID, readAvatar, writeAvatar } from "./avatar.ts";
-import { houseOf, projectFolder, readProjects, writeProjects } from "./projects.ts";
+import { houseOf, isInside, projectFolder, readProjects, writeProjects } from "./projects.ts";
 
 const DEFAULT_DIST = fileURLToPath(new URL("../web/dist/", import.meta.url));
 const DEFAULT_STEWARD_PROMPT = fileURLToPath(new URL("./steward.md", import.meta.url));
@@ -365,7 +365,7 @@ export async function startServer(opts: {
    */
   const seen = (s: Listed) => (s.id !== undefined && s.id === steward?.shortId()) || inProject(s.cwd);
   /** True when `cwd` is an added project or a folder inside one, or when there is no projects file. */
-  const inProject = (cwd: string) => !opts.projects || projects.some((p) => cwd === p || cwd.startsWith(`${p}/`));
+  const inProject = (cwd: string) => !opts.projects || projects.some((p) => isInside(cwd, p));
 
   /** The folders where a session, a run or a shell may start: the added projects, the listed sessions' own cwds and the folders where a shell runs. */
   const startCwds = () => [...new Set([...projects, ...town.cwds().values(), ...terminals.shells()])];

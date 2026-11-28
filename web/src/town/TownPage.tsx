@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Character, House, Town } from "../../../server/types.ts";
-import { AddProject, houseState, Panel, post, PrPane, removeProject, stewardOf, usePageKeys, useSelection, useTown } from "../App.tsx";
+import { AddProject, checkWords, houseState, Panel, post, PrPane, removeProject, stewardOf, usePageKeys, useSelection, useTown } from "../App.tsx";
 import { fogLabel, glanceOf } from "../glance.ts";
 import { KeySheet } from "../KeySheet.tsx";
 import { useKey, useLayer } from "../keys.ts";
 import { MorningButton } from "../Morning.tsx";
 import { SwitchButton, type OpenSession } from "../Switch.tsx";
-import { needOf, NotifyButton, Toasts, useNow, type Entry, type Lettered } from "../needs.tsx";
+import { needOf, NotifyButton, Toasts, type Entry, type Lettered } from "../needs.tsx";
 import { boardOf, interior, type Board, type InPlaced } from "./interior.ts";
 import { AVATARS, avatarFor } from "./kit/avatars.ts";
 import { keyOf, layout, type Placed } from "./layout.ts";
@@ -52,26 +52,30 @@ function houseLabel(house: House, now: number): string[] {
   return [...houseState(house, glance), ...(waiting.length === 0 ? [] : [`${waiting.length} ${waiting.length === 1 ? "PR" : "PRs"} waiting`])];
 }
 
-/**
- * What a placed thing is called: `name` for its hover plate; `label` (name, project, role, stage) for the town list.
- * `now` is the page's clock, which a house's state words are judged by.
- */
-function words(p: Placed | InPlaced, index: TownIndex, now = Date.now()): { name: string; label: string } {
-  if (p.kind === "observer") return { name: "You", label: "you, observer" };
+/** What a placed thing is called, for its hover plate. */
+function nameOf(p: Placed | InPlaced, index: TownIndex): string {
+  if (p.kind === "observer") return "You";
+  if (p.kind === "building") return index.houses.get(p.cwd)?.project ?? p.cwd;
+  if (p.kind === "parcel") return `#${p.number} ${index.houses.get(p.cwd)?.parcels?.find((x) => x.number === p.number)?.title ?? ""}`.trim();
+  return index.characters.get(p.id)?.character.name ?? p.id;
+}
+
+/** A placed thing's label for the town list: name, project, role, stage (a PR: review and checks). `now` is the page's clock, which a house's state words are judged by. */
+function labelOf(p: Placed | InPlaced, index: TownIndex, now: number): string {
+  if (p.kind === "observer") return "you, observer";
   if (p.kind === "building" || p.kind === "parcel") {
     const house = index.houses.get(p.cwd);
     const project = house?.project ?? p.cwd;
-    if (p.kind === "building") return { name: project, label: [project, "house", ...(house ? houseLabel(house, now) : [])].join(", ") };
+    if (p.kind === "building") return [project, "house", ...(house ? houseLabel(house, now) : [])].join(", ");
     const parcel = house?.parcels?.find((x) => x.number === p.number);
-    const name = `#${p.number} ${parcel?.title ?? ""}`.trim();
     const state = parcel?.review ? REVIEW_WORDS[parcel.review.state] : parcel?.draft ? "draft" : "open";
-    return { name, label: `${name}, ${project}, pull request, ${state}` };
+    return [nameOf(p, index), project, "pull request", state, ...(parcel ? [checkWords(parcel, now)] : [])].join(", ");
   }
   const found = index.characters.get(p.id);
-  if (!found) return { name: p.id, label: p.id };
+  if (!found) return p.id;
   const { character, house } = found;
   const role = p.kind === "steward" ? "steward" : p.kind === "lead" ? "lead" : (character.role ?? "subagent");
-  return { name: character.name, label: `${character.name}, ${house.project}, ${role}, ${stageWords(character)}` };
+  return `${character.name}, ${house.project}, ${role}, ${stageWords(character)}`;
 }
 
 /** The whiteboard's lines as the hidden list shows them: project, phase, note, then each step with its state. */
@@ -159,8 +163,7 @@ function Settings({ town, muted, onMute, open, onClose }: SettingsProps) {
 /** The town page: the village in one canvas, a row of icon buttons, panels on demand, and a hidden list for screen readers. */
 export function TownPage() {
   const [town, restarted, lostAt] = useTown();
-  const { selection, setSelection, onClose, lead, house, selected, openSession, waiting, fog, muted, toggleMute, openWaiting, openPr, pr, closePr, current, toasts, drop } = useSelection(town, lostAt);
-  const now = useNow(5000);
+  const { selection, setSelection, onClose, lead, house, selected, openSession, waiting, fog, now, muted, toggleMute, openWaiting, openPr, pr, closePr, current, toasts, drop } = useSelection(town, lostAt);
   const [settings, setSettings] = useState(false);
   const closeSettings = useCallback(() => setSettings(false), []);
   const placed = useMemo(() => (town ? layout(town, waiting) : []), [town]);
@@ -175,7 +178,7 @@ export function TownPage() {
     setMarked(w.cwd);
     setLast({ to: w.cwd });
   }, [openWaiting]);
-  const name = useCallback((p: Placed | InPlaced) => words(p, index).name, [index]);
+  const name = useCallback((p: Placed | InPlaced) => nameOf(p, index), [index]);
 
   // The classroom being shown: the cwd in the page hash, kept in step with Back, reload and pasted links.
   const [inCwd, setInCwd] = useState(hashedClassroom);
@@ -264,14 +267,14 @@ export function TownPage() {
           ? [
               ...inside.placed.map((p) => (
                 <li key={keyOf(p)}>
-                  {p.kind === "observer" ? <span>{words(p, index).label}</span> : <button type="button" onClick={() => pick(p)}>{words(p, index).label}</button>}
+                  {p.kind === "observer" ? <span>{labelOf(p, index, now)}</span> : <button type="button" onClick={() => pick(p)}>{labelOf(p, index, now)}</button>}
                 </li>
               )),
               ...boardLines(inside.board).map((line, i) => <li key={`board:${i}`}><span>{line}</span></li>),
             ]
           : placed.map((p) => (
               <li key={keyOf(p)}>
-                <button type="button" onClick={() => pick(p)}>{words(p, index, now).label}</button>
+                <button type="button" onClick={() => pick(p)}>{labelOf(p, index, now)}</button>
               </li>
             ))}
       </ul>
@@ -298,7 +301,7 @@ export function TownPage() {
       </nav>
       {sheet && <KeySheet onClose={hideSheet} />}
       {settings && <Settings town={town} muted={muted} onMute={toggleMute} open={openSession} onClose={closeSettings} />}
-      {pr && <PrPane key={`${pr.house.cwd}#${pr.parcel.number}`} house={pr.house} parcel={pr.parcel} onReview={(id, review) => setSelection({ lead: id, id, review })} onClose={closePr} />}
+      {pr && <PrPane key={`${pr.house.cwd}#${pr.parcel.number}`} house={pr.house} parcel={pr.parcel} now={now} onReview={(id, review) => setSelection({ lead: id, id, review })} onClose={closePr} />}
       {shown && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} house={house} cards={town?.cards ?? []} steward={stewardOf(town)} review={selection?.review} onClose={onClose} />}
       <Toasts
         toasts={toasts}

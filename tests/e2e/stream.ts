@@ -1,11 +1,19 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { E2E_URL } from "../fake-claude.ts";
 
-const sse = (t: unknown) => `retry: 50\nevent: state\ndata: ${JSON.stringify(t)}\n\n`;
+/** `state` as the server sends it: every lead carries its own folder, which a stub that gives none has in its house's. */
+function served(state: unknown): unknown {
+  const town = state as { houses?: { cwd: string; leads?: object[] }[] };
+  if (!Array.isArray(town?.houses)) return state;
+  return { ...town, houses: town.houses.map((h) => ({ ...h, leads: h.leads?.map((l) => ({ cwd: h.cwd, ...l })) })) };
+}
+
+const sse = (t: unknown) => `retry: 50\nevent: state\ndata: ${JSON.stringify(served(t))}\n\n`;
 
 /**
  * Serves `initial` as the page's Town stream (re-sent on each quick reconnect); `send` sets the state the next reconnect
  * gets, and brings the stream back after `lose`. `lose` makes every connection attempt fail, as a stopped server does.
+ * Each lead without a `cwd` gets its house's, as the server always sends one.
  */
 export async function stubStream(page: Page, initial: unknown) {
   let current = initial;
@@ -34,6 +42,14 @@ export const waiting = (id: string, name: string, since: number, over: Record<st
   lead({ id, name, stage: "needs_you", needs: "waiting", since, ...over });
 /** A house of the project `project` in `/work/<project>`. */
 export const house = (project: string, leads: unknown[]) => ({ project, cwd: `/work/${project}`, leads });
+/** The GitHub link of PR `number` in the stubbed towns. */
+export const prUrl = (number: number) => `https://example.test/pull/${number}`;
+/** An open, green PR `number` in the stream's shape, with `over` laid on top. */
+export const pr = (number: number, over: Record<string, unknown> = {}) => ({ number, title: `PR ${number}`, url: prUrl(number), draft: false, checks: "green", ...over });
+/** A PR whose checks failed `minutesAgo` minutes ago, titled "Broken build". */
+export const red = (number: number, minutesAgo = 12) => pr(number, { title: "Broken build", checks: "red", redAt: Date.now() - minutesAgo * 60_000 });
+/** A house in `/work/<project>` with `parcels`, read just now unless `over` says otherwise (a house with no `parcelsAt` is under fog). */
+export const withPrs = (project: string, leads: unknown[], parcels: unknown[], over: Record<string, unknown> = {}) => ({ ...house(project, leads), parcels, parcelsAt: Date.now(), ...over });
 /**
  * A Town state with `houses` and `cards` and no Claude version problems, its session list always fresh: `listedAt` is
  * far ahead, so the page never judges the stubbed list old, however long a test runs or whatever its clock says.

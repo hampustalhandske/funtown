@@ -122,11 +122,12 @@ test("each_parcel_row_says_its_checks_in_words_failed_with_how_long_ago_running_
   ];
   await stubStream(page, { ...town, houses: [{ ...town.houses[0], parcels }, town.houses[1]] });
   await page.reload();
-  await expect(parcel(page, 21)).toContainText("checks failed 12m ago");
-  await expect(parcel(page, 22)).toContainText(/checks failed$/);
-  await expect(parcel(page, 23)).toContainText("checks running");
-  await expect(parcel(page, 24)).toContainText("checks passed");
-  await expect(parcel(page, 25)).toContainText("no checks");
+  // The title and the words keep a gap: toContainText reads the text as it is, so "Red sincechecks failed" would not match.
+  await expect(parcel(page, 21)).toContainText("Red since checks failed 12m ago");
+  await expect(parcel(page, 22)).toContainText(/Red unknown time checks failed$/);
+  await expect(parcel(page, 23)).toContainText("Still going checks running");
+  await expect(parcel(page, 24)).toContainText("All clear checks passed");
+  await expect(parcel(page, 25)).toContainText("Nothing ran no checks");
   await expect(parcel(page, 25)).not.toContainText("passed");
 });
 
@@ -137,7 +138,7 @@ test("only_an_idle_parcel_has_an_ask_for_review_button_and_it_asks_only_when_cli
     asked.push({ body: req.postDataJSON(), token: req.headers()["x-funtown-token"], origin: req.headers()["origin"] });
     return r.fulfill({ status: 204 });
   });
-  const button = (n: number) => parcel(page, n).getByRole("button", { name: "Ask for review" });
+  const button = (n: number) => parcel(page, n).getByRole("button", { name: "Ask steward to review" });
   await expect(button(8)).toBeVisible();
   for (const n of [9, 10, 11, 12]) await expect(button(n)).toHaveCount(0);
   await expect(parcel(page, 8)).not.toContainText("draft");

@@ -25,22 +25,18 @@ export function writeProjects(path: string, list: readonly string[]): void {
   writeAtomic(path, `${JSON.stringify(list, null, 2)}\n`);
 }
 
+/** Whether `cwd` is `project` or inside it (`cwd` starts with it plus "/"), so `<p>-other` is not inside `<p>`. */
+export const isInside = (cwd: string, project: string): boolean => cwd === project || cwd.startsWith(`${project}/`);
+
 /**
  * The folder of the house that a session, shell or journal entry in `cwd` belongs to: the
- * deepest of `projects` that is `cwd` or holds it (`cwd` starts with it plus "/"), else `cwd`
- * itself (the steward's folder, or any folder when there is no projects file). Takes real
- * absolute paths with no trailing slash, as the projects file stores them; reads no files.
+ * deepest of `projects` that is `cwd` or holds it, else `cwd` itself (the steward's folder, or
+ * any folder when there is no projects file). Takes real absolute paths with no trailing slash,
+ * as the projects file stores them; reads no files.
  */
 export function houseOf(cwd: string, projects: readonly string[]): string {
-  let house = cwd;
-  let depth = -1;
-  for (const p of projects) {
-    if ((cwd === p || cwd.startsWith(`${p}/`)) && p.length > depth) {
-      house = p;
-      depth = p.length;
-    }
-  }
-  return house;
+  // Two holders of one folder differ in length, so the longest is the deepest.
+  return projects.filter((p) => isInside(cwd, p)).sort((a, b) => b.length - a.length)[0] ?? cwd;
 }
 
 /**

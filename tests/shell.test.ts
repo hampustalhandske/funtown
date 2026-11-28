@@ -172,6 +172,21 @@ it("a_shell_in_a_subfolder_of_a_project_is_filed_under_the_projects_house_and_ma
   expect((await townWhere(s.url, () => true)).houses.map((h) => h.cwd)).toEqual([s.project]);
 });
 
+it("without_a_projects_file_a_folder_with_a_running_shell_stays_a_house_with_no_leads_after_its_last_session_ends_until_the_shell_ends", async () => {
+  // Breaks if a shell stops holding up its own folder's house where no projects file makes every folder its own house.
+  const folder = realDir();
+  const s = await start();
+  s.fake.list([listed("s1", folder)]);
+  await townWhere(s.url, (t) => houseAt(t, folder)?.leads.length === 1);
+  const c = await connect({ ...s, token: await tokenOf(s.url) }, folder);
+  await until(() => c.out().includes("shell args:"), SLOW);
+  s.fake.list([]);
+  const town = await townWhere(s.url, (t) => houseAt(t, folder)?.leads.length === 0);
+  expect(houseAt(town, folder)!.added).toBeFalsy();
+  expect((await postPage(s, "/shells/close", { cwd: folder })).status).toBe(204);
+  await townWhere(s.url, (t) => houseAt(t, folder) === undefined);
+});
+
 it("a_shell_that_exits_non_zero_before_any_output_is_logged_with_its_folder_and_code", async () => {
   process.env.FAKE_SHELL_EXIT = "3";
   try {

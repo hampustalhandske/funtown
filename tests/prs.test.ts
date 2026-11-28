@@ -105,6 +105,21 @@ describe("a house with no GitHub repo, and when its PR list last worked", () => 
     expect(s.prLines()).toHaveLength(1);
   });
 
+  it("git_saying_a_worktree_is_broken_is_a_failure_not_no_github_so_the_list_stays_and_one_line_is_logged", async () => {
+    // Catches "not a git repository" matched alone: a project whose main repo moved would look calm with no PRs instead of foggy.
+    const cwd = realDir();
+    const s = await withProject({ cwd, prs: [pr(7)] });
+    await townWhere(s.url, (x) => houseAt(x, cwd)?.parcelsAt !== undefined);
+    s.gh.prsFail(cwd, "failed to run git: fatal: not a git repository: /x/.git/worktrees/y");
+    await until(() => s.prLines().length === 1);
+    const kept = houseAt(await townWhere(s.url, () => true), cwd)!.parcelsAt!;
+    await sleep(400);
+    const t = await townWhere(s.url, () => true);
+    expect(houseAt(t, cwd)!.parcels!.map((p) => p.number)).toEqual([7]);
+    expect(houseAt(t, cwd)!.parcelsAt).toBe(kept);
+    expect(s.prLines()).toHaveLength(1);
+  });
+
   it("a_house_gh_has_never_answered_for_has_no_parcelsAt", async () => {
     const cwd = realDir();
     const s = await withProject({ cwd, prs: null });

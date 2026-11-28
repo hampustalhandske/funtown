@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Card, Character, House, Parcel, Town } from "../../server/types.ts";
-import { glanceOf } from "./glance.ts";
+import { FIRE_UNDER_FOG, glanceOf, WAITS } from "./glance.ts";
 import { useKey } from "./keys.ts";
 
 /** The urgency tier of an entry: 1 asks, 2 stuck, 3 burning houses, 4 quiet. Tiers 1 to 3 are loud; tier 4 never chimes, toasts or notifies. */
@@ -19,7 +19,7 @@ export type PrEntry = { kind: "pr"; key: string; project: string; cwd: string; n
 /** An entry of the urgency list: a character or a PR of a house. */
 export type Entry = Waiting | PrEntry;
 
-/** The character entries of `list`: what the castle queue, Morning and the letter key read. */
+/** The character entries of `list`: what the castle queue and the Morning button read. Space walks every entry. */
 export const characterEntries = (list: Entry[]): Waiting[] => list.filter((e): e is Waiting => e.kind === "character");
 
 const MUTE_KEY = "funtown-muted";
@@ -36,15 +36,16 @@ const rateLimited = (c: Character) => c.needs === "stuck" && c.reason === "rate 
 /** The tier of a needs_you character: a turn ended or a rate limit is quiet (4), other stuck is 2, everything else asks (1). */
 const tierOf = (c: Character): Tier => (c.needs === "turn ended" || rateLimited(c) ? 4 : c.needs === "stuck" ? 2 : 1);
 
-/** The place of a fire under fog inside the quiet tier: before everything else, rate limits (0) included. */
-const FOG_FIRE_RANK = -1;
+/**
+ * The place of each kind of entry inside its tier, lower first. Tier 1 puts a card before another ask; tier 4 puts
+ * a fire under fog, then a rate limit, then a PR with the Queen's review ready, then another waiting PR, then a
+ * resting lead. Tiers 2 and 3 have one place each.
+ */
+const RANK = { card: 0, ask: 1, stuck: 0, burning: 0, fogFire: 0, rateLimit: 1, readyReview: 2, waitingPr: 3, resting: 4 } as const;
 
-/** The place of a PR waiting for the user inside the quiet tier: after the rate limits (0), before the resting leads (3). */
-const WAITING_PR_RANK = 1;
-
-/** The place inside a tier (lower first): asks put cards first; the quiet tier puts a rate limit, then waiting PRs, before a resting lead. */
+/** The place inside its tier of a needs_you character. */
 const rankOf = (c: Character, tier: Tier): number =>
-  tier === 1 ? (c.needs !== undefined && c.needs in CARD_KINDS ? 0 : 1) : tier === 4 ? (rateLimited(c) ? 0 : 3) : 0;
+  tier === 1 ? (c.needs !== undefined && c.needs in CARD_KINDS ? RANK.card : RANK.ask) : tier === 4 ? (rateLimited(c) ? RANK.rateLimit : RANK.resting) : RANK.stuck;
 
 /** Every character (lead or subagent) of `town`, in the town's order, with its house and its lead's id. */
 function* characters(town: Town | null): Generator<{ c: Character; house: House; lead: string }> {
@@ -52,12 +53,8 @@ function* characters(town: Town | null): Generator<{ c: Character; house: House;
 }
 
 /**
- * Everything of `town` that needs the user, as one list in strict tiers (ADR 0006): 1 asks (cards, then other
- * asks), 2 stuck, 3 burning houses not under fog (one entry each, for its oldest failed PR), 4 quiet (a fire under
- * fog, which may be out of date; stuck on a rate limit, then PRs waiting for the user, those with a ready review first, then resting leads, whose turn ended). Oldest first
- * within each tier (for a burning house, the time its check failed; unknown last). Handled fires and working
- * characters are not listed. `now` is the page's clock. The castle queue, the plain list, the next key and the
- * alerts all read it.
+ * Everything of `town` that needs the user, in strict tiers (ADR 0006): 1 asks, 2 stuck, 3 burning houses, 4 quiet
+ * (a fire under fog, a rate limit, waiting PRs, resting leads), oldest first within a tier. `now` is the page's clock.
  */
 export function urgencyList(town: Town | null, now: number): Entry[] {
   const list: { w: Entry; rank: number }[] = [];
@@ -76,12 +73,12 @@ export function urgencyList(town: Town | null, now: number): Entry[] {
       const oldest = glance.red[0];
       list.push(
         glance.fog
-          ? { w: entry(oldest, 4, "failed when last read", oldest.redAt ?? Infinity), rank: FOG_FIRE_RANK }
-          : { w: entry(oldest, 3, "burning: checks failed", oldest.redAt ?? Infinity), rank: 0 },
+          ? { w: entry(oldest, 4, FIRE_UNDER_FOG, oldest.redAt ?? Infinity), rank: RANK.fogFire }
+          : { w: entry(oldest, 3, "burning: checks failed", oldest.redAt ?? Infinity), rank: RANK.burning },
       );
     }
     // Among the waiting PRs a ready review goes first; the rest keep house order and the house's PR order.
-    for (const p of glance.waiting) list.push({ w: entry(p, 4, "waits for you", Infinity), rank: WAITING_PR_RANK + (p.review?.state === "ready" ? 0 : 1) });
+    for (const p of glance.waiting) list.push({ w: entry(p, 4, WAITS, Infinity), rank: p.review?.state === "ready" ? RANK.readyReview : RANK.waitingPr });
   }
   // `since` is Infinity when unknown: two unknowns tie (Infinity - Infinity is NaN) and keep the town's order.
   const older = (a: number, b: number) => (a === b ? 0 : a - b);
@@ -107,14 +104,17 @@ export function useLetterKey(town: Town | null, current: string | null, open: (e
   });
 }
 
-/** Date.now(), refreshed every `everyMs`, so a waiting time shown with it stays about right. */
-export function useNow(everyMs: number): number {
-  const [now, setNow] = useState(Date.now());
+/**
+ * Date.now(), refreshed every `everyMs`, so a waiting time shown with it stays about right. A new `frame` (the town
+ * as it arrives) takes the time afresh in the same render, so a frame is judged by the clock of its arrival.
+ */
+export function useNow(everyMs: number, frame?: unknown): number {
+  const [tick, setTick] = useState(Date.now());
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), everyMs);
+    const timer = setInterval(() => setTick(Date.now()), everyMs);
     return () => clearInterval(timer);
   }, [everyMs]);
-  return now;
+  return useMemo(() => Date.now(), [tick, frame]);
 }
 
 /** "3m" style wait text for a character waiting since `since`. */
@@ -215,9 +215,13 @@ export function useAlerts(waiting: Entry[], loaded: boolean, muted: boolean, ope
   return { toasts, drop: (w: Entry) => setToasts((all) => all.filter((t) => t !== w)) };
 }
 
-/** What a toast or notification says for `w`: "<name> needs you" over "<project>: <need>", or "<project> is burning: #<n> checks failed" over the PR's title. */
+/**
+ * What a toast or notification says for `w`: "<name> needs you" over "<project>: <need>"; for a PR, over its title,
+ * "<project> is burning: #<n> checks failed" (tier 3) or "<project>: #<n> <its words>" (a quiet entry).
+ */
 function wordsOf(w: Entry): { title: string; body: string } {
-  return w.kind === "pr" ? { title: `${w.project} is burning: #${w.number} checks failed`, body: w.title } : { title: `${w.name} needs you`, body: `${w.project}: ${w.need}` };
+  if (w.kind === "character") return { title: `${w.name} needs you`, body: `${w.project}: ${w.need}` };
+  return { title: w.tier === 3 ? `${w.project} is burning: #${w.number} checks failed` : `${w.project}: #${w.number} ${w.need}`, body: w.title };
 }
 
 /** The "Needs you" list: one row per entry, in urgency order; quiet rows (tier 4) are drawn quieter. A PR row has the project, "#<n>" and its words. */

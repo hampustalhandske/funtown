@@ -141,7 +141,7 @@ export class TownState {
   private readonly claude: Town["claude"];
   private readonly unlistedMs: number;
   private readonly started = Date.now();
-  // when the last good session list was made the sessions (Date.now()); undefined before the first
+  // when `claude agents --json` last gave a good session list (Date.now()); undefined before the first
   private listedAt: number | undefined;
 
   /**

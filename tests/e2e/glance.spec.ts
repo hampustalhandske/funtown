@@ -1,35 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
-import { house, lead, stubStream, town, waiting } from "./stream.ts";
+import { alertStubs, house, lead, pr, red, stubStream, town, waiting, withPrs } from "./stream.ts";
 
 const NOW = Date.now();
 
-/** Counts what the page asks of Web Audio and of the Notification API (granted). */
-const stubs = `
-  window.__starts = 0; window.__notes = [];
-  const param = () => ({ value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, setTargetAtTime() {}, cancelScheduledValues() {} });
-  class AudioContext {
-    constructor() { this.currentTime = 0; this.destination = {}; this.state = "running"; }
-    resume() { return Promise.resolve(); }
-    createGain() { return { gain: param(), connect: (x) => x, disconnect() {} }; }
-    createOscillator() { return { frequency: param(), detune: param(), type: "sine", connect: (x) => x, disconnect() {}, start() { window.__starts++; }, stop() {}, addEventListener() {} }; }
-  }
-  window.AudioContext = AudioContext; window.webkitAudioContext = AudioContext;
-  class Notification {
-    constructor(title, opts = {}) { this.title = title; this.body = opts.body; window.__notes.push(this); }
-    close() {}
-    static requestPermission() { return Promise.resolve("granted"); }
-  }
-  Notification.permission = "granted";
-  window.Notification = Notification;
-`;
-
-const pr = (number: number, over: Record<string, unknown> = {}) => ({ number, title: `PR ${number}`, url: `https://example.test/${number}`, draft: false, checks: "green", ...over });
-/** A house in `/work/<project>` with `parcels`, whose PR list was read just now. */
-const withPrs = (project: string, leads: unknown[], parcels: unknown[]) => ({ ...house(project, leads), parcels, parcelsAt: NOW });
-const red = (number: number, minutesAgo = 12) => pr(number, { checks: "red", redAt: NOW - minutesAgo * 60_000 });
-
 async function open(page: Page, initial: unknown) {
-  await page.addInitScript(stubs);
+  await page.addInitScript(alertStubs);
   const stream = await stubStream(page, initial);
   await page.goto("/work.html");
   await expect(page.locator("section[aria-label]").first()).toBeVisible();
@@ -112,7 +87,7 @@ test("a_house_that_starts_burning_toasts_sounds_and_notifies_and_a_pr_that_start
   const toast = page.getByRole("status").getByText("alpha is burning: #12 checks failed");
   await expect(toast).toBeVisible();
   await expect.poll(() => sounds(page)).toBeGreaterThan(0);
-  expect(await popups(page)).toEqual([{ title: "alpha is burning: #12 checks failed", body: "PR 12" }]);
+  expect(await popups(page)).toEqual([{ title: "alpha is burning: #12 checks failed", body: "Broken build" }]);
   await expect(page.getByRole("status")).not.toContainText("beta");
   await expect(rows(page).filter({ hasText: "waits for you" })).toHaveCount(1);
 });
@@ -162,4 +137,34 @@ test("a_fire_in_a_house_under_fog_is_the_first_quiet_entry_and_raises_no_toast_s
   expect(await sounds(page)).toBe(0);
   expect(await popups(page)).toEqual([]);
   await expect(page.getByRole("status")).not.toContainText("beta");
+});
+
+test("a_fire_in_a_house_under_fog_says_failed_when_last_read_beside_its_name_and_never_burning", async ({ page }) => {
+  // Catches the plain list's badge showing a red "burning" for a fire Funtown can't be sure still burns.
+  await open(
+    page,
+    town([
+      foggy("zeta", [waiting("s1", "rester", NOW - 1000, { needs: "turn ended" })], [red(50)], NOW - 10 * 60_000),
+      withPrs("alpha", [waiting("s2", "rester-2", NOW - 1000, { needs: "turn ended" })], [red(12)]),
+    ]),
+  );
+  const heading = houseOf(page, "zeta").getByRole("heading");
+  await expect(heading).toContainText("failed when last read");
+  await expect(heading).toContainText(/PRs last read \d\d:\d\d/);
+  await expect(heading).not.toContainText("burning");
+  await expect(houseOf(page, "alpha").getByRole("heading")).toContainText("burning");
+  // Only a sure fire is red.
+  await expect(page.locator(".badge.burning")).toHaveCount(1);
+});
+
+test("a_frame_is_judged_by_the_clock_of_its_arrival_not_by_the_last_5_second_tick", async ({ page }) => {
+  // Catches a house that went 3 minutes without a PR read staying calm until the page's own 5 s clock next ticked.
+  const read = new Date(2026, 10, 28, 14, 0, 0).getTime();
+  await page.clock.install({ time: read });
+  await open(page, town([withPrs("alpha", [waiting("s1", "rester", read, { needs: "turn ended" })], [pr(1)], { parcelsAt: read })]));
+  await page.clock.pauseAt(new Date(2026, 10, 28, 14, 1, 0));
+  await expect(houseOf(page, "alpha").getByRole("heading")).not.toContainText("PRs");
+  // The clock jumps to 14:05 with no timer firing; the next frame the stream sends is judged by it.
+  await page.clock.setFixedTime(new Date(2026, 10, 28, 14, 5, 0));
+  await expect(houseOf(page, "alpha").getByRole("heading")).toContainText(`PRs last read ${clock(read)}`);
 });
