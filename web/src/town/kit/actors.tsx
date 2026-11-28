@@ -9,7 +9,8 @@ import { Figure } from "./parts.tsx";
 import type { Pose, Spot } from "../layout.ts";
 import { motion } from "../Pace.tsx";
 
-export const WALK_SPEED = 2.4;
+import { WALK_SPEED } from "../folk.ts";
+export { WALK_SPEED };
 
 // Plates go in their own element beside the React root: drei's default target changes once the canvas connects.
 export const plates = { current: document.getElementById("plates")! };

@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, type MutableRefObject, type ReactNode } fro
 import { useThree } from "@react-three/fiber";
 import { Vector3 } from "three";
 import { actOf } from "./acts.ts";
-import { Animal, FolkLayer, seedOf, useDeparted } from "./Folk.tsx";
-import { LANE, LEAVE_MS, type Drawn } from "./folk.ts";
-import { Mover, Pennant, Pick } from "./kit/actors.tsx";
+import { Animal, FolkLayer, seedOf } from "./Folk.tsx";
+import type { Drawn } from "./folk.ts";
+import { Pennant, Pick } from "./kit/actors.tsx";
 import { avatarFor } from "./kit/avatars.ts";
 import { Parcel } from "./kit/parts.tsx";
 import { CASTLE_HEIGHT, castleHill } from "./castle.ts";
@@ -25,6 +25,8 @@ import { Boats, MarkRing, Puffs } from "./VillageFx.tsx";
 import { Fires, Stars, Water, type Blaze, type Throw } from "./Fire.tsx";
 import { bucketOf, roofOf, splashOf } from "./fire.ts";
 import { doorPaths, treeParts, treesFor, village } from "./village.ts";
+import { drawnFlag, gaitOf, type Walks } from "./walk.ts";
+import { Walker } from "./Walker.tsx";
 import type { Door } from "./mark.ts";
 import type { Bounds } from "./stage.tsx";
 import type { TownIndex } from "./TownPage.tsx";
@@ -96,6 +98,9 @@ type Props = {
   /** The town's houses and characters, for the steward's stage and parcels' reviews. */
   index: TownIndex;
   placed: Placed[];
+  /** `placed` with the characters that just left still walking off (`useDeparted`), and the walks going (`useWalks`), both worked out by the page, which the hidden list reads too. */
+  drawn: Drawn[];
+  walks: Walks;
   /** The words a thing's hover plate shows. */
   name: (p: Placed) => string;
   onPick: (p: Placed) => void;
@@ -111,9 +116,8 @@ type Props = {
  * on them, a toy-harbour house per building with its chimney puffing while it is busy, and everyone placed by `layout`.
  * A marked house wears a white ring and shows its name plate, as a hovered thing does.
  */
-export function TownScene({ index, placed, name, onPick, hover, onHover, doors }: Props) {
+export function TownScene({ index, placed, drawn: shown, walks, name, onPick, hover, onHover, doors }: Props) {
   const light = useLight();
-  const shown = useDeparted(placed);
   const pick = (p: Placed, children: ReactNode, disabled = false) => (
     <Pick
       id={keyOf(p)}
@@ -141,7 +145,8 @@ export function TownScene({ index, placed, name, onPick, hover, onHover, doors }
   }, [shape]);
 
   // The line's still things, which change only when the line does: each flagged house's flag and the head's slip on the table.
-  const head = placed.find((p): p is Extract<Placed, { kind: "lead" | "hat" }> => (p.kind === "lead" || p.kind === "hat") && p.line?.place === 0);
+  // The head's slip lies on the table only once it has got there; on its way it still carries it.
+  const head = placed.find((p): p is Extract<Placed, { kind: "lead" | "hat" }> => (p.kind === "lead" || p.kind === "hat") && p.line?.place === 0 && gaitOf(walks, keyOf(p), Date.now()) === undefined);
   const note = placed.find((p): p is Extract<Placed, { kind: "queen" }> => p.kind === "queen")?.note ?? null;
   const flagged = buildings.filter((b) => b.flag);
   const lineKey = [...flagged.map((b) => `${b.at.x}|${b.at.z}|${b.facing}|${b.variant}`), head ? `${head.colour}|${note === head.id}` : ""].join("\n");
@@ -199,13 +204,16 @@ export function TownScene({ index, placed, name, onPick, hover, onHover, doors }
         );
       case "lead":
       case "hat": {
-        // A leaver walks its lane in the time it is drawn, out of the pointer's reach. One in the line holds its flag and slip.
+        // A leaver walks its lane in the time it is drawn, out of the pointer's reach. One in the line holds its flag and slip;
+        // a climber holds them still, and one going home furls its flag.
         const leaving = p.leftAt !== undefined;
-        const held = p.line && <HandFlag mode={p.line.flag} />;
+        const gait = gaitOf(walks, keyOf(p), Date.now());
+        const mode = drawnFlag(p, gait);
+        const held = mode === null ? undefined : <HandFlag mode={mode} />;
         return (
-          <Mover to={p.at} facing={p.facing} ground={groundHeight} speed={leaving ? LANE / (LEAVE_MS / 1000) : undefined}>
-            {pick(p, <Animal costume={p} colour={p.colour} act={actOf(p)} seed={seedOf(p.id)} note={note === p.id} held={held} />, leaving)}
-          </Mover>
+          <Walker at={p.at} facing={p.facing} walk={walks.get(keyOf(p))}>
+            {pick(p, <Animal costume={p} colour={p.colour} act={actOf(p, gait)} seed={seedOf(p.id)} note={note === p.id} held={held} />, leaving)}
+          </Walker>
         );
       }
     }

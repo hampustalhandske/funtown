@@ -2,6 +2,8 @@ import { hatFor, type HatKind } from "./kit/palette.ts";
 import { SQUARE } from "./island.ts";
 import { keyOf, type Placed, type Spot } from "./layout.ts";
 
+/** How fast the town's folk walk, in units a second. */
+export const WALK_SPEED = 2.4;
 /** How long a character that left the town is still drawn, walking off down the lane. */
 export const LEAVE_MS = 2500;
 /** How far down the lane a leaver walks before it is gone. */

@@ -9,9 +9,12 @@ import { SwitchButton, type OpenSession } from "../Switch.tsx";
 import { needOf, NotifyButton, Toasts, type Entry, type Lettered } from "../needs.tsx";
 import { boardOf, interior, type Board, type InPlaced } from "./interior.ts";
 import { AVATARS, avatarFor } from "./kit/avatars.ts";
+import { useDeparted } from "./Folk.tsx";
 import { keyOf, layout, type Placed } from "./layout.ts";
 import type { InLine } from "./line.ts";
 import { nextHouse, type Direction, type Door, type Move } from "./mark.ts";
+import { gaitOf, walkWords, type Gait } from "./walk.ts";
+import { useWalks } from "./Walker.tsx";
 import { Village } from "./Village.tsx";
 
 const REVIEW_WORDS = { idle: "review not asked", queued: "review queued", reviewing: "reviewing", ready: "review ready" } as const;
@@ -71,8 +74,12 @@ function nameOf(p: Placed | InPlaced, index: TownIndex): string {
   return index.characters.get(p.id)?.character.name ?? p.id;
 }
 
-/** A placed thing's label for the town list: name, project, role, stage (a PR: review and checks). `now` is the page's clock, which a house's state words are judged by. */
-function labelOf(p: Placed | InPlaced, index: TownIndex, now: number): string {
+/**
+ * A placed thing's label for the town list: name, project, role, stage (a PR: review and checks). `now` is the page's clock,
+ * which a house's state words are judged by; `gait` is how a character is walking, which the list says ("walking up" in place
+ * of its line place, as it is not in the line yet; "walking home").
+ */
+function labelOf(p: Placed | InPlaced, index: TownIndex, now: number, gait?: Gait): string {
   if (p.kind === "observer") return "you, observer";
   if (p.kind === "you") return "you, on your throne";
   if (p.kind === "building" || p.kind === "parcel") {
@@ -90,7 +97,8 @@ function labelOf(p: Placed | InPlaced, index: TownIndex, now: number): string {
   const { character, house } = found;
   const role = p.kind === "queen" ? "steward" : p.kind === "lead" ? "lead" : (character.role ?? "subagent");
   const [queen, doing] = p.kind === "queen" ? ["Queen, ", `, ${QUEEN_WORDS[p.state]}`] : ["", ""];
-  const where = "line" in p && p.line ? lineWords(p.line).map((w) => `, ${w}`).join("") : "";
+  const walking = walkWords(gait);
+  const where = [...("line" in p && p.line && gait !== "up" ? lineWords(p.line) : []), ...(walking === null ? [] : [walking])].map((w) => `, ${w}`).join("");
   return `${queen}${character.name}, ${house.project}, ${role}, ${stageWords(character)}${doing}${where}`;
 }
 
@@ -187,6 +195,9 @@ export function TownPage() {
   const [marked, setMarked] = useState<string | null>(null);
   // `waiting` follows from the town and the clock, so these are all it changes with.
   const placed = useMemo(() => (town ? layout(town, waiting, now, lost, marked) : []), [town, now, lost, marked]);
+  // Who just left, still walking off, and every walk going: the town draws them and the list says them.
+  const drawn = useDeparted(placed);
+  const walks = useWalks(drawn);
   const index = useMemo(() => indexOf(town), [town]);
   // Where the mark last landed, kept after Esc clears it: the first arrow returns there, and the way back follows it.
   const [last, setLast] = useState<Move | null>(null);
@@ -279,7 +290,7 @@ export function TownPage() {
   return (
     <>
       <div className="village" aria-hidden="true">
-        <Village index={index} avatar={town?.avatar} placed={placed} name={name} onPick={pick} inside={inside} doors={doors} lost={lost} />
+        <Village index={index} avatar={town?.avatar} placed={placed} drawn={drawn} walks={walks} name={name} onPick={pick} inside={inside} doors={doors} lost={lost} />
       </div>
       <ul className="town-list" aria-label="Town">
         {inside
@@ -293,7 +304,7 @@ export function TownPage() {
             ]
           : placed.map((p) => (
               <li key={keyOf(p)}>
-                {p.kind === "you" || (p.kind === "queen" && p.id === null) ? <span>{labelOf(p, index, now)}</span> : <button type="button" onClick={() => pick(p)}>{labelOf(p, index, now)}</button>}
+                {p.kind === "you" || (p.kind === "queen" && p.id === null) ? <span>{labelOf(p, index, now)}</span> : <button type="button" onClick={() => pick(p)}>{labelOf(p, index, now, gaitOf(walks, keyOf(p), Date.now()))}</button>}
               </li>
             ))}
       </ul>

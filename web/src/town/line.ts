@@ -11,10 +11,12 @@ import type { Spot } from "./layout.ts";
 
 /** How a waiting character stands, from how long it has waited. */
 export type Posture = "stand" | "tap" | "sit" | "asleep";
-/** How a signal flag shows: waved by the loud thing, or held up and still. */
-export type FlagMode = "wave" | "still";
+/** How a flag in the line shows: waved by the loud thing, or held up and still. */
+export type LineFlag = "wave" | "still";
+/** How a signal flag shows: in the line as `LineFlag`, or furled round its pole, carried home once answered. */
+export type FlagMode = LineFlag | "furled";
 /** A character's place in the line (0 is the head at the table), how it stands and how it holds its flag. */
-export type InLine = { place: number; posture: Posture; flag: FlagMode };
+export type InLine = { place: number; posture: Posture; flag: LineFlag };
 
 /** From these waits a character taps its foot, sits down, and falls asleep. */
 export const TAP_MS = 2 * 60_000;
@@ -65,7 +67,7 @@ export function lineUp<M extends { key: string; since: number | undefined }>(mem
     .map((m, i) => ({ m, i }))
     .sort((a, b) => rank(a.m.key) - rank(b.m.key) || a.i - b.i)
     .map(({ m }, place) => {
-      const flag: FlagMode = place === 0 && m.key === loud?.key ? "wave" : "still";
+      const flag: LineFlag = place === 0 && m.key === loud?.key ? "wave" : "still";
       const posture = flag === "wave" ? "stand" : postureOf(m.since ?? now, now);
       return { ...m, line: { place, posture, flag }, at: linePlace(place) };
     });

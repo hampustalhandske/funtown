@@ -4,7 +4,9 @@ import { Pace } from "./Pace.tsx";
 import { Classroom, roomBounds, type ClassroomProps } from "./Classroom.tsx";
 import { useHover } from "./kit/actors.tsx";
 import { avatarFor } from "./kit/avatars.ts";
+import type { Drawn } from "./folk.ts";
 import { keyOf, type Placed } from "./layout.ts";
+import type { Walks } from "./walk.ts";
 import type { Door } from "./mark.ts";
 import { FOV, GROUND, Rig, Sun } from "./stage.tsx";
 import { TownScene, boundsOf } from "./TownScene.tsx";
@@ -16,6 +18,9 @@ type Props = {
   /** The id of the king's chosen preset (`Town.avatar`); absent or unknown shows the default. */
   avatar?: string;
   placed: Placed[];
+  /** `placed` with the characters just gone still walking off, and the walks going: see `TownScene`. */
+  drawn: Drawn[];
+  walks: Walks;
   /** The words a thing's hover plate shows. */
   name: (p: Placed) => string;
   onPick: (p: Placed) => void;
@@ -28,7 +33,7 @@ type Props = {
 };
 
 /** The canvas and its camera, with the town on its island or, when `inside` is set, a house's classroom in its own light on its own floor. */
-export function Village({ index, avatar, placed, name, onPick, inside, doors, lost = false }: Props) {
+export function Village({ index, avatar, placed, drawn, walks, name, onPick, inside, doors, lost = false }: Props) {
   const look = avatarFor(avatar);
   const bounds = useMemo(() => (inside ? roomBounds(inside.placed) : boundsOf(placed)), [inside?.placed, placed]);
   const [hover, setHover] = useHover(inside ? inside.placed.filter((p) => p.kind !== "observer").map(keyOf) : placed.map(keyOf));
@@ -46,7 +51,7 @@ export function Village({ index, avatar, placed, name, onPick, inside, doors, lo
           <Classroom key={inside.house.cwd} {...inside} look={look} hover={hover} onHover={setHover} />
         </>
       ) : (
-        <TownScene index={index} placed={placed} name={name} onPick={onPick} hover={hover} onHover={setHover} doors={doors} />
+        <TownScene index={index} placed={placed} drawn={drawn} walks={walks} name={name} onPick={onPick} hover={hover} onHover={setHover} doors={doors} />
       )}
       <Rig bounds={bounds} />
       <Pace lost={lost} />

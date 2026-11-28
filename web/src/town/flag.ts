@@ -1,4 +1,4 @@
-import { BufferAttribute, Color, CylinderGeometry, PlaneGeometry, SphereGeometry, type BufferGeometry } from "three";
+import { BufferAttribute, Color, CylinderGeometry, PlaneGeometry, SphereGeometry, TorusGeometry, type BufferGeometry } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { QUEEN_TEAL } from "./folk-dress.ts";
 import { HEAD, TABLE } from "./court.ts";
@@ -59,14 +59,30 @@ export function shapeCloth(cloth: BufferGeometry, wave: boolean, t = 0) {
   cloth.computeVertexNormals();
 }
 
+/** `g` coloured `colour` by its points, without texture coordinates, so geometries made apart merge. */
+function paint(g: BufferGeometry, colour: string): BufferGeometry {
+  const c = new Color(colour);
+  g.setAttribute("color", new BufferAttribute(new Float32Array(g.attributes.position.count * 3).map((_, i) => [c.r, c.g, c.b][i % 3]), 3));
+  return g.deleteAttribute("uv");
+}
+
+/**
+ * The cloth furled: rolled up round the top of the pole, white above and crimson below, tied with a gold cord. Hangs from the
+ * pole's top as the cloth does.
+ */
+export function furledGeometry(): BufferGeometry {
+  const { h, pole } = HAND_FLAG;
+  const roll = (radius: number, length: number, at: number, colour: string) => paint(new CylinderGeometry(radius, radius * 0.7, length, 10).translate(0, pole - 0.02 - at, 0), colour);
+  return mergeGeometries([
+    roll(0.085, h * 0.55, h * 0.275, HOIST),
+    roll(0.075, h * 0.45, h * 0.775, ASK_RED),
+    paint(new TorusGeometry(0.09, 0.018, 6, 14).rotateX(Math.PI / 2).translate(0, pole - 0.02 - h * 0.4, 0), GOLD),
+  ])!;
+}
+
 /** The pole from the butt to its top and the gold knob on it, as one geometry coloured by its points. */
 export function poleGeometry(): BufferGeometry {
   const { pole, butt } = HAND_FLAG;
-  const paint = (g: BufferGeometry, colour: string) => {
-    const c = new Color(colour);
-    g.setAttribute("color", new BufferAttribute(new Float32Array(g.attributes.position.count * 3).map((_, i) => [c.r, c.g, c.b][i % 3]), 3));
-    return g.deleteAttribute("uv");
-  };
   return mergeGeometries([
     paint(new CylinderGeometry(0.035, 0.04, pole + butt, 8).translate(0, (pole - butt) / 2, 0), WOOD),
     paint(new SphereGeometry(0.075, 10, 8).translate(0, pole + 0.04, 0), GOLD),
@@ -90,16 +106,20 @@ export function houseFlagParts(list: PartList, house: FlagHouse) {
   for (const [k, c] of [[0, HOIST], [1, ASK_RED]] as const) list.put("box", [-(k + 0.5) * (w / 2) - 0.03, pole - h / 2, 0], { s: [w / 2, h, 0.025], c });
 }
 
+/** How far to the right of the head the slip lies, so the head's body doesn't hide it from the camera. */
+const SLIP_BESIDE = 0.45;
+
 /**
  * The head's slip laid on the table before your throne, its seal toward the head, in its project's `colour`; with the Queen's
  * `note` lying on it, sealed in her teal.
  */
 export function tableSlipParts(list: PartList, colour: string, note: boolean) {
-  const [x, z] = castleAt(HEAD.u, TABLE.w - 0.12);
+  const [x, z] = castleAt(HEAD.u + SLIP_BESIDE, TABLE.w - 0.12);
   list.at(x, HILL.top + TABLE.top + 0.012, z, CASTLE_TURN);
   list.put("box", [0, 0, 0], { s: [0.5, 0.02, 0.62], c: "#fbf6ea" });
-  list.put("cyl", [0, 0.012, 0.16], { s: [0.1, 0.02, 0.1], c: colour });
+  list.put("cyl", [-0.12, 0.012, 0.16], { s: [0.1, 0.02, 0.1], c: colour });
   if (!note) return;
-  list.put("box", [0.04, 0.02, -0.06], { r: [0, 0.18, 0], s: [0.34, 0.02, 0.28], c: "#fffdf6" });
-  list.put("cyl", [0.04, 0.032, -0.1], { s: [0.08, 0.02, 0.08], c: QUEEN_TEAL });
+  // Her note lies across the slip's near right corner, toward the viewer, so the head's body never hides it.
+  list.put("box", [0.1, 0.02, 0.12], { r: [0, 0.18, 0], s: [0.42, 0.02, 0.34], c: "#fffdf6" });
+  list.put("cyl", [0.1, 0.032, 0.14], { s: [0.16, 0.02, 0.16], c: QUEEN_TEAL });
 }

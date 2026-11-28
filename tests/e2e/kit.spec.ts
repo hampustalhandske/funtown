@@ -12,6 +12,10 @@ test("the_kit_page_draws_a_canvas_with_no_console_errors_or_failed_requests", as
   for (const name of ["lead, cat", "implementer, beaver", "explorer, hare", "test-writer, hedgehog", "*review*, owl", "captain's cap"]) {
     await expect(page.getByText(name, { exact: true })).toBeVisible();
   }
+  // The ask flag in its three modes.
+  for (const name of ["flag, waving", "flag, still", "flag, furled"]) {
+    await expect(page.getByText(name, { exact: true })).toBeVisible();
+  }
   await page.waitForLoadState("networkidle");
   expect(problems).toEqual([]);
 });

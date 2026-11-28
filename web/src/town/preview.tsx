@@ -11,6 +11,8 @@ import { Castle, Desk, Figure, GroundTile, HouseModel, Parcel } from "./kit/part
 import { actOf, type Act } from "./acts.ts";
 import { costumeOf } from "./folk.ts";
 import { Animal, FolkLayer, HatModel } from "./Folk.tsx";
+import { HandFlag } from "./Flag.tsx";
+import type { FlagMode } from "./line.ts";
 
 /** Every folk costume: the lead, each named role and the types that borrow an animal, as (label, role, whether a lead). */
 const FOLK: [string, string | undefined, boolean][] = [
@@ -24,6 +26,9 @@ const ACTS: [string, string | undefined, boolean, Act][] = [
   ...["implementer", "explorer", "test-writer", "reviewer"].map((role): [string, string, boolean, Act] => [`${role} at work`, role, false, actOf({ pose: "work", animal: costumeOf(role, false).animal })]),
   ["lead at work", undefined, true, "plane"],
 ];
+
+/** The ask flag in each of its modes, held by a lead in the pose that goes with it: waved at the table, held up and still in the line, furled on the way home. */
+const FLAGS: [string, Act, FlagMode][] = [["flag, waving", "wave", "wave"], ["flag, still", "wait", "still"], ["flag, furled", "home", "furled"]];
 
 const roles = new Map<HatKind, string[]>();
 for (const [role, hat] of Object.entries(ROLE_HATS)) roles.set(hat, [...(roles.get(hat) ?? []), role]);
@@ -95,6 +100,9 @@ function Preview() {
           ["captain's cap", <group scale={2}><HatModel hat="captain" colour={TONES.ribbon} /></group>, 0.7],
         ]} />
         <Row z={9} gap={2.4} items={ACTS.map(([label, role, lead, act], i) => [label, <Animal costume={costumeOf(role, lead)} colour={PALETTE[i]} act={act} seed={i} />, 1.9])} />
+        <group position={[-12, 0, -3]}>
+          <Row z={0} gap={2.8} items={FLAGS.map(([label, act, mode], i) => [label, <Animal costume={costumeOf(undefined, true)} colour={PALETTE[i]} act={act} seed={i} held={<HandFlag mode={mode} />} />, 3.2])} />
+        </group>
       </FolkLayer>
       <OrbitControls autoRotate autoRotateSpeed={0.6} target={TARGET} />
       <FitWidth />
