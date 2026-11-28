@@ -4,6 +4,8 @@ import { colourFor, hatFor, type HatKind } from "./kit/palette.ts";
 import type { InPlaced } from "./interior.ts";
 import { castleAt, HILL } from "./hill.ts";
 import { lotOf } from "./island.ts";
+import { queenOf, QUEEN_SEAT_AT, TABLE_AT, YARD_AT, yardSpot, YOUR_THRONE_AT, type QueenState } from "./court.ts";
+import { avatarFor } from "./kit/avatars.ts";
 
 /** A point on the ground; +z faces the camera, the castle is at the back (-z). */
 export type Spot = { x: number; z: number };
@@ -13,23 +15,22 @@ export type Placed =
   | { kind: "lead"; id: string; lead: string; cwd: string; colour: string; pose: Pose; at: Spot }
   | { kind: "hat"; id: string; lead: string; cwd: string; colour: string; hat: HatKind; pose: Pose; at: Spot }
   | { kind: "parcel"; cwd: string; number: number; at: Spot }
-  | { kind: "steward"; id: string; at: Spot };
+  /** You, on your throne, in the avatar preset `avatar` (an id `avatarFor` knows). */
+  | { kind: "you"; avatar: string; at: Spot }
+  /** The Queen on her seat: the steward's lead `id` (null when none is listed), what she is doing, and when `ready` the id of the character whose slip carries her note. */
+  | { kind: "queen"; id: string | null; state: QueenState; note: string | null; at: Spot };
 
 /** A key that names the same thing across state frames; a subagent keeps its key when it leaves the rack to queue or sits at a desk. */
 export const keyOf = (p: Placed | InPlaced): string =>
-  p.kind === "building" ? `building:${p.cwd}` : p.kind === "parcel" ? `parcel:${p.cwd}#${p.number}` : p.kind === "observer" ? "observer" : `character:${p.id}`;
+  p.kind === "building" ? `building:${p.cwd}` : p.kind === "parcel" ? `parcel:${p.cwd}#${p.number}` : p.kind === "observer" ? "observer" : p.kind === "you" ? "you" : p.kind === "queen" && p.id === null ? "queen" : `character:${p.id}`;
 
 /** A place in the castle's frame (see `hill.ts`) as a spot on the ground. */
 const court = (u: number, w: number): Spot => {
   const [x, z] = castleAt(u, w);
   return { x, z };
 };
-/** Your desk on the forecourt, in front of the castle's gate, with you behind it and the Queen at your right. */
-export const DESK = court(0, 3.85);
-export const KING = court(-0.62, 2.85);
-const QUEEN = court(0.7, 2.88);
-/** Where the steward's subagents keep their rack and sit: a yard on the forecourt left of the gate, laid out like a building's. */
-const CASTLE_YARD = court(-3.6, 2.4);
+/** The stone table on the forecourt, in front of the thrones: the queue turns toward it. */
+export const DESK = TABLE_AT;
 /** The queue: rows across the forecourt in front of the desk, then rows on the square at the stair's foot. */
 const QUEUE = { across: 9, step: 0.9, rows: [4.9, 5.75], below: 7, foot: HILL.stair.foot + 1 };
 const SEAT = 0.6;
@@ -79,7 +80,7 @@ export function layout(town: Town, waiting: Pick<Entry, "key">[], now: number, l
   const queue: { key: string; place: (at: Spot) => Placed }[] = [];
 
   /** Places `leads` (unless `asLeads` is false: the steward keeps its own spot) and their subagents around `at`, or in the queue. */
-  const settle = (house: House, at: Spot, leads: House["leads"], colour: string, asLeads: boolean) => {
+  const settle = (house: House, at: Spot, leads: House["leads"], colour: string, asLeads: boolean, inYard = false) => {
     let pegs = 0;
     let seats = 0;
     let resting = 0;
@@ -95,7 +96,7 @@ export function layout(town: Town, waiting: Pick<Entry, "key">[], now: number, l
         const pose = poseOf(sub);
         const make = (spot: Spot): Placed => ({ kind: "hat", id: sub.id, lead: lead.id, cwd: house.cwd, colour, hat: hatFor(sub.role), pose, at: spot });
         if (pose === "queue") queue.push({ key: `${lead.id}/${sub.id}`, place: make });
-        else placed.push(make(pose === "work" ? rack(at, pegs++) : yard(at, seats++)));
+        else placed.push(make(inYard ? yardSpot(seats++) : pose === "work" ? rack(at, pegs++) : yard(at, seats++)));
       }
     }
   };
@@ -109,9 +110,10 @@ export function layout(town: Town, waiting: Pick<Entry, "key">[], now: number, l
   });
 
   const stewardHouse = town.houses.find((h) => h.leads.some((l) => l.id === steward));
+  placed.push({ kind: "you", avatar: avatarFor(town.avatar).id, at: YOUR_THRONE_AT });
+  placed.push({ kind: "queen", id: steward ?? null, ...queenOf(town, steward), at: QUEEN_SEAT_AT });
   if (steward && stewardHouse) {
-    placed.push({ kind: "steward", id: steward, at: QUEEN });
-    settle(stewardHouse, CASTLE_YARD, stewardHouse.leads.filter((l) => l.id === steward), colourFor(stewardHouse.project), false);
+    settle(stewardHouse, YARD_AT, stewardHouse.leads.filter((l) => l.id === steward), colourFor(stewardHouse.project), false, true);
   }
 
   const order = new Map(waiting.map((w, i) => [w.key, i]));

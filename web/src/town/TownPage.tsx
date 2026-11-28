@@ -15,6 +15,9 @@ import { Village } from "./Village.tsx";
 
 const REVIEW_WORDS = { idle: "review not asked", queued: "review queued", reviewing: "reviewing", ready: "review ready" } as const;
 
+/** What the Queen is doing, in words for the town list. */
+const QUEEN_WORDS = { idle: "sitting still", asked: "writing your word", busy: "reading a parcel", ready: "her word is ready" } as const;
+
 /** A character's stage in words: working, done, stuck with its reason, or what it needs from you. */
 const stageWords = (c: Character) => (c.stage !== "needs_you" ? c.stage : c.needs === "stuck" ? needOf(c) : `needs you: ${needOf(c)}`);
 
@@ -54,15 +57,17 @@ function houseLabel(house: House, now: number): string[] {
 
 /** What a placed thing is called, for its hover plate. */
 function nameOf(p: Placed | InPlaced, index: TownIndex): string {
-  if (p.kind === "observer") return "You";
+  if (p.kind === "observer" || p.kind === "you") return "You";
   if (p.kind === "building") return index.houses.get(p.cwd)?.project ?? p.cwd;
   if (p.kind === "parcel") return `#${p.number} ${index.houses.get(p.cwd)?.parcels?.find((x) => x.number === p.number)?.title ?? ""}`.trim();
+  if (p.id === null) return "Queen";
   return index.characters.get(p.id)?.character.name ?? p.id;
 }
 
 /** A placed thing's label for the town list: name, project, role, stage (a PR: review and checks). `now` is the page's clock, which a house's state words are judged by. */
 function labelOf(p: Placed | InPlaced, index: TownIndex, now: number): string {
   if (p.kind === "observer") return "you, observer";
+  if (p.kind === "you") return "you, on your throne";
   if (p.kind === "building" || p.kind === "parcel") {
     const house = index.houses.get(p.cwd);
     const project = house?.project ?? p.cwd;
@@ -71,11 +76,14 @@ function labelOf(p: Placed | InPlaced, index: TownIndex, now: number): string {
     const state = parcel?.review ? REVIEW_WORDS[parcel.review.state] : parcel?.draft ? "draft" : "open";
     return [nameOf(p, index), project, "pull request", state, ...(parcel ? [checkWords(parcel, now)] : [])].join(", ");
   }
+  if (p.kind === "queen" && p.id === null) return `Queen, no steward session, ${QUEEN_WORDS[p.state]}`;
+  if (p.id === null) return "Queen";
   const found = index.characters.get(p.id);
   if (!found) return p.id;
   const { character, house } = found;
-  const role = p.kind === "steward" ? "steward" : p.kind === "lead" ? "lead" : (character.role ?? "subagent");
-  return `${character.name}, ${house.project}, ${role}, ${stageWords(character)}`;
+  const role = p.kind === "queen" ? "steward" : p.kind === "lead" ? "lead" : (character.role ?? "subagent");
+  const [queen, doing] = p.kind === "queen" ? ["Queen, ", `, ${QUEEN_WORDS[p.state]}`] : ["", ""];
+  return `${queen}${character.name}, ${house.project}, ${role}, ${stageWords(character)}${doing}`;
 }
 
 /** The whiteboard's lines as the hidden list shows them: project, phase, note, then each step with its state. */
@@ -249,7 +257,8 @@ export function TownPage() {
     (p: Placed | InPlaced) => {
       if (p.kind === "building") go(p.cwd);
       else if (p.kind === "parcel") openParcel(p.cwd, p.number);
-      else if (p.kind !== "observer") setSelection({ lead: p.kind === "hat" ? p.lead : p.id, id: p.id });
+      else if (p.kind === "lead" || p.kind === "hat") setSelection({ lead: p.kind === "hat" ? p.lead : p.id, id: p.id });
+      else if (p.kind === "queen" && p.id !== null) setSelection({ lead: p.id, id: p.id });
     },
     [go, openParcel, setSelection],
   );
@@ -276,7 +285,7 @@ export function TownPage() {
             ]
           : placed.map((p) => (
               <li key={keyOf(p)}>
-                <button type="button" onClick={() => pick(p)}>{labelOf(p, index, now)}</button>
+                {p.kind === "you" || (p.kind === "queen" && p.id === null) ? <span>{labelOf(p, index, now)}</span> : <button type="button" onClick={() => pick(p)}>{labelOf(p, index, now)}</button>}
               </li>
             ))}
       </ul>

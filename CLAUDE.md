@@ -15,7 +15,7 @@ note's Reproduce before relying on it.
   events; `journal.ts`; `holds.ts` cards; `terminal.ts` `claude attach` and shells; `errors.ts` the error log;
   `workflow.ts` phase file, `gh pr list`; `steward.ts` the steward; `card-request.ts` the brief she reads for her word; `severity.ts` each card's severity and picks; `brief-parts.ts` the brief's parts the page reads too; `projects.ts` added projects and `houseOf`, the folder of the house a folder belongs to; `avatar.ts` the chosen avatar file;
   `main.ts` run file, signals.
-- `web/` (React, Vite): `/` is the town (`index.html`, `src/town/`: `layout.ts` pure places, `Village.tsx`
+- `web/` (React, Vite): `/` is the town (`index.html`, `src/town/`: `layout.ts` pure places, `court.ts` the forecourt's places and `queenOf` (the Queen's state and note), `furniture.ts` its table and thrones, `People.tsx` you and the Queen seated, `Village.tsx`
   the canvas (camera fit from `stage.tsx`) that draws `TownScene.tsx` or, inside a house, `Classroom.tsx` in its own light; the island:
   `island.ts` pure `landHeight`, `groundHeight` (what things stand on), `groundColour`, `SQUARE`, `lotOf(i)` (house i's lot), `hill.ts` the
   castle hill's numbers, its frame (`castleAt`), stair and plateau, `noise.ts`, `shaders.ts` the four GLSL shaders (sea, sky, ink, tilt-shift)

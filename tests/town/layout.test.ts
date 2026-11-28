@@ -101,8 +101,8 @@ describe("layout", () => {
 
   test("the_lead_marked_steward_is_the_queen_wherever_its_folder_is_and_none_without_a_mark", async () => {
     const steward = house("elsewhere", [lead("st1", { name: "steward", kind: "background", shortId: "st1short", steward: true })]);
-    expect(of(place(town([steward, house("alpha", [lead("a1")])])), "steward").map((s) => s.id)).toEqual(["st1"]);
-    expect(of(place(town([house("alpha", [lead("a1")])])), "steward")).toEqual([]);
+    expect(of(place(town([steward, house("alpha", [lead("a1")])])), "queen").map((s) => s.id)).toEqual(["st1"]);
+    expect(of(place(town([house("alpha", [lead("a1")])])), "queen").map((s) => s.id)).toEqual([null]);
   });
 
   test("a_lead_in_the_default_steward_folder_or_named_by_a_review_is_no_queen_without_the_mark", async () => {
@@ -110,7 +110,7 @@ describe("layout", () => {
     folder.cwd = "/home/me/.funtown/steward";
     const reviewed = house("alpha", [lead("a1")], [{ ...parcel(1), review: { state: "ready", steward: "a1", letter: "L" } }]);
     const ended = house("beta", [lead("b1")], [{ ...parcel(2), review: { state: "ready", steward: "ended-one", letter: "L" } }]);
-    expect(of(place(town([folder, reviewed, ended])), "steward")).toEqual([]);
+    expect(of(place(town([folder, reviewed, ended])), "queen").map((s) => s.id)).toEqual([null]);
   });
 
   test("a_done_lead_gets_the_idle_pose_not_work", async () => {

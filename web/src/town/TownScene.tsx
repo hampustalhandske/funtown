@@ -1,27 +1,31 @@
 import { useEffect, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Vector3, type Group } from "three";
-import { Bob, Body, Mover, Pennant, Pick } from "./kit/actors.tsx";
+import { Body, Mover, Pennant, Pick } from "./kit/actors.tsx";
 import { Clay, TONES } from "./kit/clay.tsx";
-import type { Avatar } from "./kit/avatars.ts";
+import { avatarFor } from "./kit/avatars.ts";
 import { Hat } from "./kit/hats.tsx";
-import { PALETTE, type HatKind } from "./kit/palette.ts";
-import { Desk, Figure, HouseModel, Parcel } from "./kit/parts.tsx";
+import type { HatKind } from "./kit/palette.ts";
+import { HouseModel, Parcel } from "./kit/parts.tsx";
 import { CASTLE_HEIGHT, castleHill } from "./castle.ts";
 import { CASTLE, CASTLE_TURN, HILL, castleAt } from "./hill.ts";
+import { SEAT_TOP, QUEEN_SEAT, YOUR_THRONE } from "./court.ts";
+import { courtFurniture } from "./furniture.ts";
+import { Queen, You } from "./People.tsx";
 import { World } from "./World.tsx";
 import { groundHeight } from "./island.ts";
-import { DESK, KING, keyOf, poseOf, type Placed, type Spot } from "./layout.ts";
+import { DESK, keyOf, type Placed, type Spot } from "./layout.ts";
 import { Parts } from "./parts.tsx";
 import type { Door } from "./mark.ts";
 import type { Bounds } from "./stage.tsx";
 import type { TownIndex } from "./TownPage.tsx";
 
-const QUEEN_COLOUR = PALETTE[4];
 /** The ground the camera always takes in: the village round the square, the harbour and the castle on its hill. */
 const VILLAGE = { minX: -6, maxX: 15, minZ: CASTLE.z - 3, maxZ: 11 };
 /** The castle's stonework, built once. */
-const STONEWORK = castleHill().parts;
+const STONEWORK = [...castleHill().parts, ...courtFurniture().parts];
+/** Where a person sitting on a throne at (x, z) has their hips: on the dais, at the top of the cushion. */
+const seated = ({ x, z }: Spot): [number, number, number] => [x, HILL.top + SEAT_TOP, z];
 /** Where something at (x, z) stands: the ground's height there. */
 const on = ({ x, z }: Spot): [number, number, number] => [x, groundHeight(x, z), z];
 
@@ -102,13 +106,11 @@ function Doors({ placed, where }: { placed: Placed[]; where: MutableRefObject<((
 
 /** How high above its spot a thing's name plate floats. */
 const plateHeight = (p: Placed) =>
-  p.kind === "building" ? 2.3 : p.kind === "parcel" ? 0.9 : p.kind === "steward" ? 1.8 : p.pose === "work" && p.kind === "hat" ? 1.4 : p.pose === "queue" ? 2.2 : 1.8;
+  p.kind === "building" ? 2.3 : p.kind === "parcel" ? 0.9 : p.kind === "queen" || p.kind === "you" ? 2.7 : p.pose === "work" && p.kind === "hat" ? 1.4 : p.pose === "queue" ? 2.2 : 1.8;
 
 type Props = {
   /** The town's houses and characters, for the steward's stage and parcels' reviews. */
   index: TownIndex;
-  /** The look of the king's chosen avatar preset. */
-  look: Avatar;
   placed: Placed[];
   /** The folder of the marked house, whose name plate shows as a hover's does. */
   marked?: string | null;
@@ -122,8 +124,8 @@ type Props = {
   doors?: MutableRefObject<(() => Door[]) | null>;
 };
 
-/** The town: the island with the castle on its hill, the king (in the chosen avatar) at his desk on the forecourt, a building per house, and everyone placed by `layout`. */
-export function TownScene({ index, look, placed, marked, name, onPick, hover, onHover, doors }: Props) {
+/** The town: the island with the castle on its hill, the forecourt's table and thrones with you and the Queen on them, a building per house, and everyone placed by `layout`. */
+export function TownScene({ index, placed, marked, name, onPick, hover, onHover, doors }: Props) {
   const pick = (p: Placed, children: ReactNode) => (
     <Pick id={keyOf(p)} height={plateHeight(p)} plate={keyOf(p) === hover || (p.kind === "building" && p.cwd === marked) ? name(p) : null} onPick={() => onPick(p)} onHover={onHover}>{children}</Pick>
   );
@@ -156,10 +158,14 @@ export function TownScene({ index, look, placed, marked, name, onPick, hover, on
             )}
           </group>
         );
-      case "steward": {
-        const queen = index.characters.get(p.id)?.character;
-        return <Mover to={p.at} facing={0} ground={groundHeight}>{pick(p, <Body pose={queen ? poseOf(queen) : "work"} colour={QUEEN_COLOUR} hat="tiara" />)}</Mover>;
-      }
+      case "you":
+        return <group position={seated(p.at)} rotation-y={CASTLE_TURN + YOUR_THRONE.yaw}><You look={avatarFor(p.avatar)} /></group>;
+      case "queen":
+        return (
+          <group position={seated(p.at)} rotation-y={CASTLE_TURN + QUEEN_SEAT.yaw}>
+            {p.id === null ? <Queen state={p.state} /> : pick(p, <Queen state={p.state} />)}
+          </group>
+        );
       case "lead":
       case "hat": {
         // Queuers turn halfway to the desk, so their faces and slips still show; the stuck sit turned a little, so their legs read as sitting.
@@ -177,11 +183,6 @@ export function TownScene({ index, look, placed, marked, name, onPick, hover, on
     <>
       <World />
       <Parts parts={STONEWORK} />
-      <group position={on(DESK)} rotation-y={CASTLE_TURN}>
-        <Desk />
-        <Clay colour={TONES.paper} position={[0.3, 0.64, 0]} rotation-y={0.2}><boxGeometry args={[0.32, 0.06, 0.24]} /></Clay>
-      </group>
-      <group position={on(KING)} rotation-y={CASTLE_TURN}><Bob speed={1.2}><Figure colour={look.coat} hat={look.hat} skin={look.skin} /></Bob></group>
       {doors && <Doors placed={placed} where={doors} />}
       {[...rails].map(([rail, pegs]) => <Rail key={rail} pegs={pegs} />)}
       {placed.map((p) => <group key={keyOf(p)}>{thing(p)}</group>)}

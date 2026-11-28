@@ -45,7 +45,7 @@ export function Village({ index, avatar, placed, marked, name, onPick, inside, d
           <Classroom key={inside.house.cwd} {...inside} look={look} hover={hover} onHover={setHover} />
         </>
       ) : (
-        <TownScene index={index} look={look} placed={placed} marked={marked} name={name} onPick={onPick} hover={hover} onHover={setHover} doors={doors} />
+        <TownScene index={index} placed={placed} marked={marked} name={name} onPick={onPick} hover={hover} onHover={setHover} doors={doors} />
       )}
       <Rig bounds={bounds} />
     </Canvas>
