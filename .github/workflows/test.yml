@@ -22,7 +22,8 @@ jobs:
   test:
     # Funtown runs only on macOS, so its tests run there too.
     runs-on: macos-latest
-    timeout-minutes: 10
+    # A passing run takes about 7.5 minutes; a slow macOS runner has taken over 10.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
