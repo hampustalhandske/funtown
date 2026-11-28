@@ -141,6 +141,8 @@ export class TownState {
   private readonly claude: Town["claude"];
   private readonly unlistedMs: number;
   private readonly started = Date.now();
+  // when the last good session list was made the sessions (Date.now()); undefined before the first
+  private listedAt: number | undefined;
 
   /**
    * `claude` is the version check's result, carried on every snapshot; `unlistedMs` how long
@@ -318,6 +320,7 @@ export class TownState {
     }
     for (const sid of this.listed.keys()) if (!next.has(sid)) this.forget(sid);
     this.listed = next;
+    this.listedAt = Date.now();
     this.expire();
   }
 
@@ -414,7 +417,9 @@ export class TownState {
       house(where).leads.push(withCards(shown, cards));
     }
     for (const cwd of this.shells) house(this.houseOf(cwd));
-    return { houses: [...houses.values()], cards, started: this.started, claude: this.claude };
+    const town: Town = { houses: [...houses.values()], cards, started: this.started, claude: this.claude };
+    if (this.listedAt !== undefined) town.listedAt = this.listedAt;
+    return town;
   }
 
   /** The files lead `sid` (listed in `cwd`) touched that another listed lead touched too, relative to its project root. */

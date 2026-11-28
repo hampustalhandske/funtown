@@ -1,4 +1,4 @@
-import type { House, Parcel } from "../../server/types.ts";
+import type { House, Parcel, Town } from "../../server/types.ts";
 
 /** A house's fire: `none` (no failed PR), `handled` (a failed PR while a lead works) or `burning` (a failed PR and no lead works). */
 export type Fire = "none" | "handled" | "burning";
@@ -44,3 +44,37 @@ export function fogWords(house: House): string {
   const two = (n: number) => String(n).padStart(2, "0");
   return `PRs last read ${two(at.getHours())}:${two(at.getMinutes())}`;
 }
+
+/** How long the page has lost the server before the town is under fog: the stream has errored and not reopened for this long. */
+export const LOST_MS = 3_000;
+/** How old the session list may be before the town is under fog. */
+export const LIST_FAILING_MS = 10_000;
+
+/** Why the whole town is under fog: the page lost the server at `at`, or the session list has not worked since `since`. */
+export type Fog = { why: "lost"; at: number } | { why: "list"; since: number };
+
+/**
+ * Whether the whole town is under fog, and why. `lostAt` is when the page's stream errored once it has been out for
+ * `LOST_MS` (null while it has the stream); `now` is the page's clock. A lost server comes first. Otherwise the
+ * list is failing when `listedAt` is more than `LIST_FAILING_MS` old, or absent (then it has not worked since
+ * the server started). Missing hooks and an old Claude Code are not fog. Pure.
+ */
+export function townFog(town: Town | null, lostAt: number | null, now: number): Fog | null {
+  if (lostAt !== null) return { why: "lost", at: lostAt };
+  if (town && (town.listedAt === undefined || now - town.listedAt > LIST_FAILING_MS)) return { why: "list", since: town.listedAt ?? town.started };
+  return null;
+}
+
+/** `at` as the local clock time, "14:02". */
+const clock = (at: number): string => {
+  const d = new Date(at);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
+
+/** The plain list's top line while the town is under fog. */
+export const fogLine = (fog: Fog): string =>
+  fog.why === "lost" ? `Lost the server at ${clock(fog.at)}: this is the town as it was then.` : `Could not list sessions since ${clock(fog.since)}.`;
+
+/** The town page's "can't see" icon label (and tooltip): the reason in a few words. */
+export const fogLabel = (fog: Fog): string =>
+  fog.why === "lost" ? `Can't see: lost the server at ${clock(fog.at)}` : `Can't see: could not list sessions since ${clock(fog.since)}`;

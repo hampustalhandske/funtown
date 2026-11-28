@@ -6,7 +6,7 @@ import { MorningButton } from "./Morning.tsx";
 import { LazyBoundary } from "./LazyBoundary.tsx";
 import { characterEntries, NeedsList, NotifyButton, Toasts, useAlerts, useLetterKey, useMute, urgencyList, useNow, waited, type Entry, type Lettered, type PrEntry, type Waiting } from "./needs.tsx";
 import { useKey, useLayer, useWalk } from "./keys.ts";
-import { fogWords, glanceOf } from "./glance.ts";
+import { fogLine, fogWords, glanceOf, LOST_MS, townFog } from "./glance.ts";
 import { KeySheet, useKeySheet } from "./KeySheet.tsx";
 import { funtownToken } from "./token.ts";
 import { SwitchButton } from "./Switch.tsx";
@@ -42,24 +42,44 @@ const OPENING_TIMEOUT_MS = 30_000;
 const EARLY_ATTACH: number | false = 300;
 
 /**
- * Subscribes to the server's Town stream; gives the latest Town (null before the first) and
- * whether the server has restarted since the page loaded, which leaves the page's token stale.
+ * Subscribes to the server's Town stream; gives the latest Town (null before the first), whether the server has
+ * restarted since the page loaded (which leaves the page's token stale), and `lostAt`: when the stream errored,
+ * once it has stayed down for `LOST_MS` (null while the page has the stream). The next frame clears it; the page
+ * never reloads by itself.
  */
-export function useTown(): [Town | null, boolean] {
+export function useTown(): [Town | null, boolean, number | null] {
   const [town, setTown] = useState<Town | null>(null);
   const [restarted, setRestarted] = useState(false);
+  const [lostAt, setLostAt] = useState<number | null>(null);
   useEffect(() => {
     let first: number | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stopTimer = () => {
+      clearTimeout(timer);
+      timer = undefined;
+    };
     const source = new EventSource("/stream");
     source.addEventListener("state", (event) => {
       const next = JSON.parse(event.data) as Town;
       first ??= next.started;
       if (next.started !== first) setRestarted(true);
+      stopTimer();
+      setLostAt(null);
       setTown(next);
     });
-    return () => source.close();
+    // Errors repeat while the server stays down: the first starts the count and a reopened stream stops it.
+    source.addEventListener("open", stopTimer);
+    source.addEventListener("error", () => {
+      if (timer !== undefined) return;
+      const erroredAt = Date.now();
+      timer = setTimeout(() => setLostAt((was) => was ?? erroredAt), LOST_MS);
+    });
+    return () => {
+      stopTimer();
+      source.close();
+    };
   }, []);
-  return [town, restarted];
+  return [town, restarted, lostAt];
 }
 
 function CharacterRow({
@@ -546,7 +566,7 @@ export function Panel({ character, lead, house, cards, steward, review, onClose 
  * The character whose panel is open, and the Needs you wiring both pages share: the waiting list,
  * mute, sound and toasts. A selection whose character leaves the town closes.
  */
-export function useSelection(town: Town | null) {
+export function useSelection(town: Town | null, lostAt: number | null) {
   const [selection, setSelection] = useState<{ lead: string; id: string; review?: Review } | null>(null);
   const onClose = useCallback(() => setSelection(null), []);
   const lead = selection ? town?.houses.flatMap((house) => house.leads).find((l) => l.id === selection.lead) : undefined;
@@ -556,14 +576,17 @@ export function useSelection(town: Town | null) {
   }, [town, selection, selected]);
   const house = lead && town?.houses.find((h) => h.leads.includes(lead));
   const openSession = selected && house ? { id: selected.id, name: selected.name, cwd: house.cwd } : null;
-  const waiting = urgencyList(town, useNow(5000));
+  const now = useNow(5000);
+  const waiting = urgencyList(town, now);
+  const fog = townFog(town, lostAt, now);
   const [muted, toggleMute] = useMute();
   // A PR entry has no pane to open yet.
   const openWaiting = useCallback((w: Pick<Waiting, "lead" | "id"> | PrEntry) => {
     if ("lead" in w) setSelection({ lead: w.lead, id: w.id });
   }, []);
-  const { toasts, drop } = useAlerts(waiting, town !== null, muted, openWaiting);
-  return { selection, setSelection, onClose, lead, house, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop };
+  // While the page has lost the server nothing alerts; what the list held before stays "seen", so it doesn't alert again on return.
+  const { toasts, drop } = useAlerts(waiting, town !== null && lostAt === null, muted, openWaiting);
+  return { selection, setSelection, onClose, lead, house, selected, openSession, waiting, fog, muted, toggleMute, openWaiting, toasts, drop };
 }
 
 /**
@@ -589,8 +612,8 @@ function hashedHouse(): string {
 
 /** The town page: one house per project, its leads and their subagents, with a list of everyone waiting for you. */
 export function App() {
-  const [town, restarted] = useTown();
-  const { selection, setSelection, onClose, lead, house, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop } = useSelection(town);
+  const [town, restarted, lostAt] = useTown();
+  const { selection, setSelection, onClose, lead, house, selected, openSession, waiting, fog, muted, toggleMute, openWaiting, toasts, drop } = useSelection(town, lostAt);
   const [sheet, showSheet, hideSheet] = usePageKeys(town, waiting, selection && `${selection.lead}/${selection.id}`, openWaiting, "/");
   // The selection when each New session was clicked; a session opens itself only if that is still it (or nothing is open).
   const selectionNow = useRef(selection);
@@ -655,6 +678,7 @@ export function App() {
         <SwitchButton open={openSession} />
         <MorningButton waiting={waiting} town={town} onOpen={openWaiting} />
       </header>
+      {fog && <p className="fog" aria-live="polite">{fogLine(fog)}</p>}
       {restarted && (
         <div className="alert" role="alert">
           Funtown restarted; terminals and answers work again after a reload.{" "}

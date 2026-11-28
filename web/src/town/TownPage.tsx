@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Character, House, Parcel, Town } from "../../../server/types.ts";
 import { AddProject, askReview, Panel, post, removeProject, stewardOf, usePageKeys, useSelection, useTown } from "../App.tsx";
+import { fogLabel } from "../glance.ts";
 import { KeySheet } from "../KeySheet.tsx";
 import { useKey, useLayer } from "../keys.ts";
 import { MorningButton } from "../Morning.tsx";
@@ -84,6 +85,7 @@ const ICONS = {
   reload: <Icon><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4.5H15" /></Icon>,
   close: <Icon><path d="M7 7l10 10M17 7L7 17" /></Icon>,
   back: <Icon><path d="M10 6l-6 6 6 6M4 12h16" /></Icon>,
+  blind: <Icon><path d="M3 12c2.5-4 5.5-6 9-6s6.5 2 9 6c-2.5 4-5.5 6-9 6s-6.5-2-9-6zM4.5 4.5l15 15" /><circle cx="12" cy="12" r="2.5" /></Icon>,
 };
 
 type SettingsProps = { town: Town | null; muted: boolean; onMute: () => void; open: OpenSession | null; onClose: () => void };
@@ -172,8 +174,8 @@ function AskPanel({ target, onClose }: { target: AskTarget; onClose: () => void 
 
 /** The town page: the village in one canvas, a row of icon buttons, panels on demand, and a hidden list for screen readers. */
 export function TownPage() {
-  const [town, restarted] = useTown();
-  const { selection, setSelection, onClose, lead, house, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop } = useSelection(town);
+  const [town, restarted, lostAt] = useTown();
+  const { selection, setSelection, onClose, lead, house, selected, openSession, waiting, fog, muted, toggleMute, openWaiting, toasts, drop } = useSelection(town, lostAt);
   const [settings, setSettings] = useState(false);
   const [asking, setAsking] = useState<AskTarget | null>(null);
   const closeAsking = useCallback(() => setAsking(null), []);
@@ -299,6 +301,7 @@ export function TownPage() {
             {ICONS.reload}
           </button>
         )}
+        {fog && <span className="icon fog" role="img" aria-label={fogLabel(fog)} title={fogLabel(fog)}>{ICONS.blind}</span>}
         <span className="slot" title="Morning">{ICONS.morning}<MorningButton aria-label="Morning" waiting={waiting} town={town} onOpen={openWaiting} /></span>
         {classroom && <button type="button" className="icon" aria-label="Back to town" title="Back to town" onClick={() => go(null)}>{ICONS.back}</button>}
         <a className="icon" href={workHref} aria-label="Work view" title="Work view (L)">{ICONS.work}</a>

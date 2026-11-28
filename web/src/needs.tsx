@@ -177,7 +177,8 @@ export function useMute(): [boolean, () => void] {
 
 /**
  * Calls the sound, toast and system notification for each loud entry (tier 1, 2 or 3) that joins the
- * urgency list (new, or with a changed `since`) after the first town arrives. Quiet entries (tier 4)
+ * urgency list (new, or with a changed `since`) after the first town arrives. `loaded` is false before it
+ * and while the page has lost the server: then nothing alerts and what was seen stays. Quiet entries (tier 4)
  * never alert, and one that turns loud later joins then. Never moves focus.
  * Gives the toasts to show and a way to drop one.
  */

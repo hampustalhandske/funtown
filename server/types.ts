@@ -144,4 +144,6 @@ export type Town = {
   claude: { version: string | null; problems: string[] };
   /** The id of the avatar the user chose for the king; absent when none is chosen. */
   avatar?: string;
+  /** When `claude agents --json` last worked (the server's clock, ms); absent until the first, kept on a failed list. */
+  listedAt?: number;
 };

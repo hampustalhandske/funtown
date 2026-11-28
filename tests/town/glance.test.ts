@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import type { Character, House, Lead, Parcel } from "../../server/types.ts";
-import { FOG_AFTER_MS, fogWords, glanceOf } from "../../web/src/glance.ts";
+import type { Character, House, Lead, Parcel, Town } from "../../server/types.ts";
+import { FOG_AFTER_MS, fogLabel, fogLine, fogWords, glanceOf, LIST_FAILING_MS, townFog } from "../../web/src/glance.ts";
 
 const NOW = 1_000_000;
 const char = (id: string, over: Partial<Character> = {}): Character => ({ id, name: id, stage: "working", activity: null, step: null, ...over });
@@ -99,5 +99,53 @@ describe("fogWords", () => {
     const at = new Date(2026, 10, 28, 14, 2, 31).getTime();
     expect(fogWords(house([], [], { parcelsAt: at }))).toBe("PRs last read 14:02");
     expect(fogWords(house([], [], { parcelsAt: new Date(2026, 10, 28, 9, 5).getTime() }))).toBe("PRs last read 09:05");
+  });
+});
+
+describe("townFog", () => {
+  const town = (over: Partial<Town> = {}): Town => ({ houses: [], cards: [], started: NOW - 600_000, claude: { version: "2.1.325", problems: [] }, ...over });
+
+  test("a_list_that_worked_within_10_seconds_is_no_fog_and_one_older_is_fog_since_it_last_worked", async () => {
+    // Catches fog on a healthy town, and none (or the wrong time) once the session list stopped working.
+    expect(townFog(town({ listedAt: NOW - 1000 }), null, NOW)).toBeNull();
+    expect(townFog(town({ listedAt: NOW - LIST_FAILING_MS }), null, NOW)).toBeNull();
+    expect(townFog(town({ listedAt: NOW - LIST_FAILING_MS - 1 }), null, NOW)).toEqual({ why: "list", since: NOW - LIST_FAILING_MS - 1 });
+  });
+
+  test("a_town_never_listed_is_fog_since_the_server_started", async () => {
+    // Catches a town that looks calm because the list never worked.
+    expect(townFog(town(), null, NOW)).toEqual({ why: "list", since: NOW - 600_000 });
+  });
+
+  test("a_lost_server_is_fog_since_it_was_lost_even_when_the_list_was_fresh_and_before_any_town_arrived", async () => {
+    // Catches the lost server being reported as a failing list, or not at all.
+    expect(townFog(town({ listedAt: NOW }), NOW - 5000, NOW)).toEqual({ why: "lost", at: NOW - 5000 });
+    expect(townFog(null, NOW - 5000, NOW)).toEqual({ why: "lost", at: NOW - 5000 });
+  });
+
+  test("no_town_yet_and_a_server_not_lost_is_no_fog", async () => {
+    expect(townFog(null, null, NOW)).toBeNull();
+  });
+
+  test("an_old_claude_code_or_missing_hooks_are_not_fog", async () => {
+    // Catches version problems turning the town grey.
+    expect(townFog(town({ listedAt: NOW, claude: { version: "2.1.1", problems: ["no agents --json"] } }), null, NOW)).toBeNull();
+    expect(townFog(town({ listedAt: NOW, claude: { version: null, problems: ["claude not found"] } }), null, NOW)).toBeNull();
+  });
+});
+
+describe("the fog's words", () => {
+  const at = new Date(2026, 10, 28, 14, 2, 59).getTime(); // local time, so the words don't depend on the machine's zone
+
+  test("the_line_says_when_the_server_was_lost_or_since_when_sessions_could_not_be_listed_in_local_time", async () => {
+    // Catches a changed sentence, a time in UTC or with seconds, and one reason worded as the other.
+    expect(fogLine({ why: "lost", at })).toBe("Lost the server at 14:02: this is the town as it was then.");
+    expect(fogLine({ why: "list", since: at })).toBe("Could not list sessions since 14:02.");
+    expect(fogLine({ why: "list", since: new Date(2026, 10, 28, 9, 5).getTime() })).toBe("Could not list sessions since 09:05.");
+  });
+
+  test("the_icon_label_names_the_same_reason", async () => {
+    expect(fogLabel({ why: "lost", at })).toBe("Can't see: lost the server at 14:02");
+    expect(fogLabel({ why: "list", since: at })).toBe("Can't see: could not list sessions since 14:02");
   });
 });
