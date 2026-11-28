@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { PerspectiveCamera, Vector3, type DirectionalLight } from "three";
+import { motion } from "./Pace.tsx";
 
 /** The colour of the ground the canvas shows beyond the scene. */
 export const GROUND = "#efe6d6";
@@ -44,6 +45,9 @@ function fit(camera: PerspectiveCamera, b: Bounds, aspect: number): { position: 
   return { position: direction.multiplyScalar(far).add(target), target };
 }
 
+/** The squared distance under which the camera has arrived. */
+const EASED = 1e-4;
+
 /** Moves the camera, gently, to where the whole scene fits the window. */
 export function Rig({ bounds }: { bounds: Bounds }) {
   const camera = useThree((s) => s.camera) as PerspectiveCamera;
@@ -59,6 +63,7 @@ export function Rig({ bounds }: { bounds: Bounds }) {
     camera.position.lerp(goal.position, k);
     look.current.lerp(goal.target, k);
     camera.lookAt(look.current);
+    if (camera.position.distanceToSquared(goal.position) > EASED || look.current.distanceToSquared(goal.target) > EASED) motion.easing = true;
   });
   return null;
 }

@@ -279,7 +279,7 @@ export function TownPage() {
   return (
     <>
       <div className="village" aria-hidden="true">
-        <Village index={index} avatar={town?.avatar} placed={placed} name={name} onPick={pick} inside={inside} doors={doors} />
+        <Village index={index} avatar={town?.avatar} placed={placed} name={name} onPick={pick} inside={inside} doors={doors} lost={lost} />
       </div>
       <ul className="town-list" aria-label="Town">
         {inside

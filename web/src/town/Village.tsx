@@ -1,5 +1,6 @@
 import { useMemo, type MutableRefObject } from "react";
 import { Canvas } from "@react-three/fiber";
+import { Pace } from "./Pace.tsx";
 import { Classroom, roomBounds, type ClassroomProps } from "./Classroom.tsx";
 import { useHover } from "./kit/actors.tsx";
 import { avatarFor } from "./kit/avatars.ts";
@@ -22,15 +23,17 @@ type Props = {
   inside?: ClassroomProps;
   /** Filled while the town shows with a function that gives every house's door on the screen, in pixels from its middle, as the camera is now. */
   doors?: MutableRefObject<(() => Door[]) | null>;
+  /** The page has lost the server: the town draws nothing until it is back. */
+  lost?: boolean;
 };
 
 /** The canvas and its camera, with the town on its island or, when `inside` is set, a house's classroom in its own light on its own floor. */
-export function Village({ index, avatar, placed, name, onPick, inside, doors }: Props) {
+export function Village({ index, avatar, placed, name, onPick, inside, doors, lost = false }: Props) {
   const look = avatarFor(avatar);
   const bounds = useMemo(() => (inside ? roomBounds(inside.placed) : boundsOf(placed)), [inside?.placed, placed]);
   const [hover, setHover] = useHover(inside ? inside.placed.filter((p) => p.kind !== "observer").map(keyOf) : placed.map(keyOf));
   return (
-    <Canvas shadows="percentage" camera={{ fov: FOV, position: [0, 30, 30] }} onPointerMissed={() => setHover(null)}>
+    <Canvas frameloop="never" shadows="percentage" camera={{ fov: FOV, position: [0, 30, 30] }} onPointerMissed={() => setHover(null)}>
       {inside ? (
         <>
           <color attach="background" args={[GROUND]} />
@@ -46,6 +49,7 @@ export function Village({ index, avatar, placed, name, onPick, inside, doors }: 
         <TownScene index={index} placed={placed} name={name} onPick={onPick} hover={hover} onHover={setHover} doors={doors} />
       )}
       <Rig bounds={bounds} />
+      <Pace lost={lost} />
     </Canvas>
   );
 }

@@ -77,6 +77,14 @@ describe("how each form looks", () => {
     expect(LOOKS.handled.flame).toBeLessThan(LOOKS.burning.flame);
   });
 
+  test("every_form_a_house_can_burn_in_has_flames_and_smoke_so_a_quiet_fire_is_never_drawn_as_nothing", () => {
+    // Catches a form added without flames: the house would be named as burning and show nothing.
+    for (const look of Object.values(LOOKS)) {
+      expect(look.flame).toBeGreaterThan(0);
+      expect(look.puffs).toBeGreaterThan(0);
+    }
+  });
+
   test("only_a_fire_last_seen_is_frozen_and_it_has_no_glow_and_the_burning_size", () => {
     expect(Object.entries(LOOKS).filter(([, l]) => l.frozen).map(([form]) => form)).toEqual(["last-seen"]);
     expect(LOOKS["last-seen"]).toEqual({ ...LOOKS.burning, glow: 0, frozen: true });

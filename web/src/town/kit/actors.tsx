@@ -7,6 +7,7 @@ import { Hat } from "./hats.tsx";
 import type { HatKind } from "./palette.ts";
 import { Figure } from "./parts.tsx";
 import type { Pose, Spot } from "../layout.ts";
+import { motion } from "../Pace.tsx";
 
 export const WALK_SPEED = 2.4;
 
@@ -32,6 +33,7 @@ export function Mover({ to, from, speed = WALK_SPEED, facing, ground, children }
     const d = Math.hypot(dx, dz);
     const walking = d > 0.01;
     if (walking) {
+      motion.walking = true;
       const step = Math.min(d, speed * dt);
       g.position.x += (dx / d) * step;
       g.position.z += (dz / d) * step;

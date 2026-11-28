@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { lead, red, stubStream, town, visibleWords, waiting, withPrs } from "./stream.ts";
 
 const NOW = Date.now();
@@ -33,40 +33,16 @@ test("a_burning_handled_and_last_seen_house_and_a_loud_stuck_lead_draw_with_no_e
   expect(problems).toEqual([]);
 });
 
-/** How many pixels of the page's canvas are flame-coloured: bright, saturated orange, brighter than any roof tile. */
-async function flamePixels(page: Page): Promise<number> {
-  const shot = await page.locator("canvas").screenshot();
-  // Decoded on a blank page, since the town's own page does not allow a data image.
-  const blank = await page.context().newPage();
-  const count = await blank.evaluate(async (b64) => {
-    const img = new Image();
-    img.src = `data:image/png;base64,${b64}`;
-    await img.decode();
-    const c = document.createElement("canvas");
-    c.width = img.width;
-    c.height = img.height;
-    const g = c.getContext("2d")!;
-    g.drawImage(img, 0, 0);
-    const d = g.getImageData(0, 0, c.width, c.height).data;
-    let n = 0;
-    for (let i = 0; i < d.length; i += 4) if (d[i] > 240 && d[i + 1] > 90 && d[i + 1] < 180 && d[i + 2] < 90) n++;
-    return n;
-  }, shot.toString("base64"));
-  await blank.close();
-  return count;
-}
 
-test("a_burning_house_that_is_not_the_head_keeps_visible_flames_and_a_house_with_no_fire_shows_none", async ({ page }) => {
-  // Catches flames drawn only for the loud fire, and a calm house drawing flame colour.
+test("a_burning_house_that_is_not_the_head_is_named_burning_on_the_hidden_list_and_a_house_with_no_fire_is_not", async ({ page }) => {
+  // Catches a fire known only for the loud house, and a calm house named as burning. What the flames look like is the model's (tests/town/fire.test.ts).
   const stream = await stubStream(page, town([withPrs("calm", [resting("c1")], [])]));
   await page.goto("/");
-  await expect(page.locator("canvas")).toHaveCount(1);
-  await page.waitForTimeout(2000);
-  expect(await flamePixels(page)).toBe(0);
+  const house = (project: string) => page.getByRole("button", { name: new RegExp(`^${project}, house`) });
+  await expect(house("calm")).toBeVisible();
+  await expect(house("calm")).not.toHaveAccessibleName(/burning|handled/);
   // An ask in another house is the head, so the burning house is the quiet form.
   stream.send(town([withPrs("burning", [resting("b1")], [red(7, 30)]), withPrs("asker", [waiting("a1", "a1", NOW - 60_000, { needs: "permission" })], [])]));
-  await page.reload();
-  await expect(page.locator("canvas")).toHaveCount(1);
-  await page.waitForTimeout(2000);
-  expect(await flamePixels(page)).toBeGreaterThan(30);
+  await expect(house("burning")).toHaveAccessibleName(/burning/);
+  await expect(house("asker")).not.toHaveAccessibleName(/burning|handled/);
 });

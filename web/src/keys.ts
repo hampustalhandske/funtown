@@ -47,7 +47,7 @@ function textBox(target: EventTarget | null): target is HTMLElement {
 const presses = (target: EventTarget | null): boolean => target instanceof Element && target.closest("button, a[href], summary") !== null;
 
 /** Whether `target` is somewhere typing goes (a text box, or a terminal), so Funtown takes no key there. */
-const typingPlace = (target: EventTarget | null): boolean => inTerminal(target) || textBox(target);
+export const typingPlace = (target: EventTarget | null): boolean => inTerminal(target) || textBox(target);
 
 /** What Esc does for a press at `target`: closes the highest layer (the latest opened of its kind), or the focused text box. */
 function escapeAction(target: EventTarget | null): (() => void) | undefined {
