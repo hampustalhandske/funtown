@@ -13,7 +13,7 @@ const parcel = (number: number): Parcel => ({ number, title: `PR ${number}`, url
 const town = (houses: House[]): Town => ({ houses, cards: [], started: 1, claude: { version: "2.1.325", problems: [] } });
 const needs = (since: number, over: Partial<Character> = {}): Partial<Character> => ({ stage: "needs_you", needs: "permission", since, ...over });
 
-const place = (t: Town) => layout(t, urgencyList(t, 1_000_000));
+const place = (t: Town) => layout(t, urgencyList(t, 1_000_000), 1_000_000, false);
 type Placed = ReturnType<typeof place>[number];
 const of = <K extends Placed["kind"]>(all: Placed[], kind: K) => all.filter((p): p is Extract<Placed, { kind: K }> => p.kind === kind);
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -85,8 +85,8 @@ describe("layout", () => {
     const [first, second] = characterEntries(urgencyList(t, 1_000_000));
     expect([first.id, second.id]).toEqual(["old", "new"]);
     const spot = (all: Placed[], id: string) => of(all, "lead").find((l) => l.id === id)!.at;
-    const oldestFirst = layout(t, [first, second]);
-    const newestFirst = layout(t, [second, first]);
+    const oldestFirst = layout(t, [first, second], 1_000_000, false);
+    const newestFirst = layout(t, [second, first], 1_000_000, false);
     expect(spot(oldestFirst, "old")).toEqual(spot(newestFirst, "new"));
     expect(spot(oldestFirst, "new")).toEqual(spot(newestFirst, "old"));
     expect(spot(oldestFirst, "old")).not.toEqual(spot(oldestFirst, "new"));
@@ -159,8 +159,8 @@ describe("layout", () => {
       house("beta", [lead("b1")]),
     ]);
     const t = make();
-    expect(layout(t, urgencyList(t, 1_000_000))).toEqual(layout(t, urgencyList(t, 1_000_000)));
+    expect(layout(t, urgencyList(t, 1_000_000), 1_000_000, false)).toEqual(layout(t, urgencyList(t, 1_000_000), 1_000_000, false));
     const u = make();
-    expect(layout(u, urgencyList(u, 1_000_000))).toEqual(layout(t, urgencyList(t, 1_000_000)));
+    expect(layout(u, urgencyList(u, 1_000_000), 1_000_000, false)).toEqual(layout(t, urgencyList(t, 1_000_000), 1_000_000, false));
   });
 });

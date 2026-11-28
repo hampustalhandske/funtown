@@ -166,7 +166,9 @@ export function TownPage() {
   const { selection, setSelection, onClose, lead, house, selected, openSession, waiting, fog, now, muted, toggleMute, openWaiting, openPr, pr, closePr, current, toasts, drop } = useSelection(town, lostAt);
   const [settings, setSettings] = useState(false);
   const closeSettings = useCallback(() => setSettings(false), []);
-  const placed = useMemo(() => (town ? layout(town, waiting) : []), [town]);
+  const lost = fog?.why === "lost";
+  // `waiting` follows from the town and the clock, so these two are all it changes with.
+  const placed = useMemo(() => (town ? layout(town, waiting, now, lost) : []), [town, now, lost]);
   const index = useMemo(() => indexOf(town), [town]);
   // The house the keys last reached: it shows its name plate, as a hover does. Gone with its house.
   const [marked, setMarked] = useState<string | null>(null);

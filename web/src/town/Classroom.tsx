@@ -6,6 +6,7 @@ import { Figure, Parcel } from "./kit/parts.tsx";
 import { BOARD_HEIGHT, BOARD_SIZE, Door, Floor, SIDE_WALL_HEIGHT, SeatedFigure, StudentDesk, Table, TeacherDesk, Wall, WALL_HEIGHT, Whiteboard } from "./kit/classroom.tsx";
 import { BOARD, DOOR, FRONT, LEAVE_MS, PARCEL_GAP, PARCELS_PER_ROW, TABLE, drawn, type Board, type Drawn, type InPlaced } from "./interior.ts";
 import { keyOf, type Pose } from "./layout.ts";
+import type { Bounds } from "./stage.tsx";
 import type { House } from "../../../server/types.ts";
 import { Bob, Body, Dizzy, Mover, Pennant, Pick, Slip, WALK_SPEED, plates } from "./kit/actors.tsx";
 
@@ -29,6 +30,13 @@ export function roomOf(placed: InPlaced[]) {
     maxZ = Math.max(maxZ, p.at.z + 1);
   }
   return { minX: -half, maxX: half, minZ: BOARD.z - 0.05, maxZ };
+}
+
+/** The classroom's extent for the camera: the floor, the tall front wall behind the whiteboard and the low side walls. */
+export function roomBounds(placed: InPlaced[]): Bounds {
+  const { minX, maxX, minZ, maxZ } = roomOf(placed);
+  const tops: Bounds["tops"] = [[minX, WALL_HEIGHT, minZ], [maxX, WALL_HEIGHT, minZ], [minX, SIDE_WALL_HEIGHT, maxZ], [maxX, SIDE_WALL_HEIGHT, maxZ]];
+  return { minX, maxX, minZ, maxZ, tops, margin: [0.97, 0.9], key: ["room", minX, maxX, minZ, maxZ].join() };
 }
 
 const TABLE_WIDTH = 1.8;

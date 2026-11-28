@@ -66,9 +66,12 @@ function queueSpot(i: number, count: number): Spot {
  * subagents are hats on its rack; stuck ones sit there too; everyone who asks you queues at the desk in `waiting`
  * (urgency) order, where only a character's key finds a place; open parcels sit at the door; the lead marked `steward` stands by the desk. Done
  * subagents are not placed.
- * Pure: the same Town (and waiting order) always gives the same places.
+ * `now` is the page's clock in ms and `lost` whether the page has lost the server (`townFog(...)?.why === "lost"`);
+ * the places don't depend on either yet.
+ * Pure: the same Town, waiting order, clock and `lost` always give the same places.
  */
-export function layout(town: Town, waiting: Pick<Entry, "key">[]): Placed[] {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function layout(town: Town, waiting: Pick<Entry, "key">[], now: number, lost: boolean): Placed[] {
   const steward = town.houses.flatMap((h) => h.leads).find((l) => l.steward)?.id;
   // The steward's own house gets no building unless the user added it or another lead works there.
   const houses = town.houses.filter((h) => h.added || !h.leads.some((l) => l.id === steward) || h.leads.some((l) => l.id !== steward));

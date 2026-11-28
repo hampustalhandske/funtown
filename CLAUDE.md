@@ -16,7 +16,7 @@ note's Reproduce before relying on it.
   `workflow.ts` phase file, `gh pr list`; `steward.ts` the steward; `card-request.ts` the brief she reads for her word; `severity.ts` each card's severity and picks; `brief-parts.ts` the brief's parts the page reads too; `projects.ts` added projects and `houseOf`, the folder of the house a folder belongs to; `avatar.ts` the chosen avatar file;
   `main.ts` run file, signals.
 - `web/` (React, Vite): `/` is the town (`index.html`, `src/town/`: `layout.ts` pure places, `Village.tsx`
-  the 3D scene, `TownPage.tsx` icons, Settings (the avatar row), hidden list; `mark.ts` `nextHouse`, where an arrow moves the mark; `kit/` the clay parts (`avatars.ts` the eight presets: the king in a crown, the rest hatless, since every other hat is an agent's); no visible words on the
+  the canvas (camera and light from `stage.tsx`) that draws `TownScene.tsx` or, inside a house, `Classroom.tsx`, `TownPage.tsx` icons, Settings (the avatar row), hidden list; `mark.ts` `nextHouse`, where an arrow moves the mark; `kit/` the clay parts (`avatars.ts` the eight presets: the king in a crown, the rest hatless, since every other hat is an agent's); no visible words on the
   town). A building opens its classroom at `#in=<cwd>`: `interior.ts` pure places and the whiteboard model,
   `Classroom.tsx` the room, the lead at the front, you the observer at the back, wearing the chosen avatar; words only on the board;
   `drawn()` keeps a departed figure at the door for 2.5 s so it walks out.

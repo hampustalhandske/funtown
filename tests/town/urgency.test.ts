@@ -71,8 +71,8 @@ describe("urgencyList", () => {
     const [first, second] = characterEntries(urgencyList(t, NOW));
     expect([first.id, second.id]).toEqual(["old-ask", "new-ask"]);
     const spot = (all: ReturnType<typeof layout>, id: string) => all.find((p) => p.kind === "lead" && p.id === id)!.at;
-    const placed = layout(t, urgencyList(t, NOW));
-    const swapped = layout(t, [second, first]);
+    const placed = layout(t, urgencyList(t, NOW), NOW, false);
+    const swapped = layout(t, [second, first], NOW, false);
     expect(spot(placed, "old-ask")).toEqual(spot(swapped, "new-ask"));
     expect(spot(placed, "new-ask")).toEqual(spot(swapped, "old-ask"));
     expect(spot(placed, "old-ask")).not.toEqual(spot(placed, "new-ask"));
@@ -82,7 +82,7 @@ describe("urgencyList", () => {
     const t = town([
       house("alpha", [lead("rest", needs("turn ended", 1)), lead("ask", needs("permission", 2)), lead("limit", needs("stuck", 3, { reason: "rate limit" }))]),
     ]);
-    const all = layout(t, urgencyList(t, NOW));
+    const all = layout(t, urgencyList(t, NOW), NOW, false);
     const pose = Object.fromEntries(all.flatMap((p) => (p.kind === "lead" ? [[p.id, p.pose]] : [])));
     expect(pose).toEqual({ rest: "idle", ask: "queue", limit: "stuck" });
   });
@@ -93,7 +93,7 @@ describe("urgencyList", () => {
       house("alpha", [lead("rest", needs("turn ended", 1), [char("hat")]), lead("worker")]),
     ]);
     t.houses[0].parcels = [{ number: 1, title: "PR", url: "https://example.test/1", draft: false, checks: "none" }];
-    const all = layout(t, urgencyList(t, NOW));
+    const all = layout(t, urgencyList(t, NOW), NOW, false);
     const building = all.find((p) => p.kind === "building")!.at;
     const door = { x: building.x, z: building.z + 0.6 };
     const rest = all.find((p) => p.kind === "lead" && p.id === "rest")!.at;
@@ -195,6 +195,6 @@ describe("urgencyList", () => {
     expect(characters.map((w) => w.id)).toEqual([
       "ask-oldest", "question-old", "plan-sub", "ask-new", "waiting-mid", "stuck-mid", "limit-old", "limit-new", "rest-old", "rest-g", "rest-d",
     ]);
-    expect(layout(t, urgencyList(t, NOW))).toEqual(layout(t, characters));
+    expect(layout(t, urgencyList(t, NOW), NOW, false)).toEqual(layout(t, characters, NOW, false));
   });
 });
