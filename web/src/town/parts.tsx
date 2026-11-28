@@ -34,7 +34,8 @@ export type PartKind = keyof typeof GEOMETRIES;
 
 /** The clay every part is made of: white, tinted per part by its instance colour. Window panes keep their own dark glass. */
 export const CLAY = new MeshToonMaterial({ color: "#ffffff", gradientMap: STEPS });
-const GLASS = new MeshToonMaterial({ color: "#4f5f78", gradientMap: STEPS });
+/** Window glass: dark by day; `World` raises its `emissiveIntensity` when the windows and lamps are lit. */
+export const GLASS = new MeshToonMaterial({ color: "#4f5f78", gradientMap: STEPS, emissive: "#ffc46a", emissiveIntensity: 0 });
 /** Kinds that neither cast a shadow nor take the clay. */
 const OWN: Partial<Record<PartKind, MeshToonMaterial>> = { pane: GLASS };
 

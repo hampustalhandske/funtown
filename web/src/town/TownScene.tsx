@@ -12,6 +12,7 @@ import { CASTLE, CASTLE_TURN, HILL, castleAt } from "./hill.ts";
 import { SEAT_TOP, QUEEN_SEAT, YOUR_THRONE } from "./court.ts";
 import { courtFurniture } from "./furniture.ts";
 import { Queen, You } from "./People.tsx";
+import { Glows, useLight } from "./Glow.tsx";
 import { World } from "./World.tsx";
 import { houseParts } from "./houseParts.ts";
 import { chimneyOf, doorOf, planOf } from "./houses.ts";
@@ -107,6 +108,7 @@ type Props = {
  * A marked house wears a white ring and shows its name plate, as a hovered thing does.
  */
 export function TownScene({ index, placed, name, onPick, hover, onHover, doors }: Props) {
+  const light = useLight();
   const shown = useDeparted(placed);
   const pick = (p: Placed, children: ReactNode, disabled = false) => (
     <Pick
@@ -186,8 +188,9 @@ export function TownScene({ index, placed, name, onPick, hover, onHover, doors }
 
   return (
     <>
-      <World />
+      <World light={light} />
       <Parts parts={parts} />
+      <Glows parts={parts} lamps={light.lamps} />
       <Boats boats={HARBOUR.boats} />
       <Puffs mouths={buildings.filter((b) => b.busy).map(chimneyOf)} />
       {buildings.filter((b) => b.marked).map((b) => <MarkRing key={b.cwd} at={b.at} />)}
