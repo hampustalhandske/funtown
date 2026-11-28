@@ -9,7 +9,7 @@ import type { Gait } from "./walk.ts";
  * planes at a bench, the beaver hammers, the hedgehog ticks a clipboard, the hare walks its track, the owl reads through a
  * glass) and move, and a lead at a handled fire swings its bucket; every other act is still, whatever the time. A new pose is a new act: a name, its props and its angles.
  */
-export type Act = "plane" | "hammer" | "clipboard" | "track" | "glass" | "bucket" | "stand" | "rest" | "stuck" | "wait" | "walk" | "home" | "wave" | "tap" | "sit" | "asleep";
+export type Act = "plane" | "hammer" | "clipboard" | "track" | "glass" | "bucket" | "stand" | "rest" | "stuck" | "wait" | "walk" | "home" | "carry" | "wave" | "tap" | "sit" | "asleep";
 
 /** Each animal's work. */
 const WORK: Record<Animal, Act> = { cat: "plane", beaver: "hammer", hedgehog: "clipboard", hare: "track", owl: "glass" };
@@ -17,16 +17,20 @@ const WORK: Record<Animal, Act> = { cat: "plane", beaver: "hammer", hedgehog: "c
 /**
  * The act a folk in `pose` draws: working its animal's work, a leaver walking, one in the line waving its flag or acting its
  * wait (standing is `wait`), any other pose as itself. While it climbs (`gait` up) it holds its slip and still flag whatever
- * its place; walking home it swings its arm and furls its flag.
+ * its place; walking home it swings its arm and furls its flag; carrying a parcel up it holds it in both arms, and coming down from laying it walks with empty hands.
  */
 export const actOf = ({ pose, animal, line }: { pose: FolkPose; animal: Animal; line?: InLine }, gait?: Gait): Act =>
-  gait === "up" ? "wait" : gait === "home" ? "home" : pose === "work" ? WORK[animal] : pose === "leave" ? "walk" : line === undefined ? pose : line.flag === "wave" ? "wave" : line.posture === "stand" ? "wait" : line.posture;
+  gait === "up" ? "wait" : gait === "home" ? "home" : gait === "carry" ? "carry" : gait === "back" ? "walk" : pose === "work" ? WORK[animal] : pose === "leave" ? "walk" : line === undefined ? pose : line.flag === "wave" ? "wave" : line.posture === "stand" ? "wait" : line.posture;
 
 /** What each act holds or works at. */
 export const PROPS: Record<Act, Prop[]> = {
   plane: ["bench", "plane"], hammer: ["hammer", "crate"], clipboard: ["clipboard"], track: ["stick"], glass: ["glass"],
-  bucket: ["bucket"], stand: [], rest: ["letter"], stuck: [], wait: ["slip"], walk: [], home: [], wave: [], tap: ["slip"], sit: ["slip"], asleep: ["slip"],
+  bucket: ["bucket"], stand: [], rest: ["letter"], stuck: [], wait: ["slip"], walk: [], home: [], carry: ["parcel"], wave: [], tap: ["slip"], sit: ["slip"], asleep: ["slip"],
 };
+
+/** What `act` holds or works at, with the Queen's note when she has one for it: on the slip a folk holds, or on the parcel it carries. */
+export const propsFor = (act: Act, note: boolean): Prop[] =>
+  note && PROPS[act].includes("slip") ? [...PROPS[act], "note"] : note && PROPS[act].includes("parcel") ? [...PROPS[act], "parcel-note"] : PROPS[act];
 
 /** The right arm holding a still flag up at the folk's side; the flag turns back by it to stand upright. */
 export const FLAG_ARM = { up: -0.45, out: 0.35 } as const;
@@ -138,6 +142,12 @@ export function pose(p: Posture, act: Act, t: number, sitDrop: number) {
       walkLegs(p, t);
       p.armL = { up: -p.legL * 0.7, out: 0.3 };
       p.armR = { ...FURLED_ARM };
+      return;
+    case "carry":
+      // Climbing with a parcel held out before the chest in both paws.
+      walkLegs(p, t);
+      p.armL = p.armR = { up: -1.25, out: 0.12 };
+      p.lean = -0.05;
       return;
     case "walk":
       walkLegs(p, t);

@@ -88,7 +88,9 @@ function labelOf(p: Placed | InPlaced, index: TownIndex, now: number, gait?: Gai
     if (p.kind === "building") return [project, "house", ...(house ? houseLabel(house, now) : [])].join(", ");
     const parcel = house?.parcels?.find((x) => x.number === p.number);
     const state = parcel?.review ? REVIEW_WORDS[parcel.review.state] : parcel?.draft ? "draft" : "open";
-    return [nameOf(p, index), project, "pull request", state, ...(parcel ? [checkWords(parcel, now)] : [])].join(", ");
+    // A parcel in a classroom lies on its table and has no place in the town.
+    const where = !("place" in p) ? [] : [p.place === "pile" ? "at the castle" : "at its house"];
+    return [nameOf(p, index), project, "pull request", state, ...(parcel ? [checkWords(parcel, now)] : []), ...where].join(", ");
   }
   if (p.kind === "queen" && p.id === null) return `Queen, no steward session, ${QUEEN_WORDS[p.state]}`;
   if (p.id === null) return "Queen";
@@ -290,7 +292,7 @@ export function TownPage() {
   return (
     <>
       <div className="village" aria-hidden="true">
-        <Village index={index} avatar={town?.avatar} placed={placed} drawn={drawn} walks={walks} name={name} onPick={pick} inside={inside} doors={doors} lost={lost} />
+        <Village avatar={town?.avatar} placed={placed} drawn={drawn} walks={walks} name={name} onPick={pick} inside={inside} doors={doors} lost={lost} />
       </div>
       <ul className="town-list" aria-label="Town">
         {inside

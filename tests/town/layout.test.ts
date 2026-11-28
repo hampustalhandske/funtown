@@ -12,7 +12,7 @@ const lead = (id: string, over: Partial<Lead> = {}, subagents: Character[] = [])
   ...char(id), cwd: "/work/app", tty: null, termProgram: null, kind: "terminal", shortId: null, subagents, ...over,
 });
 const house = (project: string, leads: Lead[], parcels?: Parcel[]): House => ({ project, cwd: `/work/${project}`, leads, parcels });
-const parcel = (number: number): Parcel => ({ number, title: `PR ${number}`, url: `https://example.test/${number}`, draft: false, checks: "none" });
+const parcel = (number: number, checks: Parcel["checks"] = "none"): Parcel => ({ number, title: `PR ${number}`, url: `https://example.test/${number}`, draft: false, checks });
 const town = (houses: House[]): Town => ({ houses, cards: [], started: 1, claude: { version: "2.1.325", problems: [] } });
 const needs = (since: number, over: Partial<Character> = {}): Partial<Character> => ({ stage: "needs_you", needs: "permission", since, ...over });
 
@@ -128,7 +128,7 @@ describe("layout", () => {
       lead(`stuck${i}`, needs(2, { needs: "stuck", reason: "loop" }), [char(`stuck-sub${i}`, { ...needs(4, { needs: "stuck", reason: "x" }), role: "implementer" })]),
       lead(`rest${i}`, needs(3, { needs: "turn ended" }), [char(`w${i}a`, { role: "implementer" }), char(`w${i}b`, { role: "explorer" })]),
       lead(`work${i}`),
-    ], [parcel(i + 1)]))));
+    ], [parcel(i + 1, "running")]))));
     const folk = [...of(all, "lead"), ...of(all, "hat")];
     const parcels = of(all, "parcel");
     for (const b of of(all, "building")) {
@@ -164,7 +164,7 @@ describe("layout", () => {
       steward,
     ]));
     expect(all.length).toBeGreaterThan(40);
-    const spots = all.map((p) => `${p.at.x.toFixed(3)},${p.at.z.toFixed(3)}`);
+    const spots = all.map((p) => `${p.at.x.toFixed(3)},${p.at.z.toFixed(3)}${p.kind === "parcel" ? `,${p.lift.toFixed(3)}` : ""}`);
     expect(new Set(spots).size).toBe(spots.length);
   });
 

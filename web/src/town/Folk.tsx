@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useFrame } from "@react-three/fiber";
 import { BoxGeometry, Color, DynamicDrawUsage, Euler, InstancedMesh, Matrix4, MeshBasicMaterial, Vector3, type Group, type Object3D } from "three";
-import { pose, PROPS, restPosture, walkLegs, type Act } from "./acts.ts";
+import { pose, propsFor, restPosture, walkLegs, type Act } from "./acts.ts";
 import { departed, LEAVE_MS, type Costume, type Drawn } from "./folk.ts";
 import { FOLK_SCALE, geometryOf, inked, KINDS, materialOf, type FolkKind, type Joint, type Rig } from "./folk-parts.ts";
 import { INK } from "./kit/clay.tsx";
@@ -165,7 +165,7 @@ export function seedOf(id: string): number {
 
 type AnimalProps = {
   costume: Costume; colour: string; act: Act; seed: number;
-  /** The Queen's note lies on the slip it holds. */
+  /** The Queen's note lies on the slip it holds, or on the parcel it carries. */
   note?: boolean;
   /** Drawn in its right hand, moving with the arm: a flag. */
   held?: ReactNode;
@@ -177,7 +177,7 @@ export function Animal({ costume, colour, act, seed, note = false, held }: Anima
   // The clothes come as a fresh list with each layout, so the rig is rebuilt only when what they name changes.
   const wear = clothes.join();
   const rig = useMemo(
-    () => rigOf({ animal, hat, clothes: wear === "" ? [] : (wear.split(",") as Costume["clothes"]) }, colour, seed, note && PROPS[act].includes("slip") ? [...PROPS[act], "note"] : PROPS[act]),
+    () => rigOf({ animal, hat, clothes: wear === "" ? [] : (wear.split(",") as Costume["clothes"]) }, colour, seed, propsFor(act, note)),
     [animal, hat, wear, colour, seed, act, note],
   );
   const [group, hand] = useEntry(rig, act, (seed % 1000) / 100, held !== undefined);

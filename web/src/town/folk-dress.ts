@@ -72,7 +72,10 @@ export function hatParts(b: RigBuilder, hat: FolkHat, colour: string, at: Vector
 }
 
 /** Something a folk holds or works at. */
-export type Prop = "hammer" | "crate" | "plane" | "bench" | "clipboard" | "glass" | "stick" | "letter" | "slip" | "note" | "bucket";
+export type Prop = "hammer" | "crate" | "plane" | "bench" | "clipboard" | "glass" | "stick" | "letter" | "slip" | "note" | "bucket" | "parcel" | "parcel-note";
+
+/** A parcel carried up in both arms, as the pile's parcels look (see `parcels.ts`) but at the folk's own scale, 1.26 times smaller. */
+const CARRIED = { w: 0.44, h: 0.32, d: 0.36, y: 0.116, z: 0.32 } as const;
 
 /** The Queen's teal, which seals her note. */
 export const QUEEN_TEAL = "#3f7a76";
@@ -135,6 +138,22 @@ export function propParts(b: RigBuilder, prop: Prop, rig: Pick<Rig, "hands">, co
       hold(b, rig, "L", [0, 0.02, 0.1], [1.4, 0, 0]);
       b.put("box", [0, 0, 0], { s: [0.36, 0.46, 0.025], c: "#fbf6ea" });
       b.put("cyl", [0, -0.12, 0.018], { r: [HALF, 0, 0], s: [0.07, 0.02, 0.07], c: colour });
+      return;
+    case "parcel": {
+      // The box before the chest, held at its sides by both paws, its ties in the project's colour.
+      const { w, h, d } = CARRIED;
+      b.at("root", [0, rig.hands.L.y + CARRIED.y, CARRIED.z]);
+      b.put("box", [0, 0, 0], { s: [w, h, d], c: "#c9a27a" });
+      b.put("box", [0, 0, 0], { s: [w + 0.03, h + 0.03, 0.05], c: colour });
+      b.put("box", [0, 0, 0], { s: [0.05, h + 0.03, d + 0.03], c: colour });
+      b.put("sph", [0, h / 2 + 0.01, 0], { s: 0.09, c: colour });
+      return;
+    }
+    case "parcel-note":
+      // The Queen's note on the carried parcel's lid, sealed in her teal.
+      b.at("root", [0, rig.hands.L.y + CARRIED.y + CARRIED.h / 2 + 0.02, CARRIED.z + 0.02], [0, 0.4, 0]);
+      b.put("box", [0, 0, 0], { s: [0.22, 0.02, 0.17], c: "#fffdf6" });
+      b.put("cyl", [0.04, 0.012, 0.03], { s: [0.09, 0.02, 0.09], c: QUEEN_TEAL });
       return;
     case "note":
       // The Queen's ready note on the slip's face, sealed in her teal.

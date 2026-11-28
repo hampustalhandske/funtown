@@ -256,12 +256,12 @@ test("the_towns_hidden_list_gives_each_house_its_state_words", async ({ page }) 
   await expect(label("epsilon")).toHaveAccessibleName("epsilon, house");
 });
 
-test("the_towns_hidden_list_gives_each_pr_its_check_words", async ({ page }) => {
-  // Catches a PR label with no word on whether its checks failed, passed or never ran.
+test("the_towns_hidden_list_gives_each_pr_its_check_words_and_where_it_lies", async ({ page }) => {
+  // Catches a PR label with no word on whether its checks failed, passed or never ran, or on whether it is at the castle or at its house.
   await open(page, "/", town([withPrs("alpha", [], [red(12), pr(13), pr(14, { checks: "running" }), pr(15, { checks: "none" })])]));
   const label = (n: number) => page.getByRole("button", { name: new RegExp(`^#${n} `) });
-  await expect(label(12)).toHaveAccessibleName(/^#12 Broken build, alpha, pull request, open, checks failed 1\dm ago$/);
-  await expect(label(13)).toHaveAccessibleName("#13 PR 13, alpha, pull request, open, checks passed");
-  await expect(label(14)).toHaveAccessibleName("#14 PR 14, alpha, pull request, open, checks running");
-  await expect(label(15)).toHaveAccessibleName("#15 PR 15, alpha, pull request, open, no checks");
+  await expect(label(12)).toHaveAccessibleName(/^#12 Broken build, alpha, pull request, open, checks failed 1\dm ago, at its house$/);
+  await expect(label(13)).toHaveAccessibleName("#13 PR 13, alpha, pull request, open, checks passed, at the castle");
+  await expect(label(14)).toHaveAccessibleName("#14 PR 14, alpha, pull request, open, checks running, at its house");
+  await expect(label(15)).toHaveAccessibleName("#15 PR 15, alpha, pull request, open, no checks, at the castle");
 });

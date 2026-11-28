@@ -5,26 +5,26 @@ import type { Drawn } from "./folk.ts";
 import { groundHeight } from "./island.ts";
 import { motion } from "./Pace.tsx";
 import type { Spot } from "./layout.ts";
-import { stepOf, walkEnd, walksAfter, type Walk, type Walks } from "./walk.ts";
+import { nextChange, stepOf, walkEnd, walksAfter, type Walk, type Walks } from "./walk.ts";
 
 /** The shortest signed turn from angle `from` to `to`. */
 const turn = (from: number, to: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 
 /**
  * The walks going now, kept as the drawn things change: each render works out what `drawn` changed from the last one
- * (`walksAfter`), and the page draws again when the first walk ends, so what shows a walk (its flag, its words) follows it.
+ * (`walksAfter`), and the page draws again at the next change (`nextChange`: a parcel laid, a walk over), so what shows a walk (its flag, its parcel, its words) follows it.
  */
 export function useWalks(drawn: Drawn[]): Walks {
   const last = useRef<{ drawn: Drawn[]; walks: Walks }>({ drawn: [], walks: new Map() });
   if (last.current.drawn !== drawn) last.current = { drawn, walks: walksAfter(last.current.walks, last.current.drawn, drawn, Date.now()) };
   const { walks } = last.current;
   const [, redraw] = useState(0);
-  const end = Math.min(...[...walks.values()].map(walkEnd));
+  const change = nextChange(walks, Date.now());
   useEffect(() => {
-    if (end === Infinity) return;
-    const timer = setTimeout(() => redraw((n) => n + 1), Math.max(0, end - Date.now()) + 1);
+    if (change === Infinity) return;
+    const timer = setTimeout(() => redraw((n) => n + 1), Math.max(0, change - Date.now()) + 1);
     return () => clearTimeout(timer);
-  }, [end]);
+  }, [change]);
   return walks;
 }
 

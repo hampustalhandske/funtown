@@ -18,8 +18,12 @@ export const YOUR_THRONE = { u: -0.62, w: 2.85, yaw: 0 } as const;
 export const QUEEN_SEAT = { u: 0.7, w: 2.88, yaw: -0.05 } as const;
 /** How high above the plateau a person's hips sit on a throne's cushion. */
 export const SEAT_TOP = 0.79;
-/** The pile of parcels on the flagstones beside the Queen's seat, on its right: where the first one lies and how far each next one is from it. */
-export const PILE = { u: 2.35, w: 3.0, step: 0.5 } as const;
+/**
+ * The pile of parcels on the flagstones beside the Queen's seat, on its right: where the first one lies, how far the second is
+ * from it (`step`, to the right), how many lie on the flagstones (`columns`) and how high each parcel stands, which is how
+ * far the next one up is lifted (`rise`). Where a lead stands to lay one is `PILE.drop` toward the village from the first.
+ */
+export const PILE = { u: 2.35, w: 3.0, step: 0.7, columns: 2, rise: 0.4, drop: 1.15 } as const;
 /** The steward's subagents work in a small yard beside the castle: on the plateau's left, in front of the castle's side and clear of the table. Its first place and the gap between places; rows of three step toward the village. */
 export const YARD = { u: -4.2, w: 2.3, gap: 0.6 } as const;
 
@@ -32,11 +36,20 @@ const world = (u: number, w: number) => {
 export const TABLE_AT = world(TABLE.u, TABLE.w);
 export const HEAD_AT = world(HEAD.u, HEAD.w);
 export const PILE_AT = world(PILE.u, PILE.w);
+/** Where a lead stands to lay a parcel on the pile: before its first two places, out of the way of the line's head. */
+export const PILE_DROP = world(PILE.u + PILE.step / 2, PILE.w + PILE.drop);
 export const YOUR_THRONE_AT = world(YOUR_THRONE.u, YOUR_THRONE.w);
 export const QUEEN_SEAT_AT = world(QUEEN_SEAT.u, QUEEN_SEAT.w);
 export const YARD_AT = world(YARD.u, YARD.w);
 /** The k-th place in the steward's yard: rows of three, each row nearer the village than the last. */
 export const yardSpot = (k: number) => world(YARD.u + YARD.gap * (k % 3), YARD.w + YARD.gap * Math.floor(k / 3));
+
+/**
+ * The k-th parcel's place on the pile: the first `PILE.columns` lie on the flagstones side by side, each
+ * next one lies on the one `columns` below it, `PILE.rise` higher. A place never depends on how many parcels there are, so
+ * a pile that grows moves nothing already on it. `lift` is the height above the flagstones.
+ */
+export const pileSpot = (k: number) => ({ ...world(PILE.u + PILE.step * (k % PILE.columns), PILE.w), lift: PILE.rise * Math.floor(k / PILE.columns) });
 
 /** What the Queen is doing: sitting still, writing the user's word, reading a parcel, or done with a word that waits on a slip. */
 export type QueenState = "idle" | "asked" | "busy" | "ready";

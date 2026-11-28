@@ -10,11 +10,8 @@ import type { Walks } from "./walk.ts";
 import type { Door } from "./mark.ts";
 import { FOV, GROUND, Rig, Sun } from "./stage.tsx";
 import { TownScene, boundsOf } from "./TownScene.tsx";
-import type { TownIndex } from "./TownPage.tsx";
 
 type Props = {
-  /** The town's houses and characters, for the steward's stage and parcels' reviews. */
-  index: TownIndex;
   /** The id of the king's chosen preset (`Town.avatar`); absent or unknown shows the default. */
   avatar?: string;
   placed: Placed[];
@@ -33,7 +30,7 @@ type Props = {
 };
 
 /** The canvas and its camera, with the town on its island or, when `inside` is set, a house's classroom in its own light on its own floor. */
-export function Village({ index, avatar, placed, drawn, walks, name, onPick, inside, doors, lost = false }: Props) {
+export function Village({ avatar, placed, drawn, walks, name, onPick, inside, doors, lost = false }: Props) {
   const look = avatarFor(avatar);
   const bounds = useMemo(() => (inside ? roomBounds(inside.placed) : boundsOf(placed)), [inside?.placed, placed]);
   const [hover, setHover] = useHover(inside ? inside.placed.filter((p) => p.kind !== "observer").map(keyOf) : placed.map(keyOf));
@@ -51,7 +48,7 @@ export function Village({ index, avatar, placed, drawn, walks, name, onPick, ins
           <Classroom key={inside.house.cwd} {...inside} look={look} hover={hover} onHover={setHover} />
         </>
       ) : (
-        <TownScene index={index} placed={placed} drawn={drawn} walks={walks} name={name} onPick={onPick} hover={hover} onHover={setHover} doors={doors} />
+        <TownScene placed={placed} drawn={drawn} walks={walks} name={name} onPick={onPick} hover={hover} onHover={setHover} doors={doors} />
       )}
       <Rig bounds={bounds} />
       <Pace lost={lost} />

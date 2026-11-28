@@ -4,9 +4,8 @@ import { Vector3 } from "three";
 import { actOf } from "./acts.ts";
 import { Animal, FolkLayer, seedOf } from "./Folk.tsx";
 import type { Drawn } from "./folk.ts";
-import { Pennant, Pick } from "./kit/actors.tsx";
+import { Pick } from "./kit/actors.tsx";
 import { avatarFor } from "./kit/avatars.ts";
-import { Parcel } from "./kit/parts.tsx";
 import { CASTLE_HEIGHT, castleHill } from "./castle.ts";
 import { CASTLE, CASTLE_TURN, HILL, castleAt } from "./hill.ts";
 import { SEAT_TOP, QUEEN_SEAT, YOUR_THRONE } from "./court.ts";
@@ -25,11 +24,11 @@ import { Boats, MarkRing, Puffs } from "./VillageFx.tsx";
 import { Fires, Stars, Water, type Blaze, type Throw } from "./Fire.tsx";
 import { bucketOf, roofOf, splashOf } from "./fire.ts";
 import { doorPaths, treeParts, treesFor, village } from "./village.ts";
-import { drawnFlag, gaitOf, type Walks } from "./walk.ts";
+import { PARCEL, parcelParts, tiltOf } from "./parcels.ts";
+import { carrying, drawnFlag, gaitOf, type Walks } from "./walk.ts";
 import { Walker } from "./Walker.tsx";
 import type { Door } from "./mark.ts";
 import type { Bounds } from "./stage.tsx";
-import type { TownIndex } from "./TownPage.tsx";
 
 /** The ground the camera always takes in: the village round the square, the harbour and the castle on its hill. */
 const VILLAGE = { minX: -6, maxX: 15, minZ: CASTLE.z - 3, maxZ: 11 };
@@ -95,8 +94,6 @@ const plateHeight = (p: Placed) =>
   p.kind === "building" ? 2.3 : p.kind === "parcel" ? 0.9 : p.kind === "queen" || p.kind === "you" ? 2.7 : p.pose === "wait" ? 2.4 : 2.1;
 
 type Props = {
-  /** The town's houses and characters, for the steward's stage and parcels' reviews. */
-  index: TownIndex;
   placed: Placed[];
   /** `placed` with the characters that just left still walking off (`useDeparted`), and the walks going (`useWalks`), both worked out by the page, which the hidden list reads too. */
   drawn: Drawn[];
@@ -116,7 +113,7 @@ type Props = {
  * on them, a toy-harbour house per building with its chimney puffing while it is busy, and everyone placed by `layout`.
  * A marked house wears a white ring and shows its name plate, as a hovered thing does.
  */
-export function TownScene({ index, placed, drawn: shown, walks, name, onPick, hover, onHover, doors }: Props) {
+export function TownScene({ placed, drawn: shown, walks, name, onPick, hover, onHover, doors }: Props) {
   const light = useLight();
   const pick = (p: Placed, children: ReactNode, disabled = false) => (
     <Pick
@@ -158,6 +155,23 @@ export function TownScene({ index, placed, drawn: shown, walks, name, onPick, ho
     // `lineKey` is everything the parts are made from.
   }, [lineKey]);
 
+  // The parcels that lie on the pile or a doorstep are parts, drawn again when one comes, goes, moves or gains her note; the one a
+  // lead is still carrying is in its arms, not here.
+  const held = carrying(walks, Date.now());
+  const laid = placed.filter((p): p is Extract<Placed, { kind: "parcel" }> => p.kind === "parcel" && !held.has(keyOf(p)));
+  const laidKey = laid.map((p) => `${p.at.x}|${p.at.z}|${p.lift}|${p.facing}|${p.colour}|${p.note}|${p.number}`).join("\n");
+  const parcelPieces = useMemo(() => {
+    const list = new PartList();
+    for (const p of laid) parcelParts(list, p);
+    return list.parts;
+    // `laidKey` is everything the parts are made from.
+  }, [laidKey]);
+  /** The parcel in the arms of the folk `key`, if it carries one. */
+  const heldBy = (key: string) => {
+    const parcel = [...held].find(([, folk]) => folk === key)?.[0];
+    return placed.find((p): p is Extract<Placed, { kind: "parcel" }> => p.kind === "parcel" && keyOf(p) === parcel);
+  };
+
   // Fire on each burning house's roof, the water its lead throws at it, and the stars over a loud stuck character's head.
   const blazes: Blaze[] = buildings.flatMap((b) => (b.fire === "none" ? [] : [{ key: b.cwd, form: b.fire, at: roofOf(b), facing: b.facing }]));
   const throws: Throw[] = placed.flatMap((p) => {
@@ -182,18 +196,20 @@ export function TownScene({ index, placed, drawn: shown, walks, name, onPick, ho
           </group>
         );
       }
-      case "parcel":
+      case "parcel": {
+        // The box is instanced parts, which take no clicks; an unseen box over it takes them. One in a lead's arms is not here.
+        if (held.has(keyOf(p))) return null;
         return (
-          <group position={on(p.at)} rotation-y={((p.number % 5) - 2) * 0.12}>
+          <group position={[p.at.x, groundHeight(p.at.x, p.at.z) + p.lift, p.at.z]} rotation-y={p.facing + tiltOf(p.number)}>
             {pick(
               p,
-              <>
-                <Parcel />
-                {index.houses.get(p.cwd)?.parcels?.find((x) => x.number === p.number)?.review?.state === "ready" && <Pennant />}
-              </>,
+              <mesh visible={false} position={[0, PARCEL.h / 2 + 0.05, 0]}>
+                <boxGeometry args={[PARCEL.w + 0.08, PARCEL.h + 0.3, PARCEL.d + 0.08]} />
+              </mesh>,
             )}
           </group>
         );
+      }
       case "you":
         return <group position={seated(p.at)} rotation-y={CASTLE_TURN + YOUR_THRONE.yaw}><You look={avatarFor(p.avatar)} /></group>;
       case "queen":
@@ -209,10 +225,10 @@ export function TownScene({ index, placed, drawn: shown, walks, name, onPick, ho
         const leaving = p.leftAt !== undefined;
         const gait = gaitOf(walks, keyOf(p), Date.now());
         const mode = drawnFlag(p, gait);
-        const held = mode === null ? undefined : <HandFlag mode={mode} />;
+        const flag = mode === null ? undefined : <HandFlag mode={mode} />;
         return (
           <Walker at={p.at} facing={p.facing} walk={walks.get(keyOf(p))}>
-            {pick(p, <Animal costume={p} colour={p.colour} act={actOf(p, gait)} seed={seedOf(p.id)} note={note === p.id} held={held} />, leaving)}
+            {pick(p, <Animal costume={p} colour={p.colour} act={actOf(p, gait)} seed={seedOf(p.id)} note={gait === "carry" ? heldBy(keyOf(p))?.note === true : note === p.id} held={flag} />, leaving)}
           </Walker>
         );
       }
@@ -224,6 +240,7 @@ export function TownScene({ index, placed, drawn: shown, walks, name, onPick, ho
       <World light={light} />
       <Parts parts={parts} />
       <Parts parts={lineParts} />
+      <Parts parts={parcelPieces} />
       <Glows parts={parts} lamps={light.lamps} />
       <Boats boats={HARBOUR.boats} />
       <Puffs mouths={buildings.filter((b) => b.busy).map(chimneyOf)} />

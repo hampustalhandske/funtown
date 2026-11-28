@@ -1,11 +1,11 @@
-import type { Character, House, Town } from "../../../server/types.ts";
+import type { Character, House, Parcel, Town } from "../../../server/types.ts";
 import { colourFor } from "./kit/palette.ts";
 import { costumeOf, type Costume } from "./folk.ts";
 import type { InPlaced } from "./interior.ts";
 import { CASTLE_TURN } from "./hill.ts";
 import { lotOf } from "./island.ts";
 import { DOOR, facingOf, houseToWorld, isBusy, variantOf, type Variant } from "./houses.ts";
-import { queenOf, QUEEN_SEAT_AT, YARD_AT, yardSpot, YOUR_THRONE_AT, type QueenState } from "./court.ts";
+import { pileSpot, queenOf, QUEEN_SEAT_AT, YARD_AT, yardSpot, YOUR_THRONE_AT, type QueenState } from "./court.ts";
 import { LINE_FACING, lineUp, type InLine } from "./line.ts";
 import { avatarFor } from "./kit/avatars.ts";
 import { fireOf, loudOf, loudStuck, type FireForm, type Head } from "./fire.ts";
@@ -27,7 +27,13 @@ export type Placed =
   | { kind: "building"; cwd: string; colour: string; at: Spot; facing: number; variant: Variant; busy: boolean; fire: FireForm; marked: boolean; flag: boolean }
   | ({ kind: "lead" } & Folk)
   | ({ kind: "hat" } & Folk)
-  | { kind: "parcel"; cwd: string; number: number; at: Spot }
+  /**
+   * An open PR in its project's `colour`: on the `pile` by the Queen's seat (`lift` above the flagstones, so a stacked one lies
+   * on another) when its checks are green or none, else on its house's `doorstep`. `note` while the Queen's review of it is
+   * ready. `carrier` is the key of the lead that brings it up when it newly lies on the pile (its house's first lead, if that is
+   * neither in the line nor stuck), else null. It faces `facing`.
+   */
+  | { kind: "parcel"; cwd: string; number: number; colour: string; at: Spot; lift: number; facing: number; place: "pile" | "doorstep"; note: boolean; carrier: string | null }
   /** You, on your throne, in the avatar preset `avatar` (an id `avatarFor` knows). */
   | { kind: "you"; avatar: string; at: Spot }
   /** The Queen on her seat: the steward's lead `id` (null when none is listed), what she is doing, and when `ready` the id of the character whose slip carries her note. */
@@ -68,10 +74,14 @@ const step = (lot: Lot, k: number) => inFront(lot, DOOR.across, DOOR.forward + 0
 const doorstep = (lot: Lot, k: number) =>
   k < 3 ? inFront(lot, DOOR.across - 0.6 - 0.55 * k, DOOR.forward - 0.1) : inFront(lot, DOOR.across - 0.6 - 0.55 * ((k - 3) % 3), DOOR.forward + 0.45 + 0.55 * Math.floor((k - 3) / 3));
 
+/** Whether a PR has finished its checks, green or none: it goes to the Queen. Running or red stays at its house. */
+const finished = (p: Parcel) => p.checks === "green" || p.checks === "none";
+
 /**
  * Where everything in `town` stands. Buildings stand on the island's lots in house order (house i on `lotOf(i)`); working and done leads stand in front of their building, resting ones by its door, and working
  * subagents work beside it; stuck ones sit on its doorstep; everyone who asks you waits in the line (`lineUp`) in `waiting`
- * (urgency) order, where only a character's key finds a place; open parcels sit at the door; the lead marked `steward` is the Queen. Done
+ * (urgency) order, where only a character's key finds a place; open parcels with finished checks lie on the pile by the Queen's
+ * seat (a house's oldest first, houses in order) and the rest at their house's door; the lead marked `steward` is the Queen. Done
  * subagents are not placed.
  * A building also says which way its lot faces, its feature, whether anyone of the house works (`busy`: its chimney puffs),
  * whether `marked`, the marked house's folder, is its own, its fire (see `fire.ts`), and whether it flies its flag (one of
@@ -86,6 +96,7 @@ export function layout(town: Town, waiting: Head[], now: number, lost: boolean, 
   const houses = town.houses.filter((h) => h.added || !h.leads.some((l) => l.id === steward) || h.leads.some((l) => l.id !== steward));
   const loud = loudOf(waiting, lost);
   const placed: Placed[] = [];
+  const pile: { house: House; colour: string; parcel: Parcel }[] = [];
   const queue: { key: string; since: number | undefined; place: (at: Spot, line: InLine) => Extract<Placed, { kind: "lead" | "hat" }> }[] = [];
 
   /**
@@ -113,12 +124,28 @@ export function layout(town: Town, waiting: Head[], now: number, lost: boolean, 
     }
   };
 
+  /** A parcel of `house` placed as `where` says. */
+  const parcelAt = (house: House, parcel: Parcel, colour: string, where: Pick<Extract<Placed, { kind: "parcel" }>, "at" | "lift" | "facing" | "place" | "carrier">): Placed =>
+    ({ kind: "parcel", cwd: house.cwd, number: parcel.number, colour, note: parcel.review?.state === "ready", ...where });
+  /** The key of the lead that carries a parcel of `house` up: its first lead (never the steward) unless that one waits in the line or sits stuck. */
+  const carrierOf = (house: House): string | null => {
+    const first = house.leads.find((l) => l.id !== steward);
+    return first !== undefined && folkPose(first) !== "wait" && folkPose(first) !== "stuck" ? `character:${first.id}` : null;
+  };
+
   houses.forEach((house, i) => {
     const lot = { at: lotOf(i), facing: facingOf(i) };
     const colour = colourFor(house.project);
     placed.push({ kind: "building", cwd: house.cwd, colour, ...lot, variant: variantOf(house.cwd), busy: isBusy(house, steward), fire: fireOf(house, now, loud), marked: house.cwd === marked, flag: false });
     settle(house, lot, house.leads.filter((l) => l.id !== steward), colour, true);
-    (house.parcels ?? []).forEach((parcel, k) => placed.push({ kind: "parcel", cwd: house.cwd, number: parcel.number, at: doorstep(lot, k) }));
+    const parcels = house.parcels ?? [];
+    parcels.filter((p) => !finished(p)).forEach((parcel, k) => placed.push(parcelAt(house, parcel, colour, { at: doorstep(lot, k), lift: 0, facing: lot.facing, place: "doorstep", carrier: null })));
+    for (const parcel of parcels.filter(finished).sort((a, b) => a.number - b.number)) pile.push({ house, colour, parcel });
+  });
+  // The pile lies on the forecourt, shared by every house; a parcel's place on it depends only on how many come before it.
+  pile.forEach(({ house, colour, parcel }, k) => {
+    const { lift, ...at } = pileSpot(k);
+    placed.push(parcelAt(house, parcel, colour, { at, lift, facing: CASTLE_TURN, place: "pile", carrier: carrierOf(house) }));
   });
 
   const stewardHouse = town.houses.find((h) => h.leads.some((l) => l.id === steward));
