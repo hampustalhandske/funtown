@@ -2,6 +2,8 @@ import type { Character, House, Town } from "../../../server/types.ts";
 import type { Entry } from "../needs.tsx";
 import { colourFor, hatFor, type HatKind } from "./kit/palette.ts";
 import type { InPlaced } from "./interior.ts";
+import { castleAt, HILL } from "./hill.ts";
+import { lotOf } from "./island.ts";
 
 /** A point on the ground; +z faces the camera, the castle is at the back (-z). */
 export type Spot = { x: number; z: number };
@@ -17,20 +19,19 @@ export type Placed =
 export const keyOf = (p: Placed | InPlaced): string =>
   p.kind === "building" ? `building:${p.cwd}` : p.kind === "parcel" ? `parcel:${p.cwd}#${p.number}` : p.kind === "observer" ? "observer" : `character:${p.id}`;
 
-export const CASTLE: Spot = { x: 0, z: -9 };
-export const DESK: Spot = { x: 0, z: -5.2 };
-export const KING: Spot = { x: 0, z: -5.8 };
-const QUEEN: Spot = { x: -1.2, z: -5.6 };
-/** Where the steward's subagents keep their rack and sit: a yard left of the castle, laid out like a building's. */
-const CASTLE_YARD: Spot = { x: -4.4, z: -6.4 };
-/** The first place in the queue, at the desk's front right corner, clear of the king; the queue snakes back and forth to the right of it. */
-export const QUEUE_HEAD: Spot = { x: 1.1, z: -4.7 };
-const QUEUE_STEP = 1;
-const QUEUE_ROW = 1.3;
-const QUEUE_ROWS = 3;
-/** Distance between two buildings' centres on the grid. */
-const LOT = 4.4;
-const FIRST_ROW = 1.6;
+/** A place in the castle's frame (see `hill.ts`) as a spot on the ground. */
+const court = (u: number, w: number): Spot => {
+  const [x, z] = castleAt(u, w);
+  return { x, z };
+};
+/** Your desk on the forecourt, in front of the castle's gate, with you behind it and the Queen at your right. */
+export const DESK = court(0, 3.85);
+export const KING = court(-0.62, 2.85);
+const QUEEN = court(0.7, 2.88);
+/** Where the steward's subagents keep their rack and sit: a yard on the forecourt left of the gate, laid out like a building's. */
+const CASTLE_YARD = court(-3.6, 2.4);
+/** The queue: rows across the forecourt in front of the desk, then rows on the square at the stair's foot. */
+const QUEUE = { across: 9, step: 0.9, rows: [4.9, 5.75], below: 7, foot: HILL.stair.foot + 1 };
 const SEAT = 0.6;
 
 /**
@@ -52,18 +53,17 @@ const porch = (at: Spot, k: number): Spot => ({ x: at.x, z: at.z + 1.1 + SEAT * 
 /** The k-th parcel at the door of a building at `at`: three in a row left of the door, the rest piled along its side. */
 const doorstep = (at: Spot, k: number): Spot =>
   k < 3 ? { x: at.x - 0.55 - 0.55 * k, z: at.z + 0.95 } : { x: at.x - 1.15 - 0.55 * ((k - 3) % 2), z: at.z + 0.4 - 0.55 * Math.floor((k - 3) / 2) };
-/** The i-th of `count` places in the queue, snaking in rows across the plaza. */
-function queueSpot(i: number, count: number): Spot {
-  const across = Math.max(6, Math.ceil(count / QUEUE_ROWS));
-  const row = Math.floor(i / across);
-  const k = i % across;
-  return { x: QUEUE_HEAD.x + (row % 2 === 0 ? k : across - 1 - k) * QUEUE_STEP, z: QUEUE_HEAD.z + row * QUEUE_ROW };
+/** The i-th place in the queue: across the forecourt's rows from the left, then in rows on the square below the stair. */
+function queueSpot(i: number): Spot {
+  const upper = QUEUE.across * QUEUE.rows.length;
+  if (i < upper) return court((-(QUEUE.across - 1) / 2 + (i % QUEUE.across)) * QUEUE.step, QUEUE.rows[Math.floor(i / QUEUE.across)]);
+  const k = i - upper;
+  return court((-(QUEUE.below - 1) / 2 + (k % QUEUE.below)) * QUEUE.step, QUEUE.foot + QUEUE.step * Math.floor(k / QUEUE.below));
 }
 
 /**
- * Where everything in `town` stands. Buildings follow house order on a grid in front of the
- * castle; working and done leads stand in front of their building, resting ones by its door, and working
- * subagents are hats on its rack; stuck ones sit there too; everyone who asks you queues at the desk in `waiting`
+ * Where everything in `town` stands. Buildings stand on the island's lots in house order (house i on `lotOf(i)`); working and done leads stand in front of their building, resting ones by its door, and working
+ * subagents are hats on its rack; stuck ones sit there too; everyone who asks you queues on the castle's forecourt in `waiting`
  * (urgency) order, where only a character's key finds a place; open parcels sit at the door; the lead marked `steward` stands by the desk. Done
  * subagents are not placed.
  * `now` is the page's clock in ms and `lost` whether the page has lost the server (`townFog(...)?.why === "lost"`);
@@ -78,8 +78,8 @@ export function layout(town: Town, waiting: Pick<Entry, "key">[], now: number, l
   const placed: Placed[] = [];
   const queue: { key: string; place: (at: Spot) => Placed }[] = [];
 
-  /** Places `leads` (unless `asLeads` is false: the steward keeps its own spot) and their subagents around `at`, or in the queue; gives the seats used. */
-  const settle = (house: House, at: Spot, leads: House["leads"], colour: string, asLeads: boolean): number => {
+  /** Places `leads` (unless `asLeads` is false: the steward keeps its own spot) and their subagents around `at`, or in the queue. */
+  const settle = (house: House, at: Spot, leads: House["leads"], colour: string, asLeads: boolean) => {
     let pegs = 0;
     let seats = 0;
     let resting = 0;
@@ -98,24 +98,13 @@ export function layout(town: Town, waiting: Pick<Entry, "key">[], now: number, l
         else placed.push(make(pose === "work" ? rack(at, pegs++) : yard(at, seats++)));
       }
     }
-    return seats;
   };
 
-  const cols = Math.min(houses.length, Math.max(3, Math.ceil(Math.sqrt(houses.length * 3))));
-  // A lot reaches halfway to the next row, so a row of buildings stands behind the row in front by at least twice its deepest yard seat, and a seat more.
-  let rowZ = FIRST_ROW;
-  let deepest = 0;
   houses.forEach((house, i) => {
-    const row = Math.floor(i / cols);
-    if (i > 0 && i % cols === 0) {
-      rowZ += Math.max(LOT, 2 * yard({ x: 0, z: 0 }, Math.max(0, deepest - 1)).z + SEAT);
-      deepest = 0;
-    }
-    const inRow = Math.min(cols, houses.length - row * cols);
-    const at = { x: ((i % cols) - (inRow - 1) / 2) * LOT, z: rowZ };
+    const at = lotOf(i);
     const colour = colourFor(house.project);
     placed.push({ kind: "building", cwd: house.cwd, colour, at });
-    deepest = Math.max(deepest, settle(house, at, house.leads.filter((l) => l.id !== steward), colour, true));
+    settle(house, at, house.leads.filter((l) => l.id !== steward), colour, true);
     (house.parcels ?? []).forEach((parcel, k) => placed.push({ kind: "parcel", cwd: house.cwd, number: parcel.number, at: doorstep(at, k) }));
   });
 
@@ -130,6 +119,6 @@ export function layout(town: Town, waiting: Pick<Entry, "key">[], now: number, l
   queue
     .map((q, i) => ({ ...q, i }))
     .sort((a, b) => rank(a.key) - rank(b.key) || a.i - b.i)
-    .forEach((q, i, all) => placed.push(q.place(queueSpot(i, all.length))));
+    .forEach((q, i) => placed.push(q.place(queueSpot(i))));
   return placed;
 }

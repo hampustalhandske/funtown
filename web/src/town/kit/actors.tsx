@@ -16,8 +16,13 @@ export const plates = { current: document.getElementById("plates")! };
 /** The shortest signed turn from angle `from` to `to`. */
 const turn = (from: number, to: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 
-/** Walks its children to `to` at `speed` units a second, facing the way it goes, then turns to `facing`; it appears at `from`, else at its first `to`. */
-export function Mover({ to, from, speed = WALK_SPEED, facing, children }: { to: Spot; from?: Spot; speed?: number; facing: number; children: ReactNode }) {
+type MoverProps = { to: Spot; from?: Spot; speed?: number; facing: number; ground?: (x: number, z: number) => number; children: ReactNode };
+
+/**
+ * Walks its children to `to` at `speed` units a second, facing the way it goes, then turns to `facing`; it appears at `from`,
+ * else at its first `to`. It stands on `ground`'s height where it is, or on y = 0 without one.
+ */
+export function Mover({ to, from, speed = WALK_SPEED, facing, ground, children }: MoverProps) {
   const ref = useRef<Group>(null);
   const [start] = useState({ ...(from ?? to), facing });
   useFrame(({ clock }, delta) => {
@@ -31,10 +36,10 @@ export function Mover({ to, from, speed = WALK_SPEED, facing, children }: { to: 
       g.position.x += (dx / d) * step;
       g.position.z += (dz / d) * step;
     }
-    g.position.y = walking ? Math.abs(Math.sin(clock.elapsedTime * 12)) * 0.08 : 0;
+    g.position.y = (ground?.(g.position.x, g.position.z) ?? 0) + (walking ? Math.abs(Math.sin(clock.elapsedTime * 12)) * 0.08 : 0);
     g.rotation.y += turn(g.rotation.y, walking ? Math.atan2(dx, dz) : facing) * Math.min(1, dt * 8);
   });
-  return <group ref={ref} position={[start.x, 0, start.z]} rotation-y={start.facing}>{children}</group>;
+  return <group ref={ref} position={[start.x, ground?.(start.x, start.z) ?? 0, start.z]} rotation-y={start.facing}>{children}</group>;
 }
 
 /** A gentle up-and-down at its own pace, so a crowd doesn't move in step. */

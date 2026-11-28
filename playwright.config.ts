@@ -13,7 +13,9 @@ export default defineConfig({
   workers: 1,
   // On CI a committed `test.only` fails the run instead of skipping every other test.
   forbidOnly: !!process.env.CI,
-  use: { baseURL: E2E_URL },
+  // Chromium draws WebGL on the Mac's GPU through Metal, as the app does; headless it would fall back to a software
+  // renderer, where one frame of the island takes about 450 ms and blocks the page between frames.
+  use: { baseURL: E2E_URL, launchOptions: { args: ["--use-angle=metal"] } },
   webServer: {
     command: "vite build && node server/main.ts",
     url: E2E_URL,

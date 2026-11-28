@@ -26,24 +26,26 @@ type Props = {
   doors?: MutableRefObject<(() => Door[]) | null>;
 };
 
-/** The canvas: its camera, light and ground, with the town or, when `inside` is set, a house's classroom drawn in it. */
+/** The canvas and its camera, with the town on its island or, when `inside` is set, a house's classroom in its own light on its own floor. */
 export function Village({ index, avatar, placed, marked, name, onPick, inside, doors }: Props) {
   const look = avatarFor(avatar);
   const bounds = useMemo(() => (inside ? roomBounds(inside.placed) : boundsOf(placed)), [inside?.placed, placed]);
   const [hover, setHover] = useHover(inside ? inside.placed.filter((p) => p.kind !== "observer").map(keyOf) : placed.map(keyOf));
   return (
     <Canvas shadows="percentage" camera={{ fov: FOV, position: [0, 30, 30] }} onPointerMissed={() => setHover(null)}>
-      <color attach="background" args={[GROUND]} />
-      <hemisphereLight args={["#fff8ec", "#b9a98f", 1.6]} />
-      <Sun bounds={bounds} />
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.26, 0]} receiveShadow>
-        <planeGeometry args={[400, 400]} />
-        <meshLambertMaterial color={GROUND} />
-      </mesh>
       {inside ? (
-        <Classroom key={inside.house.cwd} {...inside} look={look} hover={hover} onHover={setHover} />
+        <>
+          <color attach="background" args={[GROUND]} />
+          <hemisphereLight args={["#fff8ec", "#b9a98f", 1.6]} />
+          <Sun bounds={bounds} />
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.26, 0]} receiveShadow>
+            <planeGeometry args={[400, 400]} />
+            <meshLambertMaterial color={GROUND} />
+          </mesh>
+          <Classroom key={inside.house.cwd} {...inside} look={look} hover={hover} onHover={setHover} />
+        </>
       ) : (
-        <TownScene index={index} look={look} placed={placed} bounds={bounds} marked={marked} name={name} onPick={onPick} hover={hover} onHover={setHover} doors={doors} />
+        <TownScene index={index} look={look} placed={placed} marked={marked} name={name} onPick={onPick} hover={hover} onHover={setHover} doors={doors} />
       )}
       <Rig bounds={bounds} />
     </Canvas>

@@ -3,10 +3,11 @@ import { house, lead, stubStream, town } from "./stream.ts";
 
 const NOW = Date.now();
 
-/** Three houses in a row, left to right: alpha, beta, gamma. The middle of the screen is beta's. */
+/**
+ * Three houses on the island's first three lots: alpha on the slope above the quay (front left on the screen), beta to its
+ * right across the square, and gamma behind alpha near the stair's foot, the house nearest the screen's middle.
+ */
 const row = () => town(["alpha", "beta", "gamma"].map((p, i) => house(p, [lead({ id: `s${i}`, name: `lead-${i}` })])));
-/** Five houses: four in a row (alpha to delta, left to right) and epsilon alone below, between beta and gamma. */
-const two = () => town(["alpha", "beta", "gamma", "delta", "epsilon"].map((p, i) => house(p, [lead({ id: `s${i}`, name: `lead-${i}` })])));
 
 async function open(page: Page, initial: unknown, path = "/") {
   await stubStream(page, initial);
@@ -26,40 +27,33 @@ test("arrows_move_the_mark_by_screen_direction_and_show_its_name_plate", async (
   await expect(plate(page)).toHaveCount(0);
   // The first press marks the house nearest the middle, whichever arrow.
   await page.keyboard.press("ArrowLeft");
-  await expect(plate(page)).toHaveText("beta");
-  await page.keyboard.press("ArrowRight");
   await expect(plate(page)).toHaveText("gamma");
+  await page.keyboard.press("ArrowRight");
+  await expect(plate(page)).toHaveText("beta");
   // Nothing further right: the mark stays.
   await page.keyboard.press("ArrowRight");
+  await expect(plate(page)).toHaveText("beta");
+  await page.keyboard.press("ArrowUp");
   await expect(plate(page)).toHaveText("gamma");
   await page.keyboard.press("ArrowLeft");
-  await expect(plate(page)).toHaveText("beta");
-  await page.keyboard.press("ArrowLeft");
   await expect(plate(page)).toHaveText("alpha");
   await page.keyboard.press("ArrowLeft");
-  await expect(plate(page)).toHaveText("alpha");
-  // Nothing above or below a row.
-  await page.keyboard.press("ArrowUp");
-  await page.keyboard.press("ArrowDown");
   await expect(plate(page)).toHaveText("alpha");
 });
 
 test("down_and_up_follow_the_screen_and_the_way_back_returns_to_the_house_you_came_from", async ({ page }) => {
-  await open(page, two());
-  // The first press marks the house nearest the middle: gamma.
-  await page.keyboard.press("ArrowLeft");
+  await open(page, row());
+  await page.keyboard.press("ArrowDown");
   await expect(plate(page)).toHaveText("gamma");
   await page.keyboard.press("ArrowDown");
-  await expect(plate(page)).toHaveText("epsilon");
+  await expect(plate(page)).toHaveText("alpha");
   await page.keyboard.press("ArrowUp");
   await expect(plate(page)).toHaveText("gamma");
+  await page.keyboard.press("ArrowRight");
+  await expect(plate(page)).toHaveText("beta");
+  // Left from beta goes back to gamma, where it came from, though alpha lies straighter to the left.
   await page.keyboard.press("ArrowLeft");
-  await expect(plate(page)).toHaveText("beta");
-  await page.keyboard.press("ArrowDown");
-  await expect(plate(page)).toHaveText("epsilon");
-  // Up from epsilon goes back to beta, where it came from, though gamma is as near.
-  await page.keyboard.press("ArrowUp");
-  await expect(plate(page)).toHaveText("beta");
+  await expect(plate(page)).toHaveText("gamma");
 });
 
 test("enter_goes_into_the_marked_house_and_esc_leaves_it_then_clears_the_mark", async ({ page }) => {
@@ -68,37 +62,37 @@ test("enter_goes_into_the_marked_house_and_esc_leaves_it_then_clears_the_mark", 
   expect(await hash(page), "Enter with no mark goes nowhere").toBe("");
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("ArrowRight");
-  await expect(plate(page)).toHaveText("gamma");
+  await expect(plate(page)).toHaveText("beta");
   await page.keyboard.press("Enter");
-  expect(await hash(page)).toBe(`#in=${encodeURIComponent("/work/gamma")}`);
+  expect(await hash(page)).toBe(`#in=${encodeURIComponent("/work/beta")}`);
   // In the classroom the arrows do nothing and Enter goes nowhere new.
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("Enter");
-  expect(await hash(page)).toBe(`#in=${encodeURIComponent("/work/gamma")}`);
+  expect(await hash(page)).toBe(`#in=${encodeURIComponent("/work/beta")}`);
   // Esc leaves the classroom first, then clears the mark.
   await page.keyboard.press("Escape");
   expect(await hash(page)).toBe("");
-  await expect(plate(page)).toHaveText("gamma");
+  await expect(plate(page)).toHaveText("beta");
   await page.keyboard.press("Escape");
   await expect(plate(page)).toHaveCount(0);
   // A cleared mark comes back where it was on the next arrow.
   await page.keyboard.press("ArrowLeft");
-  await expect(plate(page)).toHaveText("gamma");
+  await expect(plate(page)).toHaveText("beta");
 });
 
 test("arrows_and_enter_do_nothing_with_a_pane_open_and_the_mark_is_the_last_layer_esc_closes", async ({ page }) => {
   await open(page, row());
   await page.keyboard.press("ArrowLeft");
-  await expect(plate(page)).toHaveText("beta");
+  await expect(plate(page)).toHaveText("gamma");
   await page.getByRole("button", { name: "Settings" }).click();
   await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("Enter");
-  await expect(plate(page)).toHaveText("beta");
+  await expect(plate(page)).toHaveText("gamma");
   expect(await hash(page)).toBe("");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(plate(page)).toHaveText("beta");
+  await expect(plate(page)).toHaveText("gamma");
   await page.keyboard.press("Escape");
   await expect(plate(page)).toHaveCount(0);
 });
@@ -116,17 +110,17 @@ test("space_marks_a_house_the_arrows_then_move_on_from", async ({ page }) => {
   await page.keyboard.press("ArrowRight"); // a pane is open: nothing moves
   await expect(plate(page)).toHaveText("beta");
   await page.keyboard.press("Escape");
-  await page.keyboard.press("ArrowRight");
-  await expect(plate(page)).toHaveText("gamma");
+  await page.keyboard.press("ArrowLeft");
+  await expect(plate(page)).toHaveText("alpha");
 });
 
 test("a_held_arrow_moves_once_and_a_focused_button_keeps_its_enter", async ({ page }) => {
   await open(page, row());
   await page.keyboard.press("ArrowLeft");
-  await expect(plate(page)).toHaveText("beta");
+  await expect(plate(page)).toHaveText("gamma");
   await held(page, "ArrowRight");
   await page.waitForTimeout(200);
-  await expect(plate(page)).toHaveText("beta");
+  await expect(plate(page)).toHaveText("gamma");
   // Tab to a button: Enter presses it and does not go into the house.
   await page.getByRole("button", { name: "Key sheet" }).focus();
   await page.keyboard.press("Enter");

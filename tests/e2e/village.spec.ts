@@ -175,6 +175,26 @@ test("an_unasked_parcels_panel_opens_the_pr_from_open_pr_and_asks_nothing", asyn
   expect(asked).toBe(0);
 });
 
+test("the_island_draws_in_webgl2_with_no_console_errors_or_failed_requests", async ({ page }) => {
+  const problems: string[] = [];
+  page.on("console", (m) => m.type() === "error" && problems.push(m.text()));
+  page.on("pageerror", (e) => problems.push(e.message));
+  page.on("response", (r) => r.status() >= 400 && problems.push(`${r.status()} ${r.url()}`));
+  await openTown(page);
+  // A canvas already drawing in WebGL2 hands back that context; one drawing in anything else gives null.
+  await expect.poll(() => page.locator("canvas").evaluate((c: HTMLCanvasElement) => c.getContext("webgl2") !== null)).toBe(true);
+  // A few frames of the island, its shaders and its post passes, then a look inside a house and back.
+  await page.waitForTimeout(1500);
+  await item(page, /^demo-app, house/).click();
+  await expect.poll(() => new URL(page.url()).hash).not.toBe("");
+  await page.waitForTimeout(500);
+  await page.keyboard.press("Escape");
+  await expect.poll(() => new URL(page.url()).hash).toBe("");
+  await page.waitForTimeout(500);
+  await page.waitForLoadState("networkidle");
+  expect(problems).toEqual([]);
+});
+
 test("the_town_page_shows_no_words_outside_panels_and_has_a_full_window_canvas_with_labelled_icon_buttons", async ({ page }) => {
   await openTown(page);
   await expect(page.locator("canvas")).toHaveCount(1);

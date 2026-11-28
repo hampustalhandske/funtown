@@ -3,6 +3,8 @@ import type { Character, House, Lead, Parcel, Town } from "../../server/types.ts
 import { characterEntries, urgencyList } from "../../web/src/needs.tsx";
 import { layout } from "../../web/src/town/layout.ts";
 import { colourFor, hatFor } from "../../web/src/town/kit/palette.ts";
+import { onHill, onPlateau, onStair } from "../../web/src/town/hill.ts";
+import { landHeight, SQUARE } from "../../web/src/town/island.ts";
 
 const char = (id: string, over: Partial<Character> = {}): Character => ({ id, name: id, stage: "working", activity: null, step: null, ...over });
 const lead = (id: string, over: Partial<Lead> = {}, subagents: Character[] = []): Lead => ({
@@ -116,23 +118,6 @@ describe("layout", () => {
     expect(Object.fromEntries(of(all, "lead").map((l) => [l.id, l.pose]))).toEqual({ finished: "idle", busy: "work" });
   });
 
-  test("thirteen_or_more_seated_characters_stay_inside_their_own_lot", async () => {
-    const crowded = house("alpha", Array.from({ length: 14 }, (_, i) => lead(`a${i}`)));
-    // Eight houses make rows of five and three, so the third house of row one has a neighbour right of it and one below it.
-    const others = ["a", "b", "c", "d", "e", "f", "g"].map((n) => house(n, [lead(`${n}1`)]));
-    const all = place(town([...others.slice(0, 2), crowded, ...others.slice(2)]));
-    const buildings = of(all, "building");
-    const own = buildings.find((b) => b.cwd === crowded.cwd)!;
-    const below = buildings.find((b) => b.at.x === own.at.x && b.at.z > own.at.z)!;
-    const side = buildings.find((b) => b.at.z === own.at.z && b.at.x > own.at.x)!;
-    const seated = of(all, "lead").filter((l) => l.cwd === crowded.cwd);
-    expect(seated).toHaveLength(14);
-    for (const l of seated) {
-      expect(l.at.z - own.at.z).toBeLessThanOrEqual((below.at.z - own.at.z) / 2);
-      expect(Math.abs(l.at.x - own.at.x)).toBeLessThanOrEqual((side.at.x - own.at.x) / 2);
-    }
-  });
-
   test("no_two_things_stand_on_one_spot_in_a_crowded_town", async () => {
     const crowd = (p: string, n: number) =>
       Array.from({ length: n }, (_, i) => lead(`${p}${i}`, i % 3 === 0 ? needs(i + 1) : {}, [
@@ -162,5 +147,35 @@ describe("layout", () => {
     expect(layout(t, urgencyList(t, 1_000_000), 1_000_000, false)).toEqual(layout(t, urgencyList(t, 1_000_000), 1_000_000, false));
     const u = make();
     expect(layout(u, urgencyList(u, 1_000_000), 1_000_000, false)).toEqual(layout(t, urgencyList(t, 1_000_000), 1_000_000, false));
+  });
+
+  test("every_house_of_a_big_town_stands_on_its_own_lot_on_land_off_the_stair_the_square_and_the_castle_hill", async () => {
+    // Sixty houses: past the island's first twelve lots, past its last named lot and into the fallback rows.
+    const houses = Array.from({ length: 60 }, (_, i) => house(`p${i}`, [lead(`l${i}`)]));
+    const buildings = of(place(town(houses)), "building");
+    expect(buildings.map((b) => b.cwd)).toEqual(houses.map((h) => h.cwd));
+    const spots = buildings.map((b) => b.at);
+    for (const [i, { x, z }] of spots.entries()) {
+      expect(landHeight(x, z), `house ${i} on land`).toBeGreaterThan(0.2);
+      expect(onStair(x, z) || onHill(x, z), `house ${i} off the stair and the hill`).toBe(false);
+      expect(Math.hypot(x - SQUARE.x, z - SQUARE.z), `house ${i} off the square`).toBeGreaterThan(SQUARE.radius + 1);
+      for (const other of spots.slice(0, i)) expect(dist(other, { x, z }), `house ${i} clear of the houses before it`).toBeGreaterThan(1.2);
+    }
+  });
+
+  test("a_house_keeps_its_lot_by_its_place_in_house_order_whatever_its_name_or_the_houses_after_it", async () => {
+    const named = (names: string[]) => of(place(town(names.map((n) => house(n, [lead(`${n}-lead`)])))), "building").map((b) => b.at);
+    const first = named(Array.from({ length: 30 }, (_, i) => `a${i}`));
+    expect(named(Array.from({ length: 31 }, (_, i) => `b${i}`)).slice(0, 30)).toEqual(first);
+    // The first house of any town stands on the island's first lot, on the slope above the quay.
+    expect(first[0]).toEqual({ x: -1, z: 4.2 });
+  });
+
+  test("a_dozen_characters_asking_for_you_wait_up_on_the_castles_forecourt", async () => {
+    const askers = Array.from({ length: 12 }, (_, i) => lead(`w${i}`, needs(i + 1)));
+    const all = place(town([house("alpha", askers.slice(0, 6)), house("beta", askers.slice(6))]));
+    const waiting = of(all, "lead");
+    expect(waiting.map((l) => l.pose)).toEqual(Array(12).fill("queue"));
+    for (const l of waiting) expect(onPlateau(l.at.x, l.at.z), l.id).toBe(true);
   });
 });

@@ -6,19 +6,28 @@ import { Clay, TONES } from "./kit/clay.tsx";
 import type { Avatar } from "./kit/avatars.ts";
 import { Hat } from "./kit/hats.tsx";
 import { PALETTE, type HatKind } from "./kit/palette.ts";
-import { Castle, Desk, Figure, HouseModel, Parcel } from "./kit/parts.tsx";
-import { CASTLE, DESK, KING, QUEUE_HEAD, keyOf, poseOf, type Placed, type Spot } from "./layout.ts";
+import { Desk, Figure, HouseModel, Parcel } from "./kit/parts.tsx";
+import { CASTLE_HEIGHT, castleHill } from "./castle.ts";
+import { CASTLE, CASTLE_TURN, HILL, castleAt } from "./hill.ts";
+import { World } from "./World.tsx";
+import { groundHeight } from "./island.ts";
+import { DESK, KING, keyOf, poseOf, type Placed, type Spot } from "./layout.ts";
+import { Parts } from "./parts.tsx";
 import type { Door } from "./mark.ts";
 import type { Bounds } from "./stage.tsx";
 import type { TownIndex } from "./TownPage.tsx";
 
 const QUEEN_COLOUR = PALETTE[4];
-const CASTLE_SCALE = 1.6;
-const CASTLE_REACH = 1.6 * CASTLE_SCALE;
+/** The ground the camera always takes in: the village round the square, the harbour and the castle on its hill. */
+const VILLAGE = { minX: -6, maxX: 15, minZ: CASTLE.z - 3, maxZ: 11 };
+/** The castle's stonework, built once. */
+const STONEWORK = castleHill().parts;
+/** Where something at (x, z) stands: the ground's height there. */
+const on = ({ x, z }: Spot): [number, number, number] => [x, groundHeight(x, z), z];
 
-/** The ground everything in `placed` needs, the castle and the plaza included. */
+/** The ground everything in `placed` needs, the village and the castle included, seen from high in front. */
 export function boundsOf(placed: Placed[]): Bounds {
-  let [minX, maxX, minZ, maxZ] = [-6.5, 6.5, CASTLE.z - 2.6, QUEUE_HEAD.z + 3.4];
+  let { minX, maxX, minZ, maxZ } = VILLAGE;
   for (const p of placed) {
     const [w, back, front] = p.kind === "building" ? [2.4, 2, 3.3] : [0.8, 0.8, 0.8];
     minX = Math.min(minX, p.at.x - w);
@@ -26,11 +35,15 @@ export function boundsOf(placed: Placed[]): Bounds {
     minZ = Math.min(minZ, p.at.z - back);
     maxZ = Math.max(maxZ, p.at.z + front);
   }
-  // The tops of the castle's towers at the back, and a house's height at the front.
+  // The tips of the castle's towers at the back, and a house's height at the front.
   const tops: Bounds["tops"] = [
-    [CASTLE.x - CASTLE_REACH, 3.9, CASTLE.z - CASTLE_REACH], [CASTLE.x + CASTLE_REACH, 3.9, CASTLE.z - CASTLE_REACH], [minX, 2, maxZ], [maxX, 2, maxZ],
+    ...[-2.3, 2.3].map((u): [number, number, number] => {
+      const [x, z] = castleAt(u, -1.4);
+      return [x, HILL.top + CASTLE_HEIGHT, z];
+    }),
+    [minX, 2, maxZ], [maxX, 2, maxZ],
   ];
-  return { minX, maxX, minZ, maxZ, tops, margin: [0.92, 0.84], key: [minX, maxX, minZ, maxZ].join() };
+  return { minX, maxX, minZ, maxZ, tops, margin: [0.92, 0.84], rise: 1, key: [minX, maxX, minZ, maxZ].join() };
 }
 
 /** A working subagent: its hat on a rack peg, nodding as it works. */
@@ -49,7 +62,7 @@ function Rail({ pegs }: { pegs: Spot[] }) {
   const xs = pegs.map((p) => p.x);
   const [from, to] = [Math.min(...xs) - 0.22, Math.max(...xs) + 0.22];
   return (
-    <group position={[0, 0, pegs[0].z]}>
+    <group position={[0, groundHeight((from + to) / 2, pegs[0].z), pegs[0].z]}>
       <Clay colour={TONES.wood} position={[(from + to) / 2, 0.7, 0]}><boxGeometry args={[to - from, 0.08, 0.08]} /></Clay>
       {[from, to].map((x) => (
         <Clay key={x} colour={TONES.wood} position={[x, 0.35, 0]}><cylinderGeometry args={[0.04, 0.05, 0.7, 8]} /></Clay>
@@ -61,7 +74,7 @@ function Rail({ pegs }: { pegs: Spot[] }) {
   );
 }
 
-/** Where a house's door is, from the house's spot: the door is on the front wall. */
+/** Where a house's door is, from the house's spot on the ground: the door is on the front wall. */
 const DOOR = { y: 0.3, z: 0.6 };
 
 /** Gives `where` a function that reads each house's door on the screen with the camera as it is when called, or null while the town is not shown. */
@@ -75,7 +88,8 @@ function Doors({ placed, where }: { placed: Placed[]; where: MutableRefObject<((
       camera.updateMatrixWorld();
       return latest.current.flatMap((p) => {
         if (p.kind !== "building") return [];
-        const v = new Vector3(p.at.x, DOOR.y, p.at.z + DOOR.z).project(camera);
+        const [x, z] = [p.at.x, p.at.z + DOOR.z];
+        const v = new Vector3(x, groundHeight(x, z) + DOOR.y, z).project(camera);
         return [{ cwd: p.cwd, x: (v.x * size.width) / 2, y: (-v.y * size.height) / 2 }];
       });
     };
@@ -96,8 +110,6 @@ type Props = {
   /** The look of the king's chosen avatar preset. */
   look: Avatar;
   placed: Placed[];
-  /** The ground the town needs, which the board it stands on covers. */
-  bounds: Bounds;
   /** The folder of the marked house, whose name plate shows as a hover's does. */
   marked?: string | null;
   /** The words a thing's hover plate shows. */
@@ -110,8 +122,8 @@ type Props = {
   doors?: MutableRefObject<(() => Door[]) | null>;
 };
 
-/** The town: the castle with the king (in the chosen avatar) at his desk, a building per house, and everyone placed by `layout`. */
-export function TownScene({ index, look, placed, bounds, marked, name, onPick, hover, onHover, doors }: Props) {
+/** The town: the island with the castle on its hill, the king (in the chosen avatar) at his desk on the forecourt, a building per house, and everyone placed by `layout`. */
+export function TownScene({ index, look, placed, marked, name, onPick, hover, onHover, doors }: Props) {
   const pick = (p: Placed, children: ReactNode) => (
     <Pick id={keyOf(p)} height={plateHeight(p)} plate={keyOf(p) === hover || (p.kind === "building" && p.cwd === marked) ? name(p) : null} onPick={() => onPick(p)} onHover={onHover}>{children}</Pick>
   );
@@ -128,13 +140,13 @@ export function TownScene({ index, look, placed, bounds, marked, name, onPick, h
     switch (p.kind) {
       case "building":
         return (
-          <group position={[p.at.x, 0, p.at.z]}>
+          <group position={on(p.at)}>
             {pick(p, <HouseModel colour={p.colour} />)}
           </group>
         );
       case "parcel":
         return (
-          <group position={[p.at.x, 0, p.at.z]} rotation-y={((p.number % 5) - 2) * 0.12}>
+          <group position={on(p.at)} rotation-y={((p.number % 5) - 2) * 0.12}>
             {pick(
               p,
               <>
@@ -146,14 +158,14 @@ export function TownScene({ index, look, placed, bounds, marked, name, onPick, h
         );
       case "steward": {
         const queen = index.characters.get(p.id)?.character;
-        return <Mover to={p.at} facing={0}>{pick(p, <Body pose={queen ? poseOf(queen) : "work"} colour={QUEEN_COLOUR} hat="tiara" />)}</Mover>;
+        return <Mover to={p.at} facing={0} ground={groundHeight}>{pick(p, <Body pose={queen ? poseOf(queen) : "work"} colour={QUEEN_COLOUR} hat="tiara" />)}</Mover>;
       }
       case "lead":
       case "hat": {
         // Queuers turn halfway to the desk, so their faces and slips still show; the stuck sit turned a little, so their legs read as sitting.
         const facing = p.pose === "queue" ? Math.atan2(DESK.x - p.at.x, DESK.z - p.at.z) / 2 : p.pose === "stuck" ? 0.8 : 0;
         return (
-          <Mover to={p.at} facing={facing}>
+          <Mover to={p.at} facing={facing} ground={groundHeight}>
             {pick(p, p.kind === "hat" && p.pose === "work" ? <RackHat hat={p.hat} colour={p.colour} /> : <Body pose={p.pose} colour={p.colour} hat={p.kind === "hat" ? p.hat : "cap"} />)}
           </Mover>
         );
@@ -161,21 +173,15 @@ export function TownScene({ index, look, placed, bounds, marked, name, onPick, h
     }
   };
 
-  const width = bounds.maxX - bounds.minX + 1;
-  const depth = bounds.maxZ - bounds.minZ + 1;
   return (
     <>
-      {/* The board the town stands on: grass on soil, catching shadows but casting none. */}
-      <group position={[(bounds.minX + bounds.maxX) / 2, 0, (bounds.minZ + bounds.maxZ) / 2]}>
-        <Clay colour={TONES.soil} castShadow={false} position={[0, -0.15, 0]}><boxGeometry args={[width, 0.2, depth]} /></Clay>
-        <Clay colour={TONES.grass} castShadow={false} position={[0, -0.025, 0]}><boxGeometry args={[width, 0.05, depth]} /></Clay>
-      </group>
-      <group position={[CASTLE.x, 0, CASTLE.z]} scale={CASTLE_SCALE}><Castle /></group>
-      <group position={[DESK.x, 0, DESK.z]}>
+      <World />
+      <Parts parts={STONEWORK} />
+      <group position={on(DESK)} rotation-y={CASTLE_TURN}>
         <Desk />
         <Clay colour={TONES.paper} position={[0.3, 0.64, 0]} rotation-y={0.2}><boxGeometry args={[0.32, 0.06, 0.24]} /></Clay>
       </group>
-      <group position={[KING.x, 0, KING.z]}><Bob speed={1.2}><Figure colour={look.coat} hat={look.hat} skin={look.skin} /></Bob></group>
+      <group position={on(KING)} rotation-y={CASTLE_TURN}><Bob speed={1.2}><Figure colour={look.coat} hat={look.hat} skin={look.skin} /></Bob></group>
       {doors && <Doors placed={placed} where={doors} />}
       {[...rails].map(([rail, pegs]) => <Rail key={rail} pegs={pegs} />)}
       {placed.map((p) => <group key={keyOf(p)}>{thing(p)}</group>)}

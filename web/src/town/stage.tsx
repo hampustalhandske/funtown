@@ -6,13 +6,16 @@ import { PerspectiveCamera, Vector3, type DirectionalLight } from "three";
 export const GROUND = "#efe6d6";
 export const FOV = 40;
 /**
- * Where the camera looks from, for a window of the given aspect: in front of the town, high up, a
+ * Where the camera looks from, for a window of the given aspect: in front of the scene, `rise` up for each unit back, a
  * little to the right; steeper the narrower the window, so a tall window's height fills too.
  */
-const directionFor = (aspect: number) => new Vector3(0.1, 0.62 + 2 * Math.max(0, 1 - aspect), 1).normalize();
+const directionFor = (aspect: number, rise: number) => new Vector3(0.1, rise + 2 * Math.max(0, 1 - aspect), 1).normalize();
 
-/** A scene's extent on the ground, with the points above it that must stay in view and a key that changes only when the extent does. */
-export type Bounds = { minX: number; maxX: number; minZ: number; maxZ: number; tops: [number, number, number][]; margin: [number, number]; key: string };
+/**
+ * A scene's extent on the ground, with the points above it that must stay in view, how much of the window it may fill, how
+ * steeply the camera looks down at it (`rise`, 0.62 unless given) and a key that changes only when the extent does.
+ */
+export type Bounds = { minX: number; maxX: number; minZ: number; maxZ: number; tops: [number, number, number][]; margin: [number, number]; rise?: number; key: string };
 
 /** The camera position and look-at point that fit `b` in a window of the given aspect, with a margin. */
 function fit(camera: PerspectiveCamera, b: Bounds, aspect: number): { position: Vector3; target: Vector3 } {
@@ -24,7 +27,7 @@ function fit(camera: PerspectiveCamera, b: Bounds, aspect: number): { position: 
   const corners = [
     [b.minX, 0, b.minZ], [b.maxX, 0, b.minZ], [b.minX, 0, b.maxZ], [b.maxX, 0, b.maxZ], ...b.tops,
   ].map(([x, y, z]) => new Vector3(x, y, z));
-  const direction = directionFor(aspect);
+  const direction = directionFor(aspect, b.rise ?? 0.62);
   let [near, far] = [1, 400];
   for (let i = 0; i < 32; i++) {
     const d = (near + far) / 2;
