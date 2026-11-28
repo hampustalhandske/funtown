@@ -120,8 +120,32 @@ One line on where the project is heading.
 _Avoid_: intent, mission
 
 **Glance state**:
-What the town says about a character or a house before you lean in: working, asking, stuck,
-resting, done.
+What the town says about a character or a house before you lean in. A character: working, asking,
+stuck, resting, done. A house: no fire, handled, burning, or a PR waiting for you.
+
+**Fire**:
+A house with a failed PR: any of its PRs has a red check state. One thing, a check failed.
+_Avoid_: broken, red house
+
+**Burning**:
+A fire while no lead of the house works. It is loud, tier 3 of the urgency list.
+
+**Handled**:
+A fire while any lead of the house works, a run in its worktree included. Not in the urgency list.
+
+**Who holds the bucket**:
+Any lead of the house that is working: it decides burning from handled.
+
+**The loud thing**:
+The one entry the town makes noise for: the head of the urgency list when it is in tiers 1 to 3.
+
+**Calm**:
+Nothing in tiers 1 to 3 and nothing unknown. Quiet entries (a rate limit, a PR waiting for you,
+a resting lead) leave the town calm.
+
+**A PR waiting for you**:
+A PR with nothing failed and nothing running (green, or no checks), in a house where no lead
+works. A quiet entry, tier 4, never alerting.
 
 **Check state**:
 What a PR's checks say, as gh's buckets read them: red (any check failed, a workflow that never

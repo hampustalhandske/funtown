@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Character, House, Lead, Parcel, Town } from "../../server/types.ts";
-import { urgencyList } from "../../web/src/needs.tsx";
+import { characterEntries, urgencyList } from "../../web/src/needs.tsx";
 import { layout } from "../../web/src/town/layout.ts";
 import { colourFor, hatFor } from "../../web/src/town/kit/palette.ts";
 
@@ -13,7 +13,7 @@ const parcel = (number: number): Parcel => ({ number, title: `PR ${number}`, url
 const town = (houses: House[]): Town => ({ houses, cards: [], started: 1, claude: { version: "2.1.325", problems: [] } });
 const needs = (since: number, over: Partial<Character> = {}): Partial<Character> => ({ stage: "needs_you", needs: "permission", since, ...over });
 
-const place = (t: Town) => layout(t, urgencyList(t));
+const place = (t: Town) => layout(t, urgencyList(t, 1_000_000));
 type Placed = ReturnType<typeof place>[number];
 const of = <K extends Placed["kind"]>(all: Placed[], kind: K) => all.filter((p): p is Extract<Placed, { kind: K }> => p.kind === kind);
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -82,7 +82,7 @@ describe("layout", () => {
 
   test("the_queue_follows_the_urgency_order_so_swapping_it_swaps_the_spots", async () => {
     const t = town([house("alpha", [lead("old", needs(10))]), house("beta", [lead("new", needs(20))])]);
-    const [first, second] = urgencyList(t);
+    const [first, second] = characterEntries(urgencyList(t, 1_000_000));
     expect([first.id, second.id]).toEqual(["old", "new"]);
     const spot = (all: Placed[], id: string) => of(all, "lead").find((l) => l.id === id)!.at;
     const oldestFirst = layout(t, [first, second]);
@@ -159,8 +159,8 @@ describe("layout", () => {
       house("beta", [lead("b1")]),
     ]);
     const t = make();
-    expect(layout(t, urgencyList(t))).toEqual(layout(t, urgencyList(t)));
+    expect(layout(t, urgencyList(t, 1_000_000))).toEqual(layout(t, urgencyList(t, 1_000_000)));
     const u = make();
-    expect(layout(u, urgencyList(u))).toEqual(layout(t, urgencyList(t)));
+    expect(layout(u, urgencyList(u, 1_000_000))).toEqual(layout(t, urgencyList(t, 1_000_000)));
   });
 });

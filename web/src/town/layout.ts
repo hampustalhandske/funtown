@@ -1,5 +1,5 @@
 import type { Character, House, Town } from "../../../server/types.ts";
-import type { Waiting } from "../needs.tsx";
+import type { Entry } from "../needs.tsx";
 import { colourFor, hatFor, type HatKind } from "./kit/palette.ts";
 import type { InPlaced } from "./interior.ts";
 
@@ -64,11 +64,11 @@ function queueSpot(i: number, count: number): Spot {
  * Where everything in `town` stands. Buildings follow house order on a grid in front of the
  * castle; working and done leads stand in front of their building, resting ones by its door, and working
  * subagents are hats on its rack; stuck ones sit there too; everyone who asks you queues at the desk in `waiting`
- * (urgency) order; open parcels sit at the door; the lead marked `steward` stands by the desk. Done
+ * (urgency) order, where only a character's key finds a place; open parcels sit at the door; the lead marked `steward` stands by the desk. Done
  * subagents are not placed.
  * Pure: the same Town (and waiting order) always gives the same places.
  */
-export function layout(town: Town, waiting: Waiting[]): Placed[] {
+export function layout(town: Town, waiting: Pick<Entry, "key">[]): Placed[] {
   const steward = town.houses.flatMap((h) => h.leads).find((l) => l.steward)?.id;
   // The steward's own house gets no building unless the user added it or another lead works there.
   const houses = town.houses.filter((h) => h.added || !h.leads.some((l) => l.id === steward) || h.leads.some((l) => l.id !== steward));

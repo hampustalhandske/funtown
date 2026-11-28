@@ -4,8 +4,9 @@ import { AnswerCard, LetterById } from "./AnswerCard.tsx";
 import { askOf } from "./brief.ts";
 import { MorningButton } from "./Morning.tsx";
 import { LazyBoundary } from "./LazyBoundary.tsx";
-import { NeedsList, NotifyButton, Toasts, useAlerts, useLetterKey, useMute, urgencyList, useNow, waited, type Lettered, type Waiting } from "./needs.tsx";
+import { characterEntries, NeedsList, NotifyButton, Toasts, useAlerts, useLetterKey, useMute, urgencyList, useNow, waited, type Entry, type Lettered, type PrEntry, type Waiting } from "./needs.tsx";
 import { useKey, useLayer, useWalk } from "./keys.ts";
+import { glanceOf } from "./glance.ts";
 import { KeySheet, useKeySheet } from "./KeySheet.tsx";
 import { funtownToken } from "./token.ts";
 import { SwitchButton } from "./Switch.tsx";
@@ -124,8 +125,8 @@ function checkWords(parcel: Pick<Parcel, "checks" | "redAt">, now: number): stri
   return parcel.checks === "red" && parcel.redAt !== undefined ? `${words} ${waited(parcel.redAt, now)} ago` : words;
 }
 
-/** An open PR: number, title, draft mark, its checks in words, a link, and its review: a button to ask for one, or (when ready) the steward's panel with it. */
-function ParcelItem({ parcel, cwd, onOpen }: { parcel: Parcel; cwd: string; onOpen: (steward: string, review?: Review) => void }) {
+/** An open PR: number, title, draft mark, its checks in words, "waits for you" when `waits`, a link, and its review: a button to ask for one, or (when ready) the steward's panel with it. */
+function ParcelItem({ parcel, cwd, waits, onOpen }: { parcel: Parcel; cwd: string; waits: boolean; onOpen: (steward: string, review?: Review) => void }) {
   const { review } = parcel;
   const [error, setError] = useState<string | null>(null);
   const now = useNow(15_000);
@@ -137,6 +138,7 @@ function ParcelItem({ parcel, cwd, onOpen }: { parcel: Parcel; cwd: string; onOp
       <a href={parcel.url} target="_blank" rel="noreferrer">#{parcel.number} {parcel.title}</a>
       {parcel.draft && <span className="badge">draft</span>}
       <span className="checks" data-checks={parcel.checks}>{checkWords(parcel, now)}</span>
+      {waits && <span className="waits">waits for you</span>}
       {review &&
         (review.state === "idle" || review.steward ? (
           <button
@@ -306,10 +308,12 @@ function HouseCard({
     setError((await removeProject(house))?.message ?? null);
   }
   const needsYou = house.leads.some((lead) => lead.stage === "needs_you");
+  const glance = glanceOf(house, useNow(5000));
   return (
     <section className={`house${needsYou ? " needs_you" : ""}`} aria-label={house.project} title={house.cwd}>
       <h2>
         🏠 {house.project}
+        {glance.fire !== "none" && <span className={`badge fire ${glance.fire}`}>{glance.fire}</span>}
         {house.phase && <span className="badge phase">{house.phase.phase}</span>}
         {house.phase?.note && <span className="phase-note">{house.phase.note}</span>}
         {house.phase?.goal && <span className="phase-line">goal: {house.phase.goal}</span>}
@@ -323,7 +327,7 @@ function HouseCard({
       {house.parcels && house.parcels.length > 0 && (
         <ul className="parcels" aria-label={`${house.project} pull requests`}>
           {house.parcels.map((parcel) => (
-            <ParcelItem key={parcel.number} parcel={parcel} cwd={house.cwd} onOpen={(id, review) => onSelect(id, id, review)} />
+            <ParcelItem key={parcel.number} parcel={parcel} cwd={house.cwd} waits={glance.waiting.includes(parcel)} onOpen={(id, review) => onSelect(id, id, review)} />
           ))}
         </ul>
       )}
@@ -551,9 +555,12 @@ export function useSelection(town: Town | null) {
   }, [town, selection, selected]);
   const house = lead && town?.houses.find((h) => h.leads.includes(lead));
   const openSession = selected && house ? { id: selected.id, name: selected.name, cwd: house.cwd } : null;
-  const waiting = urgencyList(town);
+  const waiting = urgencyList(town, useNow(5000));
   const [muted, toggleMute] = useMute();
-  const openWaiting = useCallback((w: Pick<Waiting, "lead" | "id">) => setSelection({ lead: w.lead, id: w.id }), []);
+  // A PR entry has no pane to open yet.
+  const openWaiting = useCallback((w: Pick<Waiting, "lead" | "id"> | PrEntry) => {
+    if ("lead" in w) setSelection({ lead: w.lead, id: w.id });
+  }, []);
   const { toasts, drop } = useAlerts(waiting, town !== null, muted, openWaiting);
   return { selection, setSelection, onClose, lead, house, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop };
 }
@@ -562,8 +569,9 @@ export function useSelection(town: Town | null) {
  * The keys both pages share: Space walks `waiting` and M the letters of `town`, from the pane `current` (`lead/id`),
  * each opening with `open`; L loads `flip`, the other page; ? opens the key sheet. Gives the key sheet's state.
  */
-export function usePageKeys(town: Town | null, waiting: Waiting[], current: string | null, open: (entry: Lettered) => void, flip: string) {
-  useWalk(waiting, current, open);
+export function usePageKeys(town: Town | null, waiting: Entry[], current: string | null, open: (entry: Lettered) => void, flip: string) {
+  // A PR entry has no pane to open yet, so Space walks past it.
+  useWalk(characterEntries(waiting), current, open);
   useLetterKey(town, current, open);
   useKey("l", () => location.assign(flip));
   return useKeySheet();
