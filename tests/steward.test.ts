@@ -622,6 +622,16 @@ describe("the steward in the state", () => {
     expect(houseAt(t, p.project)?.leads[0]).not.toHaveProperty("steward");
   });
 
+  it("the_stewards_house_is_never_polled_so_it_has_no_parcelsAt_while_a_project_house_has_one", async () => {
+    // Catches the page putting the steward's house, which has no PR list to read, in fog.
+    const p = paths();
+    const { fake } = reused(p, []);
+    const s = await startSteward(p, fake);
+    const t = await townWhere(s.url, (x) => houseAt(x, p.stewardDir)?.leads.length === 1 && houseAt(x, p.project)?.parcelsAt !== undefined);
+    expect(houseAt(t, p.stewardDir)).not.toHaveProperty("parcelsAt");
+    expect(houseAt(t, p.stewardDir)).not.toHaveProperty("parcels");
+  });
+
   it("with_a_projects_file_the_steward_still_shows_though_its_folder_is_not_an_added_project", async () => {
     const p = paths();
     const { lead, steward } = reused(p, []);

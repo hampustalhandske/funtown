@@ -40,10 +40,11 @@ export type JournalEntry =
 /** What the morning view shows from the journal. */
 export type Morning = {
   since: number;
-  /** One per cwd with entries at or after `since`, newest entry first. */
+  /** One per house with entries at or after `since`, newest entry first. */
   projects: {
-    /** basename of cwd */
+    /** basename of the house's cwd */
     project: string;
+    /** The house's folder: the added project's, or the entry's own when no added project holds it. */
     cwd: string;
     /** Per lead, its newest letter of its own (from === lead) in the window; newest first. */
     done: (Letter & { lead: string })[];
@@ -52,6 +53,8 @@ export type Morning = {
   }[];
 };
 export type Lead = Character & {
+  /** The session's own folder as `claude agents --json` gives it: the house's folder, a run's worktree or a subfolder. */
+  cwd: string;
   tty: string | null;
   termProgram: string | null;
   subagents: Character[];
@@ -69,6 +72,10 @@ export type Parcel = {
   title: string;
   url: string;
   draft: boolean;
+  /** The state of its checks as gh reads them: red (any failed), else running (any running), else green (all settled); none when it has no checks. */
+  checks: "red" | "running" | "green" | "none";
+  /** When its earliest failed check finished, in ms; only on a red parcel, and only when a failed check carries a time. */
+  redAt?: number;
   /** The steward's review of the current head commit; absent for a draft or with reviews off. "idle": not asked for. */
   review?: {
     state: "idle" | "queued" | "reviewing" | "ready";
@@ -80,12 +87,15 @@ export type Parcel = {
 };
 export type House = {
   project: string;
+  /** The added project's folder, or the folder itself when no added project holds it (the steward's). */
   cwd: string;
   leads: Lead[];
   /** From .claude/phase.json; absent when there is none or it is unreadable. */
   phase?: { phase: string; note?: string; steps?: string[]; goal?: string; spec?: string };
-  /** Open PRs, newest number first; absent until the first gh list succeeds. */
+  /** Open PRs, newest number first; absent until the first gh list succeeds. `[]` for a folder with no GitHub repo. */
   parcels?: Parcel[];
+  /** When its PR list last worked, or gh said there is no GitHub repo here (server clock, ms); absent until the first, and always absent on the steward's house, which is never polled. */
+  parcelsAt?: number;
   /** True when the user added this folder in the app (it stays with no sessions). */
   added?: boolean;
   /** True once a session has been listed here since the server started. */
@@ -134,4 +144,6 @@ export type Town = {
   claude: { version: string | null; problems: string[] };
   /** The id of the avatar the user chose for the king; absent when none is chosen. */
   avatar?: string;
+  /** When `claude agents --json` last worked (the server's clock, ms); absent until the first, kept on a failed list. */
+  listedAt?: number;
 };

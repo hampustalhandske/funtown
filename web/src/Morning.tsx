@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState } from "react";
 import type { Morning, Town } from "../../server/types.ts";
 import { LazyBoundary } from "./LazyBoundary.tsx";
-import { waited, type Waiting } from "./needs.tsx";
+import { characterEntries, waited, type Entry, type Waiting } from "./needs.tsx";
 import { funtownToken } from "./token.ts";
 
 // The Markdown renderer loads only when a letter is shown, keeping it out of the first page load.
@@ -45,7 +45,7 @@ function sections(morning: Morning, waiting: Waiting[]): Section[] {
  * per project the newest letter of each lead (Done), who got stuck (Stuck) and who waits now (Next; a click opens its panel).
  * A successful load moves the window's start to the time its request was sent; a failed load leaves it. Nothing opens or takes focus on its own.
  */
-export function MorningButton({ waiting, town, onOpen, "aria-label": label }: { waiting: Waiting[]; town: Town | null; onOpen: (w: Waiting) => void; "aria-label"?: string }) {
+export function MorningButton({ waiting, town, onOpen, "aria-label": label }: { waiting: Entry[]; town: Town | null; onOpen: (w: Waiting) => void; "aria-label"?: string }) {
   const [view, setView] = useState<{ since: number; morning: Morning | null; error: string } | null>(null);
   async function open() {
     const since = windowStart();
@@ -68,7 +68,7 @@ export function MorningButton({ waiting, town, onOpen, "aria-label": label }: { 
   if (view?.morning) {
     for (const house of town?.houses ?? []) for (const lead of house.leads) for (const c of [lead, ...lead.subagents]) if (c.name) names[c.id] = c.name;
   }
-  const shown = view?.morning ? sections(view.morning, waiting) : [];
+  const shown = view?.morning ? sections(view.morning, characterEntries(waiting)) : [];
   return (
     <>
       <button type="button" aria-label={label} onClick={open}>Morning</button>

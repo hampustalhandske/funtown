@@ -49,6 +49,25 @@ it.each([
   expect(leadsOf(await townWhere(url, (t) => leadsOf(t)[0]?.id === "s2")).map((l) => l.id)).toEqual(["s2"]);
 });
 
+it("listedAt_is_absent_before_the_first_good_list_set_by_it_and_kept_when_the_list_then_fails", async () => {
+  // Catches a town that never says when the session list last worked, one that clears the time on a failed list
+  // (the page would then judge "never listed" instead of "listed 40 s ago"), and one that sets it from a failed list.
+  const fake = fakeClaude().failList();
+  const { url } = await start({ fake });
+  await sleep(500); // several failed polls
+  expect((await townWhere(url, () => true)).listedAt).toBeUndefined();
+  const before = Date.now();
+  fake.failList(false).list([listed("s1", "/work/a")]);
+  const good = await townWhere(url, (t) => t.listedAt !== undefined);
+  expect(good.listedAt!).toBeGreaterThanOrEqual(before);
+  expect(good.listedAt!).toBeLessThanOrEqual(Date.now());
+  fake.failList();
+  await sleep(300); // a poll already running may still land
+  const failed = await townWhere(url, () => true);
+  await sleep(500); // several failed polls
+  expect((await townWhere(url, () => true)).listedAt).toBe(failed.listedAt);
+});
+
 it("the_version_check_reports_one_problem_line_per_failing_feature_and_none_for_the_minimum", async () => {
   const ok = await start();
   const good = await townWhere(ok.url, (t) => t.claude !== undefined && t.claude.version !== null);

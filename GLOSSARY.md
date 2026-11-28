@@ -88,6 +88,21 @@ _Avoid_: suggestion, recommendation (the agent's pick is the recommendation)
 **Ask the Queen**:
 The user's act that sends one card to her for her word.
 
+**Project**:
+A folder the user added to Funtown.
+_Avoid_: repo (two checkouts of one repo are two projects)
+
+**House**:
+One project in the town, holding every session in its folder or a folder inside it.
+_Avoid_: building (the look's word for the model, not the idea)
+
+**Run**:
+A background session started from Funtown with a prompt; it works in its own worktree.
+
+**Worktree**:
+A second checkout of the same repo on its own branch; a run's sits inside its project folder, so
+the run stays in the project's house.
+
 **Phase file**:
 The one small file a project keeps (`.claude/phase.json`) to tell Funtown what Claude Code and
 GitHub can't.
@@ -105,8 +120,45 @@ One line on where the project is heading.
 _Avoid_: intent, mission
 
 **Glance state**:
-What the town says about a character or a house before you lean in: working, asking, stuck,
-resting, done.
+What the town says about a character or a house before you lean in. A character: working, asking,
+stuck, resting, done. A house: no fire, handled, burning, or a PR waiting for you.
+
+**Fire**:
+A house with a failed PR: any of its PRs has a red check state. One thing, a check failed.
+_Avoid_: broken, red house
+
+**Burning**:
+A fire while no lead of the house works. It is loud, tier 3 of the urgency list.
+
+**Handled**:
+A fire while any lead of the house works, a run in its worktree included. Not in the urgency list.
+
+**Who holds the bucket**:
+Any lead of the house that is working: it decides burning from handled.
+
+**Fog**:
+A house whose PRs Funtown could not look at lately: its PR list never worked since the server
+started, or last worked over 3 minutes ago. Its fire is quiet (first in tier 4, "failed when last
+read") and no PR waits for you there. The steward's own house, which has no PR list, is never in
+fog. Fog is not a state of the house's work: Funtown could not look.
+_Avoid_: neglect, stale, idle
+
+**The loud thing**:
+The one entry the town makes noise for: the head of the urgency list when it is in tiers 1 to 3.
+
+**Calm**:
+Nothing in tiers 1 to 3 and nothing unknown. Quiet entries (a rate limit, a PR waiting for you,
+a resting lead) leave the town calm.
+
+**A PR waiting for you**:
+A PR with nothing failed and nothing running (green, or no checks), in a house where no lead
+works and which is not in fog. A quiet entry, tier 4, never alerting.
+
+**Check state**:
+What a PR's checks say, as gh's buckets read them: red (any check failed, a workflow that never
+started included), running (none failed, one still going), green (all settled: passed, neutral,
+skipped or cancelled) or none (the PR has no checks, which is never green).
+_Avoid_: CI status, build status
 
 **Resting**:
 A lead whose turn ended: it stays at its house with its letter, last in the urgency list, never

@@ -1,15 +1,35 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { E2E_URL } from "../fake-claude.ts";
 
-const sse = (t: unknown) => `retry: 50\nevent: state\ndata: ${JSON.stringify(t)}\n\n`;
+/** `state` as the server sends it: every lead carries its own folder, which a stub that gives none has in its house's. */
+function served(state: unknown): unknown {
+  const town = state as { houses?: { cwd: string; leads?: object[] }[] };
+  if (!Array.isArray(town?.houses)) return state;
+  return { ...town, houses: town.houses.map((h) => ({ ...h, leads: h.leads?.map((l) => ({ cwd: h.cwd, ...l })) })) };
+}
 
-/** Serves `initial` as the page's Town stream (re-sent on each quick reconnect); `send` sets the state the next reconnect gets. */
+const sse = (t: unknown) => `retry: 50\nevent: state\ndata: ${JSON.stringify(served(t))}\n\n`;
+
+/**
+ * Serves `initial` as the page's Town stream (re-sent on each quick reconnect); `send` sets the state the next reconnect
+ * gets, and brings the stream back after `lose`. `lose` makes every connection attempt fail, as a stopped server does.
+ * Each lead without a `cwd` gets its house's, as the server always sends one.
+ */
 export async function stubStream(page: Page, initial: unknown) {
   let current = initial;
+  let down = false;
   await page.route("**/stream", (r) =>
-    r.fulfill({ status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-cache" }, body: sse(current) }),
+    down
+      ? r.abort("connectionrefused")
+      : r.fulfill({ status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-cache" }, body: sse(current) }),
   );
-  return { send: (t: unknown) => void (current = t) };
+  return {
+    send: (t: unknown) => {
+      current = t;
+      down = false;
+    },
+    lose: () => void (down = true),
+  };
 }
 
 /** A working terminal lead `s1` named lead-1 in the stream's shape, with `over` laid on top. */
@@ -22,8 +42,19 @@ export const waiting = (id: string, name: string, since: number, over: Record<st
   lead({ id, name, stage: "needs_you", needs: "waiting", since, ...over });
 /** A house of the project `project` in `/work/<project>`. */
 export const house = (project: string, leads: unknown[]) => ({ project, cwd: `/work/${project}`, leads });
-/** A Town state with `houses` and `cards` and no Claude version problems. */
-export const town = (houses: unknown[], cards: unknown[] = []) => ({ claude: { version: "2.1.325", problems: [] }, houses, cards });
+/** The GitHub link of PR `number` in the stubbed towns. */
+export const prUrl = (number: number) => `https://example.test/pull/${number}`;
+/** An open, green PR `number` in the stream's shape, with `over` laid on top. */
+export const pr = (number: number, over: Record<string, unknown> = {}) => ({ number, title: `PR ${number}`, url: prUrl(number), draft: false, checks: "green", ...over });
+/** A PR whose checks failed `minutesAgo` minutes ago, titled "Broken build". */
+export const red = (number: number, minutesAgo = 12) => pr(number, { title: "Broken build", checks: "red", redAt: Date.now() - minutesAgo * 60_000 });
+/** A house in `/work/<project>` with `parcels`, read just now unless `over` says otherwise (a house with no `parcelsAt` is under fog). */
+export const withPrs = (project: string, leads: unknown[], parcels: unknown[], over: Record<string, unknown> = {}) => ({ ...house(project, leads), parcels, parcelsAt: Date.now(), ...over });
+/**
+ * A Town state with `houses` and `cards` and no Claude version problems, its session list always fresh: `listedAt` is
+ * far ahead, so the page never judges the stubbed list old, however long a test runs or whatever its clock says.
+ */
+export const town = (houses: unknown[], cards: unknown[] = []) => ({ claude: { version: "2.1.325", problems: [] }, houses, cards, listedAt: Number.MAX_SAFE_INTEGER });
 /** The panel of the character named `name`. */
 export const panel = (page: Page, name: string) => page.getByRole("dialog", { name: `${name} details` });
 /** Passes when no pane is open. */
@@ -132,3 +163,23 @@ export async function sizeShown(screen: Locator) {
   const last = all[all.length - 1];
   return last ? { cols: Number(last[1]), rows: Number(last[2]), count: all.length } : null;
 }
+
+/** An init script that counts what the page asks of Web Audio (`window.__starts`, one per note) and of the Notification API (`window.__notes`, permission granted). */
+export const alertStubs = `
+  window.__starts = 0; window.__notes = [];
+  const param = () => ({ value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, setTargetAtTime() {}, cancelScheduledValues() {} });
+  class AudioContext {
+    constructor() { this.currentTime = 0; this.destination = {}; this.state = "running"; }
+    resume() { return Promise.resolve(); }
+    createGain() { return { gain: param(), connect: (x) => x, disconnect() {} }; }
+    createOscillator() { return { frequency: param(), detune: param(), type: "sine", connect: (x) => x, disconnect() {}, start() { window.__starts++; }, stop() {}, addEventListener() {} }; }
+  }
+  window.AudioContext = AudioContext; window.webkitAudioContext = AudioContext;
+  class Notification {
+    constructor(title, opts = {}) { this.title = title; this.body = opts.body; window.__notes.push(this); }
+    close() {}
+    static requestPermission() { return Promise.resolve("granted"); }
+  }
+  Notification.permission = "granted";
+  window.Notification = Notification;
+`;

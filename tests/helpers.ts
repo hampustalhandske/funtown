@@ -89,7 +89,7 @@ export async function tokenOf(url: string): Promise<string> {
   return m[1];
 }
 
-export { listed, listedBg, pr } from "./fake-claude.ts";
+export { checkRun, checkRunAt, listed, listedBg, pr, statusContext } from "./fake-claude.ts";
 
 /** The text of each request in what an `attach` received: a bracketed paste followed by `\r`. */
 export const pastes = (input: string) => [...input.matchAll(/\x1b\[200~([\s\S]*?)\x1b\[201~\r/g)].map((m) => m[1]);

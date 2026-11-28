@@ -6,8 +6,8 @@ import { join } from "node:path";
 const SLOW = 8000; // the first run of a new executable can take a second on macOS
 
 /**
- * A server with one added project with no session, and one house of a listed session in a
- * folder inside that project (as a run's worktree is), which isn't added itself.
+ * A server with one added project, and a listed session in a folder inside that project (as a
+ * run's worktree is), which is a lead in the project's house and isn't added itself.
  */
 async function withHouses() {
   const project = realDir();
@@ -16,7 +16,7 @@ async function withHouses() {
   const s = await start({ projects: projectsPath() });
   s.fake.list([listed("s1", house)]);
   await postPage(s, "/projects", { cwd: project });
-  await townWhere(s.url, (t) => houseAt(t, house) !== undefined && houseAt(t, project) !== undefined);
+  await townWhere(s.url, (t) => houseAt(t, project)?.leads.length === 1);
   return { ...s, house, project, token: await tokenOf(s.url) };
 }
 
@@ -160,15 +160,31 @@ it("removing_a_project_ends_its_shell_and_its_sockets", async () => {
   expect((await postPage(s, "/shells/close", { cwd: s.project })).status).toBe(404);
 });
 
-it("a_folder_with_a_running_shell_stays_a_house_with_no_leads_after_its_last_session_ends_until_the_shell_ends", async () => {
+it("a_shell_in_a_subfolder_of_a_project_is_filed_under_the_projects_house_and_makes_no_house_of_its_own_even_after_the_last_session_ends", async () => {
+  // Breaks if a shell's folder inside a project becomes a house beside the project's.
   const s = await withHouses();
   const c = await connect(s, s.house);
   await until(() => c.out().includes("shell args:"), SLOW);
   s.fake.list([]);
-  const town = await townWhere(s.url, (t) => houseAt(t, s.house)?.leads.length === 0);
-  expect(houseAt(town, s.house)!.added).toBeFalsy();
+  const town = await townWhere(s.url, (t) => houseAt(t, s.project)?.leads.length === 0);
+  expect(town.houses.map((h) => h.cwd)).toEqual([s.project]);
   expect((await postPage(s, "/shells/close", { cwd: s.house })).status).toBe(204);
-  await townWhere(s.url, (t) => houseAt(t, s.house) === undefined);
+  expect((await townWhere(s.url, () => true)).houses.map((h) => h.cwd)).toEqual([s.project]);
+});
+
+it("without_a_projects_file_a_folder_with_a_running_shell_stays_a_house_with_no_leads_after_its_last_session_ends_until_the_shell_ends", async () => {
+  // Breaks if a shell stops holding up its own folder's house where no projects file makes every folder its own house.
+  const folder = realDir();
+  const s = await start();
+  s.fake.list([listed("s1", folder)]);
+  await townWhere(s.url, (t) => houseAt(t, folder)?.leads.length === 1);
+  const c = await connect({ ...s, token: await tokenOf(s.url) }, folder);
+  await until(() => c.out().includes("shell args:"), SLOW);
+  s.fake.list([]);
+  const town = await townWhere(s.url, (t) => houseAt(t, folder)?.leads.length === 0);
+  expect(houseAt(town, folder)!.added).toBeFalsy();
+  expect((await postPage(s, "/shells/close", { cwd: folder })).status).toBe(204);
+  await townWhere(s.url, (t) => houseAt(t, folder) === undefined);
 });
 
 it("a_shell_that_exits_non_zero_before_any_output_is_logged_with_its_folder_and_code", async () => {

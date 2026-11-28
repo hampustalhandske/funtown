@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { basename, relative, resolve } from "node:path";
 import type { Listed } from "./agents.ts";
 import type { Journal } from "./journal.ts";
+import { houseOf } from "./projects.ts";
 import type { Card, Character, House, Lead, Letter, Stage, Town } from "./types.ts";
 import type { PhaseFile } from "./workflow.ts";
 
@@ -128,7 +129,7 @@ export class TownState {
   private failedSeen = new Set<string>();
   // session id -> the files its run and its subagents edited, absolute, worktree part cut off
   private touched = new Map<string, Set<string>>();
-  // cwd -> its project's phase file
+  // house folder -> its project's phase file
   private phases = new Map<string, PhaseFile>();
   // the folders the user added as projects, in the order added
   private projects: readonly string[] = [];
@@ -140,6 +141,8 @@ export class TownState {
   private readonly claude: Town["claude"];
   private readonly unlistedMs: number;
   private readonly started = Date.now();
+  // when `claude agents --json` last gave a good session list (Date.now()); undefined before the first
+  private listedAt: number | undefined;
 
   /**
    * `claude` is the version check's result, carried on every snapshot; `unlistedMs` how long
@@ -282,6 +285,7 @@ export class TownState {
     for (const s of list) {
       const lead = this.leads.get(s.sessionId) ?? this.newLead(s.sessionId);
       this.heard.delete(s.sessionId);
+      lead.cwd = s.cwd;
       lead.name = s.name || lead.name || `lead-${this.nextNumber(`${s.cwd}\0lead`)}`;
       lead.kind = s.kind === "interactive" ? "terminal" : "background";
       lead.shortId = lead.kind === "background" ? (s.id ?? null) : null;
@@ -316,6 +320,7 @@ export class TownState {
     }
     for (const sid of this.listed.keys()) if (!next.has(sid)) this.forget(sid);
     this.listed = next;
+    this.listedAt = Date.now();
     this.expire();
   }
 
@@ -341,14 +346,14 @@ export class TownState {
     return this.listed;
   }
 
-  /** Sets each project's phase file by cwd; a cwd not in `phases` has none. */
+  /** Sets each house's phase file by the house's folder; a folder not in `phases` has none. */
   setPhases(phases: Map<string, PhaseFile>): void {
     this.phases = phases;
   }
 
-  /** The phase file of the project in `cwd`, if it has one. */
-  phase(cwd: string): PhaseFile | undefined {
-    return this.phases.get(cwd);
+  /** The phase file of the house in the folder `house`, if it has one. */
+  phase(house: string): PhaseFile | undefined {
+    return this.phases.get(house);
   }
 
   /** Sets the folders the user added as projects, in the order added. */
@@ -368,16 +373,23 @@ export class TownState {
     return l ? [l] : [];
   }
 
+  /** The folder of the house a session or shell in `cwd` belongs to, given the projects added now. */
+  houseOf(cwd: string): string {
+    return houseOf(cwd, this.projects);
+  }
+
   /**
    * One house per added project in the order added, even with no session, then one per other
-   * cwd of the listed sessions in list order, then one per other folder where a shell runs,
-   * with `cards` (open cards of listed leads): while a card is open, the subagent it names, or
+   * house folder of the listed sessions in list order (a session in a worktree or subfolder
+   * of an added project stands in that project's house, carrying its own `cwd`), then one per
+   * other house folder where a shell runs, with `cards` (open cards of listed leads): while a card is open, the subagent it names, or
    * else its lead, needs the user for the card's kind whatever the list or hooks say. Each house
    * has its phase, each character its tags, and each lead the files it shares with another
    * listed lead.
    */
   snapshot(cards: Card[] = []): Town {
     const houses = new Map<string, House>();
+    const seen = new Set([...this.seen].map((cwd) => this.houseOf(cwd)));
     const house = (cwd: string): House => {
       let found = houses.get(cwd);
       if (!found) {
@@ -389,22 +401,25 @@ export class TownState {
           void tags;
           found.phase = shown;
         }
-        if (this.seen.has(cwd)) found.seen = true;
+        if (seen.has(cwd)) found.seen = true;
         houses.set(cwd, found);
       }
       return found;
     };
     for (const cwd of this.projects) house(cwd).added = true;
     for (const [sid, cwd] of this.listed) {
-      const phase = this.phases.get(cwd);
+      const where = this.houseOf(cwd);
+      const phase = this.phases.get(where);
       const lead = this.leads.get(sid)!;
       const shown = { ...withTags(lead, phase?.tags), subagents: lead.subagents.map((a) => withTags(a, phase?.tags)) };
       const overlaps = this.overlaps(sid, cwd);
       if (overlaps.length > 0) shown.overlaps = overlaps;
-      house(cwd).leads.push(withCards(shown, cards));
+      house(where).leads.push(withCards(shown, cards));
     }
-    for (const cwd of this.shells) house(cwd);
-    return { houses: [...houses.values()], cards, started: this.started, claude: this.claude };
+    for (const cwd of this.shells) house(this.houseOf(cwd));
+    const town: Town = { houses: [...houses.values()], cards, started: this.started, claude: this.claude };
+    if (this.listedAt !== undefined) town.listedAt = this.listedAt;
+    return town;
   }
 
   /** The files lead `sid` (listed in `cwd`) touched that another listed lead touched too, relative to its project root. */
@@ -489,6 +504,7 @@ export class TownState {
     const lead: Lead = {
       id: sid,
       name: "",
+      cwd: "",
       stage: "working",
       activity: null,
       step: null,

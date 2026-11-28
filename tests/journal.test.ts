@@ -233,7 +233,7 @@ describe("GET /morning", () => {
     expect(delta.stuck).toEqual([]);
   });
 
-  it("with_a_projects_file_morning_shows_only_added_projects_and_folders_inside_them", async () => {
+  it("with_a_projects_file_morning_shows_only_added_projects_and_folders_inside_them_grouped_under_the_project", async () => {
     const path = journalPath();
     const inside = [letter(`${A}/.claude/worktrees/run1`, "s3", "s3", "from a run", 50)];
     writeFileSync(path, [...seed, ...inside].map((e) => JSON.stringify(e)).join("\n") + "\n");
@@ -242,7 +242,8 @@ describe("GET /morning", () => {
     const s = await start({ journal: path, projects });
     const res = await fetch(`${s.url}/morning?since=${day - 2000}`, { headers: { "x-funtown-token": await tokenOf(s.url) } });
     const m = (await res.json()) as Morning;
-    expect(m.projects.map((p) => p.cwd).sort()).toEqual([A, `${A}/.claude/worktrees/run1`]);
+    expect(m.projects.map((p) => p.cwd)).toEqual([A]);
+    expect(m.projects[0].done.map((l) => l.lead)).toContain("s3");
   });
 
   it("morning_leaves_out_entries_before_since", async () => {

@@ -128,7 +128,7 @@ export function createSteward(opts: {
   /** The prompt text for `req`. */
   const textOf = (req: Request) => {
     if (req.kind === "word") {
-      const house = town.cwds().get(req.card.lead) ?? req.card.cwd;
+      const house = town.houseOf(town.cwds().get(req.card.lead) ?? req.card.cwd);
       return fill(cardPrompt!, { project: basename(house), brief: brief(req.card, town.lead(req.card.lead), house, town.phase(house)) });
     }
     const { pr, cwd } = req;

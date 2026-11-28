@@ -1,15 +1,26 @@
-import { useEffect, useRef, useState } from "react";
-import type { Card, Character, House, Town } from "../../server/types.ts";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { Card, Character, House, Parcel, Town } from "../../server/types.ts";
+import { FIRE_UNDER_FOG, glanceOf, WAITS } from "./glance.ts";
 import { useKey } from "./keys.ts";
 
-/**
- * The urgency tier of an entry: 1 asks, 2 stuck, 4 quiet. Tier 3 (burning houses) is left free for
- * the town's own list. Tiers 1 and 2 are loud; tier 4 never chimes, toasts or notifies.
- */
-export type Tier = 1 | 2 | 4;
+/** The urgency tier of an entry: 1 asks, 2 stuck, 3 burning houses, 4 quiet. Tiers 1 to 3 are loud; tier 4 never chimes, toasts or notifies. */
+export type Tier = 1 | 2 | 3 | 4;
 
 /** One character waiting for the user: where it is, what it needs, since when and how urgent it is. */
-export type Waiting = { key: string; lead: string; id: string; project: string; cwd: string; name: string; need: string; since: number; tier: Tier };
+export type Waiting = { kind: "character"; key: string; lead: string; id: string; project: string; cwd: string; name: string; need: string; since: number; tier: Tier };
+
+/**
+ * One PR of a house on the urgency list: a burning house's oldest failed PR (tier 3, `since` the time it failed, or
+ * Infinity when unknown), a fire under fog ("failed when last read", tier 4, the same time) or a PR waiting for the
+ * user (tier 4, no time). `key` is `<cwd>#<number>`.
+ */
+export type PrEntry = { kind: "pr"; key: string; project: string; cwd: string; number: number; title: string; need: string; since: number; tier: 3 | 4 };
+
+/** An entry of the urgency list: a character or a PR of a house. */
+export type Entry = Waiting | PrEntry;
+
+/** The character entries of `list`: what the castle queue and the Morning button read. Space walks every entry. */
+export const characterEntries = (list: Entry[]): Waiting[] => list.filter((e): e is Waiting => e.kind === "character");
 
 const MUTE_KEY = "funtown-muted";
 const TOAST_MS = 8000;
@@ -25,9 +36,16 @@ const rateLimited = (c: Character) => c.needs === "stuck" && c.reason === "rate 
 /** The tier of a needs_you character: a turn ended or a rate limit is quiet (4), other stuck is 2, everything else asks (1). */
 const tierOf = (c: Character): Tier => (c.needs === "turn ended" || rateLimited(c) ? 4 : c.needs === "stuck" ? 2 : 1);
 
-/** The place inside a tier (lower first): asks put cards first; the quiet tier puts a rate limit before a resting lead. */
+/**
+ * The place of each kind of entry inside its tier, lower first. Tier 1 puts a card before another ask; tier 4 puts
+ * a fire under fog, then a rate limit, then a PR with the Queen's review ready, then another waiting PR, then a
+ * resting lead. Tiers 2 and 3 have one place each.
+ */
+const RANK = { card: 0, ask: 1, stuck: 0, burning: 0, fogFire: 0, rateLimit: 1, readyReview: 2, waitingPr: 3, resting: 4 } as const;
+
+/** The place inside its tier of a needs_you character. */
 const rankOf = (c: Character, tier: Tier): number =>
-  tier === 1 ? (c.needs !== undefined && c.needs in CARD_KINDS ? 0 : 1) : tier === 4 ? (rateLimited(c) ? 0 : 1) : 0;
+  tier === 1 ? (c.needs !== undefined && c.needs in CARD_KINDS ? RANK.card : RANK.ask) : tier === 4 ? (rateLimited(c) ? RANK.rateLimit : RANK.resting) : RANK.stuck;
 
 /** Every character (lead or subagent) of `town`, in the town's order, with its house and its lead's id. */
 function* characters(town: Town | null): Generator<{ c: Character; house: House; lead: string }> {
@@ -35,17 +53,32 @@ function* characters(town: Town | null): Generator<{ c: Character; house: House;
 }
 
 /**
- * Every needs_you character (lead or subagent) of `town` as one list in strict tiers: 1 asks (cards,
- * then other asks), 2 stuck, 4 quiet (stuck on a rate limit, then resting leads, whose turn ended).
- * Oldest first within each; the castle queue, the plain list, the next key and the alerts all read it.
+ * Everything of `town` that needs the user, in strict tiers (ADR 0006): 1 asks, 2 stuck, 3 burning houses, 4 quiet
+ * (a fire under fog, a rate limit, waiting PRs, resting leads), oldest first within a tier. `now` is the page's clock.
  */
-export function urgencyList(town: Town | null): Waiting[] {
-  const list: { w: Waiting; rank: number }[] = [];
+export function urgencyList(town: Town | null, now: number): Entry[] {
+  const list: { w: Entry; rank: number }[] = [];
   for (const { c, house, lead } of characters(town)) {
     if (c.stage !== "needs_you") continue;
     const tier = tierOf(c);
-    const w: Waiting = { key: `${lead}/${c.id}`, lead, id: c.id, project: house.project, cwd: house.cwd, name: c.name, need: needOf(c), since: c.since ?? Infinity, tier };
+    const w: Waiting = { kind: "character", key: `${lead}/${c.id}`, lead, id: c.id, project: house.project, cwd: house.cwd, name: c.name, need: needOf(c), since: c.since ?? Infinity, tier };
     list.push({ w, rank: rankOf(c, tier) });
+  }
+  for (const house of town?.houses ?? []) {
+    const glance = glanceOf(house, now);
+    const entry = (p: Parcel, tier: 3 | 4, need: string, since: number): PrEntry =>
+      ({ kind: "pr", key: `${house.cwd}#${p.number}`, project: house.project, cwd: house.cwd, number: p.number, title: p.title, need, since, tier });
+    // A fire under fog may be out of date: it is quiet, and the first of the quiet.
+    if (glance.fire === "burning") {
+      const oldest = glance.red[0];
+      list.push(
+        glance.fog
+          ? { w: entry(oldest, 4, FIRE_UNDER_FOG, oldest.redAt ?? Infinity), rank: RANK.fogFire }
+          : { w: entry(oldest, 3, "burning: checks failed", oldest.redAt ?? Infinity), rank: RANK.burning },
+      );
+    }
+    // Among the waiting PRs a ready review goes first; the rest keep house order and the house's PR order.
+    for (const p of glance.waiting) list.push({ w: entry(p, 4, WAITS, Infinity), rank: p.review?.state === "ready" ? RANK.readyReview : RANK.waitingPr });
   }
   // `since` is Infinity when unknown: two unknowns tie (Infinity - Infinity is NaN) and keep the town's order.
   const older = (a: number, b: number) => (a === b ? 0 : a - b);
@@ -71,14 +104,17 @@ export function useLetterKey(town: Town | null, current: string | null, open: (e
   });
 }
 
-/** Date.now(), refreshed every `everyMs`, so a waiting time shown with it stays about right. */
-export function useNow(everyMs: number): number {
-  const [now, setNow] = useState(Date.now());
+/**
+ * Date.now(), refreshed every `everyMs`, so a waiting time shown with it stays about right. A new `frame` (the town
+ * as it arrives) takes the time afresh in the same render, so a frame is judged by the clock of its arrival.
+ */
+export function useNow(everyMs: number, frame?: unknown): number {
+  const [tick, setTick] = useState(Date.now());
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), everyMs);
+    const timer = setInterval(() => setTick(Date.now()), everyMs);
     return () => clearInterval(timer);
   }, [everyMs]);
-  return now;
+  return useMemo(() => Date.now(), [tick, frame]);
 }
 
 /** "3m" style wait text for a character waiting since `since`. */
@@ -140,18 +176,19 @@ export function useMute(): [boolean, () => void] {
 }
 
 /**
- * Calls the sound, toast and system notification for each loud entry (tier 1 or 2) that joins the
- * urgency list (new, or with a changed `since`) after the first town arrives. Quiet entries (tier 4)
+ * Calls the sound, toast and system notification for each loud entry (tier 1, 2 or 3) that joins the
+ * urgency list (new, or with a changed `since`) after the first town arrives. `loaded` is false before it
+ * and while the page has lost the server: then nothing alerts and what was seen stays. Quiet entries (tier 4)
  * never alert, and one that turns loud later joins then. Never moves focus.
  * Gives the toasts to show and a way to drop one.
  */
-export function useAlerts(waiting: Waiting[], loaded: boolean, muted: boolean, open: (w: Waiting) => void) {
+export function useAlerts(waiting: Entry[], loaded: boolean, muted: boolean, open: (w: Entry) => void) {
   const seen = useRef<Map<string, number> | null>(null);
-  const [toasts, setToasts] = useState<Waiting[]>([]);
+  const [toasts, setToasts] = useState<Entry[]>([]);
   useEffect(() => {
     if (!loaded) return;
     const before = seen.current;
-    const loud = waiting.filter((w) => w.tier < 3);
+    const loud = waiting.filter((w) => w.tier < 4);
     seen.current = new Map(loud.map((w) => [w.key, w.since]));
     if (!before) return;
     for (const w of loud) {
@@ -161,7 +198,8 @@ export function useAlerts(waiting: Waiting[], loaded: boolean, muted: boolean, o
       setTimeout(() => setToasts((all) => all.filter((t) => t !== w)), TOAST_MS);
       try {
         if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-          const n = new Notification(`${w.name} needs you`, { body: `${w.project}: ${w.need}` });
+          const say = wordsOf(w);
+          const n = new Notification(say.title, { body: say.body });
           n.onclick = () => {
             window.focus();
             open(w);
@@ -174,11 +212,20 @@ export function useAlerts(waiting: Waiting[], loaded: boolean, muted: boolean, o
       }
     }
   }, [waiting.map((w) => `${w.key}@${w.since}@${w.tier}`).join(), loaded]);
-  return { toasts, drop: (w: Waiting) => setToasts((all) => all.filter((t) => t !== w)) };
+  return { toasts, drop: (w: Entry) => setToasts((all) => all.filter((t) => t !== w)) };
 }
 
-/** The "Needs you" list: one row per waiting character, in urgency order; quiet rows (tier 4) are drawn quieter. */
-export function NeedsList({ waiting, onOpen }: { waiting: Waiting[]; onOpen: (w: Waiting) => void }) {
+/**
+ * What a toast or notification says for `w`: "<name> needs you" over "<project>: <need>"; for a PR, over its title,
+ * "<project> is burning: #<n> checks failed" (tier 3) or "<project>: #<n> <its words>" (a quiet entry).
+ */
+function wordsOf(w: Entry): { title: string; body: string } {
+  if (w.kind === "character") return { title: `${w.name} needs you`, body: `${w.project}: ${w.need}` };
+  return { title: w.tier === 3 ? `${w.project} is burning: #${w.number} checks failed` : `${w.project}: #${w.number} ${w.need}`, body: w.title };
+}
+
+/** The "Needs you" list: one row per entry, in urgency order; quiet rows (tier 4) are drawn quieter. A PR row has the project, "#<n>" and its words. */
+export function NeedsList({ waiting, onOpen }: { waiting: Entry[]; onOpen: (w: Entry) => void }) {
   const now = useNow(5000);
   if (waiting.length === 0) return null;
   return (
@@ -188,7 +235,7 @@ export function NeedsList({ waiting, onOpen }: { waiting: Waiting[]; onOpen: (w:
         {waiting.map((w) => (
           <li key={w.key} className={w.tier === 4 ? "quiet" : undefined}>
             <button type="button" onClick={() => onOpen(w)}>
-              <span className="project">{w.project}</span> <span className="name">{w.name}</span>{" "}
+              <span className="project">{w.project}</span> <span className="name">{w.kind === "pr" ? `#${w.number}` : w.name}</span>{" "}
               <span className="need">{w.need}</span> <span className="waited">{waited(w.since, now)}</span>
             </button>
           </li>
@@ -199,13 +246,13 @@ export function NeedsList({ waiting, onOpen }: { waiting: Waiting[]; onOpen: (w:
 }
 
 /** Toasts in the corner: buttons that open the panel on click and never take focus. */
-export function Toasts({ toasts, onOpen }: { toasts: Waiting[]; onOpen: (w: Waiting) => void }) {
+export function Toasts({ toasts, onOpen }: { toasts: Entry[]; onOpen: (w: Entry) => void }) {
   return (
     <div className="toasts" role="status" aria-live="polite">
       {toasts.map((w) => (
         <button key={w.key} type="button" className="toast" tabIndex={-1} onMouseDown={(e) => e.preventDefault()} onClick={() => onOpen(w)}>
-          <strong>{w.name} needs you</strong>
-          <span>{w.project}: {w.need}</span>
+          <strong>{wordsOf(w).title}</strong>
+          <span>{wordsOf(w).body}</span>
         </button>
       ))}
     </div>

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Character, House, Parcel, Town } from "../../../server/types.ts";
-import { AddProject, askReview, Panel, post, removeProject, stewardOf, usePageKeys, useSelection, useTown } from "../App.tsx";
+import type { Character, House, Town } from "../../../server/types.ts";
+import { AddProject, checkWords, houseState, Panel, post, PrPane, removeProject, stewardOf, usePageKeys, useSelection, useTown } from "../App.tsx";
+import { fogLabel, glanceOf } from "../glance.ts";
 import { KeySheet } from "../KeySheet.tsx";
 import { useKey, useLayer } from "../keys.ts";
 import { MorningButton } from "../Morning.tsx";
 import { SwitchButton, type OpenSession } from "../Switch.tsx";
-import { needOf, NotifyButton, Toasts } from "../needs.tsx";
+import { needOf, NotifyButton, Toasts, type Entry, type Lettered } from "../needs.tsx";
 import { boardOf, interior, type Board, type InPlaced } from "./interior.ts";
 import { AVATARS, avatarFor } from "./kit/avatars.ts";
 import { keyOf, layout, type Placed } from "./layout.ts";
@@ -44,23 +45,37 @@ function hashedClassroom(): string | null {
   }
 }
 
-/** What a placed thing is called: `name` for its hover plate; `label` (name, project, role, stage) for the town list. */
-function words(p: Placed | InPlaced, index: TownIndex): { name: string; label: string } {
-  if (p.kind === "observer") return { name: "You", label: "you, observer" };
+/** A house's state in words for the town list: its fire and fog words and its waiting PRs ("2 PRs waiting"); none for a calm house. */
+function houseLabel(house: House, now: number): string[] {
+  const glance = glanceOf(house, now);
+  const { waiting } = glance;
+  return [...houseState(house, glance), ...(waiting.length === 0 ? [] : [`${waiting.length} ${waiting.length === 1 ? "PR" : "PRs"} waiting`])];
+}
+
+/** What a placed thing is called, for its hover plate. */
+function nameOf(p: Placed | InPlaced, index: TownIndex): string {
+  if (p.kind === "observer") return "You";
+  if (p.kind === "building") return index.houses.get(p.cwd)?.project ?? p.cwd;
+  if (p.kind === "parcel") return `#${p.number} ${index.houses.get(p.cwd)?.parcels?.find((x) => x.number === p.number)?.title ?? ""}`.trim();
+  return index.characters.get(p.id)?.character.name ?? p.id;
+}
+
+/** A placed thing's label for the town list: name, project, role, stage (a PR: review and checks). `now` is the page's clock, which a house's state words are judged by. */
+function labelOf(p: Placed | InPlaced, index: TownIndex, now: number): string {
+  if (p.kind === "observer") return "you, observer";
   if (p.kind === "building" || p.kind === "parcel") {
     const house = index.houses.get(p.cwd);
     const project = house?.project ?? p.cwd;
-    if (p.kind === "building") return { name: project, label: `${project}, house` };
+    if (p.kind === "building") return [project, "house", ...(house ? houseLabel(house, now) : [])].join(", ");
     const parcel = house?.parcels?.find((x) => x.number === p.number);
-    const name = `#${p.number} ${parcel?.title ?? ""}`.trim();
     const state = parcel?.review ? REVIEW_WORDS[parcel.review.state] : parcel?.draft ? "draft" : "open";
-    return { name, label: `${name}, ${project}, pull request, ${state}` };
+    return [nameOf(p, index), project, "pull request", state, ...(parcel ? [checkWords(parcel, now)] : [])].join(", ");
   }
   const found = index.characters.get(p.id);
-  if (!found) return { name: p.id, label: p.id };
+  if (!found) return p.id;
   const { character, house } = found;
   const role = p.kind === "steward" ? "steward" : p.kind === "lead" ? "lead" : (character.role ?? "subagent");
-  return { name: character.name, label: `${character.name}, ${house.project}, ${role}, ${stageWords(character)}` };
+  return `${character.name}, ${house.project}, ${role}, ${stageWords(character)}`;
 }
 
 /** The whiteboard's lines as the hidden list shows them: project, phase, note, then each step with its state. */
@@ -84,6 +99,7 @@ const ICONS = {
   reload: <Icon><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4.5H15" /></Icon>,
   close: <Icon><path d="M7 7l10 10M17 7L7 17" /></Icon>,
   back: <Icon><path d="M10 6l-6 6 6 6M4 12h16" /></Icon>,
+  blind: <Icon><path d="M3 12c2.5-4 5.5-6 9-6s6.5 2 9 6c-2.5 4-5.5 6-9 6s-6.5-2-9-6zM4.5 4.5l15 15" /><circle cx="12" cy="12" r="2.5" /></Icon>,
 };
 
 type SettingsProps = { town: Town | null; muted: boolean; onMute: () => void; open: OpenSession | null; onClose: () => void };
@@ -144,39 +160,11 @@ function Settings({ town, muted, onMute, open, onClose }: SettingsProps) {
   );
 }
 
-type AskTarget = { cwd: string; parcel: Parcel };
-
-/** A small panel for a pull request with no review: ask the steward for one, or open the PR. Asking is only on the button. */
-function AskPanel({ target, onClose }: { target: AskTarget; onClose: () => void }) {
-  const { cwd, parcel } = target;
-  const [error, setError] = useState<string | null>(null);
-  useLayer("pane", true, onClose);
-  async function ask() {
-    const failed = await askReview(cwd, parcel.number);
-    if (failed) setError(failed.message);
-    else onClose();
-  }
-  return (
-    <aside className="pane" role="dialog" aria-label={`Pull request ${parcel.number}`}>
-      <button type="button" className="icon close" aria-label="Close" title="Close" onClick={onClose}>{ICONS.close}</button>
-      <h2>#{parcel.number} {parcel.title}</h2>
-      <p>No review asked yet.</p>
-      <div className="row">
-        <button type="button" onClick={() => void ask()}>Ask steward to review</button>
-        <a href={parcel.url} target="_blank" rel="noopener noreferrer">Open PR</a>
-      </div>
-      {error && <p role="alert" className="error">{error}</p>}
-    </aside>
-  );
-}
-
 /** The town page: the village in one canvas, a row of icon buttons, panels on demand, and a hidden list for screen readers. */
 export function TownPage() {
-  const [town, restarted] = useTown();
-  const { selection, setSelection, onClose, lead, house, selected, openSession, waiting, muted, toggleMute, openWaiting, toasts, drop } = useSelection(town);
+  const [town, restarted, lostAt] = useTown();
+  const { selection, setSelection, onClose, lead, house, selected, openSession, waiting, fog, now, muted, toggleMute, openWaiting, openPr, pr, closePr, current, toasts, drop } = useSelection(town, lostAt);
   const [settings, setSettings] = useState(false);
-  const [asking, setAsking] = useState<AskTarget | null>(null);
-  const closeAsking = useCallback(() => setAsking(null), []);
   const closeSettings = useCallback(() => setSettings(false), []);
   const placed = useMemo(() => (town ? layout(town, waiting) : []), [town]);
   const index = useMemo(() => indexOf(town), [town]);
@@ -185,13 +173,12 @@ export function TownPage() {
   // Where the mark last landed, kept after Esc clears it: the first arrow returns there, and the way back follows it.
   const [last, setLast] = useState<Move | null>(null);
   const doors = useRef<(() => Door[]) | null>(null);
-  const current = selection && `${selection.lead}/${selection.id}`;
-  const openAndMark = useCallback((w: { lead: string; id: string; cwd: string }) => {
+  const openAndMark = useCallback((w: Lettered | Entry) => {
     openWaiting(w);
     setMarked(w.cwd);
     setLast({ to: w.cwd });
   }, [openWaiting]);
-  const name = useCallback((p: Placed | InPlaced) => words(p, index).name, [index]);
+  const name = useCallback((p: Placed | InPlaced) => nameOf(p, index), [index]);
 
   // The classroom being shown: the cwd in the page hash, kept in step with Back, reload and pasted links.
   const [inCwd, setInCwd] = useState(hashedClassroom);
@@ -222,7 +209,7 @@ export function TownPage() {
   useLayer("classroom", showing, () => go(null));
 
   // The arrows and Enter are the town's alone: not in a classroom, with a pane open (a panel, Settings, a pull request's, the key sheet).
-  const keysOn = !showing && !shown && !settings && !asking && !sheet;
+  const keysOn = !showing && !shown && !settings && !pr && !sheet;
   /** Moves the mark one house `direction` on the screen as the camera is now, or puts it on the first house. */
   const move = (direction: Direction) => {
     const points = doors.current?.() ?? [];
@@ -239,7 +226,7 @@ export function TownPage() {
   useKey("ArrowDown", () => move("down"), keysOn);
   useKey("Enter", () => marked !== null && go(marked), keysOn && hasMark);
 
-  /** Opens the review panel, letter or PR of parcel `number` in `cwd`. */
+  /** Opens parcel `number` of `cwd`: the Queen's review when it is ready, else the PR pane (never GitHub). */
   const openParcel = useCallback(
     (cwd: string, number: number) => {
       const parcel = index.houses.get(cwd)?.parcels?.find((x) => x.number === number);
@@ -247,14 +234,12 @@ export function TownPage() {
       const steward = ready?.steward;
       if (steward && index.characters.has(steward)) {
         setSelection({ lead: steward, id: steward, review: ready?.letter === undefined ? undefined : { pr: number, letter: ready.letter } });
-      }
-      else if (parcel?.review?.state === "idle") {
+      } else if (parcel) {
         setSettings(false);
-        onClose();
-        setAsking({ cwd, parcel });
-      } else if (parcel) window.open(parcel.url, "_blank", "noopener,noreferrer");
+        openPr(cwd, number);
+      }
     },
-    [index, setSelection, onClose],
+    [index, setSelection, openPr],
   );
 
   /** Opens what `p` stands for: a character's panel, a parcel's review panel, letter or PR, a building's classroom. */
@@ -282,14 +267,14 @@ export function TownPage() {
           ? [
               ...inside.placed.map((p) => (
                 <li key={keyOf(p)}>
-                  {p.kind === "observer" ? <span>{words(p, index).label}</span> : <button type="button" onClick={() => pick(p)}>{words(p, index).label}</button>}
+                  {p.kind === "observer" ? <span>{labelOf(p, index, now)}</span> : <button type="button" onClick={() => pick(p)}>{labelOf(p, index, now)}</button>}
                 </li>
               )),
               ...boardLines(inside.board).map((line, i) => <li key={`board:${i}`}><span>{line}</span></li>),
             ]
           : placed.map((p) => (
               <li key={keyOf(p)}>
-                <button type="button" onClick={() => pick(p)}>{words(p, index).label}</button>
+                <button type="button" onClick={() => pick(p)}>{labelOf(p, index, now)}</button>
               </li>
             ))}
       </ul>
@@ -299,6 +284,7 @@ export function TownPage() {
             {ICONS.reload}
           </button>
         )}
+        {fog && <span className="icon fog" role="img" aria-label={fogLabel(fog)} title={fogLabel(fog)}>{ICONS.blind}</span>}
         <span className="slot" title="Morning">{ICONS.morning}<MorningButton aria-label="Morning" waiting={waiting} town={town} onOpen={openWaiting} /></span>
         {classroom && <button type="button" className="icon" aria-label="Back to town" title="Back to town" onClick={() => go(null)}>{ICONS.back}</button>}
         <a className="icon" href={workHref} aria-label="Work view" title="Work view (L)">{ICONS.work}</a>
@@ -315,7 +301,7 @@ export function TownPage() {
       </nav>
       {sheet && <KeySheet onClose={hideSheet} />}
       {settings && <Settings town={town} muted={muted} onMute={toggleMute} open={openSession} onClose={closeSettings} />}
-      {asking && <AskPanel key={`${asking.cwd}/${asking.parcel.number}`} target={asking} onClose={closeAsking} />}
+      {pr && <PrPane key={`${pr.house.cwd}#${pr.parcel.number}`} house={pr.house} parcel={pr.parcel} now={now} onReview={(id, review) => setSelection({ lead: id, id, review })} onClose={closePr} />}
       {shown && <Panel key={`${lead.id}/${selected.id}`} character={selected} lead={lead} house={house} cards={town?.cards ?? []} steward={stewardOf(town)} review={selection?.review} onClose={onClose} />}
       <Toasts
         toasts={toasts}

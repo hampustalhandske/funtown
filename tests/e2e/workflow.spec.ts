@@ -111,6 +111,26 @@ test("each_parcel_shows_number_title_a_link_its_draft_mark_or_review_state", asy
   await expect(parcel(page, 9)).not.toContainText("draft");
 });
 
+test("each_parcel_row_says_its_checks_in_words_failed_with_how_long_ago_running_passed_or_none", async ({ page }) => {
+  // Catches a red PR that looks like a green one, and "no checks" shown as passed.
+  const parcels = [
+    { number: 21, title: "Red since", url: url(21), draft: false, checks: "red", redAt: Date.now() - 12 * 60_000 },
+    { number: 22, title: "Red unknown time", url: url(22), draft: false, checks: "red" },
+    { number: 23, title: "Still going", url: url(23), draft: false, checks: "running" },
+    { number: 24, title: "All clear", url: url(24), draft: false, checks: "green" },
+    { number: 25, title: "Nothing ran", url: url(25), draft: false, checks: "none" },
+  ];
+  await stubStream(page, { ...town, houses: [{ ...town.houses[0], parcels }, town.houses[1]] });
+  await page.reload();
+  // The title and the words keep a gap: toContainText reads the text as it is, so "Red sincechecks failed" would not match.
+  await expect(parcel(page, 21)).toContainText("Red since checks failed 12m ago");
+  await expect(parcel(page, 22)).toContainText(/Red unknown time checks failed$/);
+  await expect(parcel(page, 23)).toContainText("Still going checks running");
+  await expect(parcel(page, 24)).toContainText("All clear checks passed");
+  await expect(parcel(page, 25)).toContainText("Nothing ran no checks");
+  await expect(parcel(page, 25)).not.toContainText("passed");
+});
+
 test("only_an_idle_parcel_has_an_ask_for_review_button_and_it_asks_only_when_clicked", async ({ page }) => {
   const asked: { body: unknown; token: string | undefined; origin: string | undefined }[] = [];
   await page.route("**/review", (r) => {
@@ -118,7 +138,7 @@ test("only_an_idle_parcel_has_an_ask_for_review_button_and_it_asks_only_when_cli
     asked.push({ body: req.postDataJSON(), token: req.headers()["x-funtown-token"], origin: req.headers()["origin"] });
     return r.fulfill({ status: 204 });
   });
-  const button = (n: number) => parcel(page, n).getByRole("button", { name: "Ask for review" });
+  const button = (n: number) => parcel(page, n).getByRole("button", { name: "Ask steward to review" });
   await expect(button(8)).toBeVisible();
   for (const n of [9, 10, 11, 12]) await expect(button(n)).toHaveCount(0);
   await expect(parcel(page, 8)).not.toContainText("draft");

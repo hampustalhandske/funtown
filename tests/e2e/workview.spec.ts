@@ -22,6 +22,16 @@ const house = (leads: unknown[]) => ({ project: "demo-app", cwd: "/work/demo-app
 const rowOf = (page: Page, name: string) => page.locator('section[aria-label="demo-app"] .character').filter({ hasText: name }).first();
 
 test.describe("with a stubbed stream", () => {
+  test("a_runs_lead_row_names_its_worktree_and_a_lead_in_the_projects_folder_shows_none", async ({ page }) => {
+    // Breaks if a run in a worktree can't be told from the lead in the project's own folder.
+    const run = lead({ id: "r1", name: "the-run", kind: "background", shortId: "r1r1r1r1", cwd: "/work/demo-app/.claude/worktrees/run1" });
+    const main = lead({ id: "m1", name: "the-main", cwd: "/work/demo-app" });
+    await stubStream(page, { claude, houses: [house([run, main])], cards: [] });
+    await page.goto("/work.html");
+    await expect(rowOf(page, "the-run").locator(".worktree")).toHaveText("run1");
+    await expect(rowOf(page, "the-main").locator(".worktree")).toHaveCount(0);
+  });
+
   test("no_command_text_is_on_a_row_or_in_a_panel_but_a_permission_card_still_shows_its_command_and_folder", async ({ page }) => {
     const command = "rm -rf /work/demo-app/build";
     const working = lead({
