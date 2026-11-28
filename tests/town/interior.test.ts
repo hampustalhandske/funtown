@@ -6,7 +6,7 @@ import { colourFor, hatFor } from "../../web/src/town/kit/palette.ts";
 
 const char = (id: string, over: Partial<Character> = {}): Character => ({ id, name: id, stage: "working", activity: null, step: null, ...over });
 const lead = (id: string, over: Partial<Lead> = {}, subagents: Character[] = []): Lead => ({
-  ...char(id), tty: null, termProgram: null, kind: "terminal", shortId: null, subagents, ...over,
+  ...char(id), cwd: "/work/app", tty: null, termProgram: null, kind: "terminal", shortId: null, subagents, ...over,
 });
 const parcel = (number: number): Parcel => ({ number, title: `PR ${number}`, url: `https://example.test/${number}`, draft: false, checks: "none" });
 const house = (leads: Lead[], over: Partial<House> = {}): House => ({ project: "alpha", cwd: "/work/alpha", leads, ...over });

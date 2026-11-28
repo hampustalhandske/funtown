@@ -5,7 +5,7 @@ import { layout } from "../../web/src/town/layout.ts";
 
 const char = (id: string, over: Partial<Character> = {}): Character => ({ id, name: id, stage: "working", activity: null, step: null, ...over });
 const lead = (id: string, over: Partial<Lead> = {}, subagents: Character[] = []): Lead => ({
-  ...char(id), tty: null, termProgram: null, kind: "terminal", shortId: null, subagents, ...over,
+  ...char(id), cwd: "/work/app", tty: null, termProgram: null, kind: "terminal", shortId: null, subagents, ...over,
 });
 const house = (project: string, leads: Lead[]): House => ({ project, cwd: `/work/${project}`, leads });
 const town = (houses: House[]): Town => ({ houses, cards: [], started: 1, claude: { version: "2.1.325", problems: [] } });

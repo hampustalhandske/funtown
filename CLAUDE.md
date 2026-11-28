@@ -13,7 +13,7 @@ note's Reproduce before relying on it.
   SessionStart the same way; `~/.funtown/ask.md` overrides, empty = off); `install.ts`.
 - `server/` on 127.0.0.1:4777: `agents.ts` runs `claude`; `town.ts` merges the 2 s poll and hook
   events; `journal.ts`; `holds.ts` cards; `terminal.ts` `claude attach` and shells; `errors.ts` the error log;
-  `workflow.ts` phase file, `gh pr list`; `steward.ts` the steward; `card-request.ts` the brief she reads for her word; `severity.ts` each card's severity and picks; `brief-parts.ts` the brief's parts the page reads too; `projects.ts` added projects; `avatar.ts` the chosen avatar file;
+  `workflow.ts` phase file, `gh pr list`; `steward.ts` the steward; `card-request.ts` the brief she reads for her word; `severity.ts` each card's severity and picks; `brief-parts.ts` the brief's parts the page reads too; `projects.ts` added projects and `houseOf`, the folder of the house a folder belongs to; `avatar.ts` the chosen avatar file;
   `main.ts` run file, signals.
 - `web/` (React, Vite): `/` is the town (`index.html`, `src/town/`: `layout.ts` pure places, `Village.tsx`
   the 3D scene, `TownPage.tsx` icons, Settings (the avatar row), hidden list; `mark.ts` `nextHouse`, where an arrow moves the mark; `kit/` the clay parts (`avatars.ts` the eight presets: the king in a crown, the rest hatless, since every other hat is an agent's); no visible words on the
@@ -25,7 +25,8 @@ note's Reproduce before relying on it.
   `tests/`: Vitest; Playwright in `tests/e2e/`, one spec at a time; the fake `claude` is also `gh`.
 Contracts (source of truth: this list)
 - Event: POST `/events`, hook JSON + `funtown: { tty, term_program, at }`; stale ones ignored.
-- State (`server/types.ts`, SSE `state`): leads only while listed; the steward's lead has `steward:
+- State (`server/types.ts`, SSE `state`): leads only while listed; a house's `cwd` is its added project's
+  folder and each lead carries its own `cwd`; the steward's lead has `steward:
   true`; `cards` oldest first, each with `severity: { level low|medium|high|unstated, reason, source
   rule|agent|kind }` (`server/severity.ts`) and, on a question card, `questions: [{ level, pick }]`, one per
   question in order, `pick` the index of the " (Recommended)" option or null, on a permission card
@@ -61,7 +62,10 @@ Contracts (source of truth: this list)
 - Projects: `projects.json`, real paths (symlinks resolved); each is a house with or without sessions;
   while the file can't be read, add and remove answer 500 and never write it. Only sessions in an
   added project or a folder inside one (a run's worktree), and the steward, are seen; Morning too.
-  Houses: added projects, those sessions' cwds, folders whose shell runs. Shell: `/term?shell=<house cwd>`, one login shell
+  Houses: one per added project, holding every session and shell in its folder or a folder
+  inside it (a run's worktree, a subfolder; the deepest added project wins); a folder in no added
+  project (the steward's) is a house of its own. Sessions, runs and shells start only in an added
+  project, a listed session's folder or a shell's folder. `/morning?since=` groups by house. Shell: `/term?shell=<house cwd>`, one login shell
   per project (`$SHELL -l`), kept when its socket closes, replay from a line start in the last 256 KB;
   ends on Close shell, `exit`, Remove project (asks first) or the server's close.
 - Env `FUNTOWN_` + `PORT`, `URL`, `CLAUDE`, `GH`, `STATE`, `ANSWERS`, `JOURNAL`, `LOG`, `RUN`,

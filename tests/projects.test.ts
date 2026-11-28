@@ -163,7 +163,7 @@ it("an_added_project_with_no_session_shows_its_phase_and_its_pull_requests", asy
   expect(houseAt(town, cwd)!.parcels!.map((p) => p.number)).toEqual([7]);
 });
 
-it("with_a_projects_file_only_sessions_in_an_added_project_or_a_folder_inside_it_show_and_only_their_folders_get_a_pr_check", async () => {
+it("with_a_projects_file_only_sessions_in_an_added_project_or_a_folder_inside_it_show_in_the_projects_house_and_only_it_gets_a_pr_check", async () => {
   const [added, elsewhere] = [realDir(), realDir()];
   const worktree = join(added, ".claude", "worktrees", "run1");
   const path = projectsPath();
@@ -174,6 +174,8 @@ it("with_a_projects_file_only_sessions_in_an_added_project_or_a_folder_inside_it
   await sleep(300); // a few more polls, so a session from elsewhere would have shown up
   const after = await townWhere(s.url, () => true);
   expect(leadsOf(after).map((l) => l.id).sort()).toEqual(["s1", "s2"]);
-  expect(t.houses.map((h) => h.cwd)).toEqual([added, worktree]);
+  expect(t.houses.map((h) => h.cwd)).toEqual([added]);
+  expect(leadsOf(t).map((l) => l.cwd).sort()).toEqual([added, worktree].sort());
   expect(fake.prCalls().map((c) => c.cwd)).not.toContain(elsewhere);
+  expect(fake.prCalls().map((c) => c.cwd)).not.toContain(worktree);
 });

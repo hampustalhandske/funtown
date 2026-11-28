@@ -15,7 +15,7 @@ import { morning, openJournal } from "./journal.ts";
 import { createSteward } from "./steward.ts";
 import { listPrs, parsePhase, type PhaseFile, type Pr } from "./workflow.ts";
 import { AVATAR_ID, readAvatar, writeAvatar } from "./avatar.ts";
-import { projectFolder, readProjects, writeProjects } from "./projects.ts";
+import { houseOf, projectFolder, readProjects, writeProjects } from "./projects.ts";
 
 const DEFAULT_DIST = fileURLToPath(new URL("../web/dist/", import.meta.url));
 const DEFAULT_STEWARD_PROMPT = fileURLToPath(new URL("./steward.md", import.meta.url));
@@ -362,8 +362,10 @@ export async function startServer(opts: {
   /** True when `cwd` is an added project or a folder inside one, or when there is no projects file. */
   const inProject = (cwd: string) => !opts.projects || projects.some((p) => cwd === p || cwd.startsWith(`${p}/`));
 
-  /** The folder of every house: the added projects, the listed sessions' cwds and the folders where a shell runs. */
-  const houseCwds = () => [...new Set([...projects, ...town.cwds().values(), ...terminals.shells()])];
+  /** The folders where a session, a run or a shell may start: the added projects, the listed sessions' own cwds and the folders where a shell runs. */
+  const startCwds = () => [...new Set([...projects, ...town.cwds().values(), ...terminals.shells()])];
+  /** The folder of every house, which is where its phase file and PR list are read: each start folder's house, once. */
+  const houseCwds = () => [...new Set(startCwds().map((cwd) => houseOf(cwd, projects)))];
   /**
    * The added projects as the projects file holds them now, or null once it has answered 500
    * because the file can't be read or there is none.
@@ -535,7 +537,7 @@ export async function startServer(opts: {
     if (req.method === "POST" && path === "/sessions") {
       const cwd = await pageField(req, res, "cwd");
       if (cwd === null) return;
-      if (!houseCwds().includes(cwd)) {
+      if (!startCwds().includes(cwd)) {
         res.writeHead(404).end();
         return;
       }
@@ -587,7 +589,7 @@ export async function startServer(opts: {
         res.writeHead(400, text).end(problem);
         return;
       }
-      if (!houseCwds().includes(cwd)) {
+      if (!startCwds().includes(cwd)) {
         res.writeHead(404).end();
         return;
       }
@@ -749,7 +751,7 @@ export async function startServer(opts: {
         res.writeHead(500).end();
         return;
       }
-      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(morning(entries.filter((e) => !("cwd" in e) || inProject(e.cwd)), since)));
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(morning(entries.filter((e) => !("cwd" in e) || inProject(e.cwd)), since, projects)));
       return;
     }
 
@@ -816,7 +818,7 @@ export async function startServer(opts: {
     const rows = Number(url.searchParams.get("rows"));
     const shellCwd = url.searchParams.get("shell");
     if (shellCwd !== null) {
-      if (!houseCwds().includes(shellCwd)) return refuse(404);
+      if (!startCwds().includes(shellCwd)) return refuse(404);
       if (!isSize(cols) || !isSize(rows)) return refuse(400);
       socket.removeListener("error", onError);
       return terminals.shell(req, socket, head, shellCwd, cols, rows);

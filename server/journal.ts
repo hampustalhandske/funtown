@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import type { LogError } from "./errors.ts";
+import { houseOf } from "./projects.ts";
 import type { JournalEntry, Morning } from "./types.ts";
 
 const KEEP_MS = 7 * 24 * 60 * 60 * 1000;
@@ -83,17 +84,18 @@ export function openJournal(path: string, logError: LogError): Journal {
   };
 }
 
-/** The morning view of the letter and stuck `entries` at or after `since`, grouped by cwd. */
-export function morning(entries: JournalEntry[], since: number): Morning {
-  const projects = new Map<string, Morning["projects"][number]>();
+/** The morning view of the letter and stuck `entries` at or after `since`, grouped by the house of each entry's cwd given the added `projects`. */
+export function morning(entries: JournalEntry[], since: number, projects: readonly string[] = []): Morning {
+  const houses = new Map<string, Morning["projects"][number]>();
   for (const e of entries.filter((x): x is Extract<JournalEntry, { kind: "letter" | "stuck" }> => (x.kind === "letter" || x.kind === "stuck") && x.at >= since).sort((a, b) => b.at - a.at)) {
-    let p = projects.get(e.cwd);
+    const cwd = houseOf(e.cwd, projects);
+    let p = houses.get(cwd);
     if (!p) {
-      p = { project: basename(e.cwd) || e.cwd, cwd: e.cwd, done: [], stuck: [] };
-      projects.set(e.cwd, p);
+      p = { project: basename(cwd) || cwd, cwd, done: [], stuck: [] };
+      houses.set(cwd, p);
     }
     if (e.kind === "stuck") p.stuck.push({ at: e.at, lead: e.lead, who: e.who, name: e.name, reason: e.reason });
     else if (e.letter.from === e.lead && !p.done.some((d) => d.lead === e.lead)) p.done.push({ ...e.letter, lead: e.lead });
   }
-  return { since, projects: [...projects.values()] };
+  return { since, projects: [...houses.values()] };
 }

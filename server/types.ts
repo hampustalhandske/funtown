@@ -40,10 +40,11 @@ export type JournalEntry =
 /** What the morning view shows from the journal. */
 export type Morning = {
   since: number;
-  /** One per cwd with entries at or after `since`, newest entry first. */
+  /** One per house with entries at or after `since`, newest entry first. */
   projects: {
-    /** basename of cwd */
+    /** basename of the house's cwd */
     project: string;
+    /** The house's folder: the added project's, or the entry's own when no added project holds it. */
     cwd: string;
     /** Per lead, its newest letter of its own (from === lead) in the window; newest first. */
     done: (Letter & { lead: string })[];
@@ -52,6 +53,8 @@ export type Morning = {
   }[];
 };
 export type Lead = Character & {
+  /** The session's own folder as `claude agents --json` gives it: the house's folder, a run's worktree or a subfolder. */
+  cwd: string;
   tty: string | null;
   termProgram: string | null;
   subagents: Character[];
@@ -84,6 +87,7 @@ export type Parcel = {
 };
 export type House = {
   project: string;
+  /** The added project's folder, or the folder itself when no added project holds it (the steward's). */
   cwd: string;
   leads: Lead[];
   /** From .claude/phase.json; absent when there is none or it is unreadable. */

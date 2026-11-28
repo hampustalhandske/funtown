@@ -64,10 +64,13 @@ export function useTown(): [Town | null, boolean] {
 function CharacterRow({
   character,
   avatar,
+  worktree,
   onSelect,
 }: {
   character: Character;
   avatar: string;
+  /** The last part of the folder a run works in, when that is not its house's folder. */
+  worktree?: string;
   onSelect: (id: string) => void;
 }) {
   const { name, stage, needs, letter, role, tags } = character;
@@ -84,6 +87,7 @@ function CharacterRow({
           <span className="name">{name}</span>
           {"kind" in character && <span className="kind">{character.kind === "background" ? "background" : "terminal"}</span>}
           <span className="stage"><StageLabel stage={stage} /></span>
+          {worktree && <span className="badge worktree">{worktree}</span>}
           {role && <span className="badge role">{role}</span>}
           {tags?.map((tag) => <span key={tag} className="badge tag">{tag}</span>)}
           {letter !== undefined && <span className="mail" role="img" aria-label="has a letter">✉</span>}
@@ -183,7 +187,7 @@ type Open = { lead: string; id: string } | null;
 function LeadItem({ lead, house, cards, steward, open, onSelect }: { lead: Lead; house: House; cards: Card[]; steward?: Lead; open: Open; onSelect: Select }) {
   return (
     <li className="lead">
-      <CharacterRow character={lead} avatar="🧑‍💻" onSelect={(id) => onSelect(lead.id, id)} />
+      <CharacterRow character={lead} avatar="🧑‍💻" worktree={lead.cwd && lead.cwd !== house.cwd ? lead.cwd.split("/").pop() : undefined} onSelect={(id) => onSelect(lead.id, id)} />
       {lead.subagents.length > 0 && (
         <ul className="subagents" aria-label={`${lead.name} subagents`}>
           {lead.subagents.map((sub) => (

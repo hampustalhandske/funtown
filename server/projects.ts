@@ -26,6 +26,24 @@ export function writeProjects(path: string, list: readonly string[]): void {
 }
 
 /**
+ * The folder of the house that a session, shell or journal entry in `cwd` belongs to: the
+ * deepest of `projects` that is `cwd` or holds it (`cwd` starts with it plus "/"), else `cwd`
+ * itself (the steward's folder, or any folder when there is no projects file). Takes real
+ * absolute paths with no trailing slash, as the projects file stores them; reads no files.
+ */
+export function houseOf(cwd: string, projects: readonly string[]): string {
+  let house = cwd;
+  let depth = -1;
+  for (const p of projects) {
+    if ((cwd === p || cwd.startsWith(`${p}/`)) && p.length > depth) {
+      house = p;
+      depth = p.length;
+    }
+  }
+  return house;
+}
+
+/**
  * The real path of `cwd` (links followed, letter case as on disk) when it is the absolute
  * path of an existing folder, else the reason it can't be a project.
  */
