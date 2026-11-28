@@ -72,7 +72,7 @@ export function hatParts(b: RigBuilder, hat: FolkHat, colour: string, at: Vector
 }
 
 /** Something a folk holds or works at. */
-export type Prop = "hammer" | "crate" | "plane" | "bench" | "clipboard" | "glass" | "stick" | "letter" | "slip";
+export type Prop = "hammer" | "crate" | "plane" | "bench" | "clipboard" | "glass" | "stick" | "letter" | "slip" | "bucket";
 
 /** Starts parts held in the `side` hand of `rig`, at `pos` turned by `r` in the hand's frame. */
 const hold = (b: RigBuilder, rig: Pick<Rig, "hands">, side: "L" | "R", pos: Vec, r: Vec) =>
@@ -120,6 +120,13 @@ export function propParts(b: RigBuilder, prop: Prop, rig: Pick<Rig, "hands">, co
       hold(b, rig, "L", [0.1, 0.02, 0.1], [-0.6, 0, 0]);
       b.put("box", [0, 0, 0], { s: [0.32, 0.22, 0.025], c: "#fbf6ea" });
       b.put("cone", [0, 0.06, 0.015], { r: [0, Math.PI / 6, Math.PI], s: [0.16, 0.1, 0.024], c: "#ece4d2" });
+      return;
+    case "bucket":
+      // A pail in the right hand, tapering to its foot, water on top and a hoop for the handle.
+      hold(b, rig, "R", [0, -0.05, 0.08], [0, 0, 0]);
+      b.put("flare", [0, 0, 0], { s: [0.15, 0.22, 0.15], c: "#8f9aa6" });
+      b.put("cyl", [0, 0.1, 0], { s: [0.13, 0.02, 0.13], c: "#7cc4e0" });
+      b.put("ring", [0, 0.12, 0], { r: [0, 0, HALF], s: [0.15, 0.15, 0.15], c: "#5f6872" });
       return;
     case "slip":
       hold(b, rig, "R", [0, 0.02, 0.1], [1.4, 0, 0]);

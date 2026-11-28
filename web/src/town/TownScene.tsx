@@ -20,6 +20,8 @@ import { groundHeight } from "./island.ts";
 import { DESK, keyOf, type Placed, type Spot } from "./layout.ts";
 import { PartList, Parts } from "./parts.tsx";
 import { Boats, MarkRing, Puffs } from "./VillageFx.tsx";
+import { Fires, Stars, Water, type Blaze, type Throw } from "./Fire.tsx";
+import { bucketOf, roofOf, splashOf } from "./fire.ts";
 import { doorPaths, treeParts, treesFor, village } from "./village.ts";
 import type { Door } from "./mark.ts";
 import type { Bounds } from "./stage.tsx";
@@ -136,6 +138,14 @@ export function TownScene({ index, placed, name, onPick, hover, onHover, doors }
     // `shape` is everything the parts are made from.
   }, [shape]);
 
+  // Fire on each burning house's roof, the water its lead throws at it, and the stars over a loud stuck character's head.
+  const blazes: Blaze[] = buildings.flatMap((b) => (b.fire === "none" ? [] : [{ key: b.cwd, form: b.fire, at: roofOf(b), facing: b.facing }]));
+  const throws: Throw[] = placed.flatMap((p) => {
+    const house = p.kind === "lead" && p.pose === "bucket" ? buildings.find((b) => b.cwd === p.cwd) : undefined;
+    return p.kind === "lead" && house ? [{ key: keyOf(p), from: bucketOf(p), to: splashOf(house) }] : [];
+  });
+  const stars = placed.flatMap((p) => (p.kind === "lead" || p.kind === "hat") && p.stars ? [{ key: keyOf(p), x: p.at.x, y: groundHeight(p.at.x, p.at.z), z: p.at.z }] : []);
+
   const thing = (p: Drawn) => {
     switch (p.kind) {
       case "building": {
@@ -193,6 +203,9 @@ export function TownScene({ index, placed, name, onPick, hover, onHover, doors }
       <Glows parts={parts} lamps={light.lamps} />
       <Boats boats={HARBOUR.boats} />
       <Puffs mouths={buildings.filter((b) => b.busy).map(chimneyOf)} />
+      <Fires blazes={blazes} />
+      <Water throws={throws} />
+      <Stars heads={stars} />
       {buildings.filter((b) => b.marked).map((b) => <MarkRing key={b.cwd} at={b.at} />)}
       {doors && <Doors placed={placed} where={doors} />}
       <FolkLayer>{shown.map((p) => <group key={keyOf(p)}>{thing(p)}</group>)}</FolkLayer>

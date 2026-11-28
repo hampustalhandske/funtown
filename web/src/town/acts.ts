@@ -5,9 +5,9 @@ import type { FolkPose } from "./layout.ts";
 /**
  * How a folk is drawn moving or still: the joint angles of each act at a time. Working folk act their role's work (the cat
  * planes at a bench, the beaver hammers, the hedgehog ticks a clipboard, the hare walks its track, the owl reads through a
- * glass) and move; every other act is still, whatever the time. A new pose is a new act: a name, its props and its angles.
+ * glass) and move, and a lead at a handled fire swings its bucket; every other act is still, whatever the time. A new pose is a new act: a name, its props and its angles.
  */
-export type Act = "plane" | "hammer" | "clipboard" | "track" | "glass" | "stand" | "rest" | "stuck" | "wait" | "walk";
+export type Act = "plane" | "hammer" | "clipboard" | "track" | "glass" | "bucket" | "stand" | "rest" | "stuck" | "wait" | "walk";
 
 /** Each animal's work. */
 const WORK: Record<Animal, Act> = { cat: "plane", beaver: "hammer", hedgehog: "clipboard", hare: "track", owl: "glass" };
@@ -19,7 +19,7 @@ export const actOf = ({ pose, animal }: { pose: FolkPose; animal: Animal }): Act
 /** What each act holds or works at. */
 export const PROPS: Record<Act, Prop[]> = {
   plane: ["bench", "plane"], hammer: ["hammer", "crate"], clipboard: ["clipboard"], track: ["stick"], glass: ["glass"],
-  stand: [], rest: ["letter"], stuck: [], wait: ["slip"], walk: [],
+  bucket: ["bucket"], stand: [], rest: ["letter"], stuck: [], wait: ["slip"], walk: [],
 };
 
 /**
@@ -89,6 +89,14 @@ export function pose(p: Posture, act: Act, t: number, sitDrop: number) {
       p.armR = { up: -1.6, out: 0 };
       p.lean = 0.12 + Math.sin(t * 0.7) * 0.04;
       return;
+    case "bucket": {
+      // Swings the bucket up and forward, over and over, to throw its water at the roof.
+      const k = Math.sin(t * 4);
+      p.armR = { up: -1.4 - k * 0.8, out: 0.1 };
+      p.armL = { up: -1.2 - k * 0.6, out: 0.2 };
+      p.lean = 0.12 + k * 0.08;
+      return;
+    }
     case "track":
       p.x = Math.sin(t * 0.5) * TRACK;
       p.yaw = Math.cos(t * 0.5) >= 0 ? Math.PI / 2 : -Math.PI / 2;

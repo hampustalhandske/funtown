@@ -1,5 +1,4 @@
 import type { Character, House, Town } from "../../../server/types.ts";
-import type { Entry } from "../needs.tsx";
 import { colourFor } from "./kit/palette.ts";
 import { costumeOf, type Costume } from "./folk.ts";
 import type { InPlaced } from "./interior.ts";
@@ -8,6 +7,7 @@ import { lotOf } from "./island.ts";
 import { DOOR, facingOf, houseToWorld, isBusy, variantOf, type Variant } from "./houses.ts";
 import { queenOf, QUEEN_SEAT_AT, TABLE_AT, YARD_AT, yardSpot, YOUR_THRONE_AT, type QueenState } from "./court.ts";
 import { avatarFor } from "./kit/avatars.ts";
+import { fireOf, loudOf, loudStuck, type FireForm, type Head } from "./fire.ts";
 
 /** A point on the ground; +z faces the camera, the castle is at the back (-z). */
 export type Spot = { x: number; z: number };
@@ -15,13 +15,14 @@ export type Spot = { x: number; z: number };
 export type Pose = "work" | "idle" | "queue" | "stuck";
 /**
  * How one of the town's folk stands: working at its house, standing (a done lead), sitting stuck on its doorstep, resting by
- * its door (its turn ended), waiting for you, or leaving down the lane (a done subagent, drawn only: see `departed`).
+ * its door (its turn ended), waiting for you, or leaving down the lane (a done subagent, drawn only: see `departed`). A working
+ * lead of a house whose fire is handled throws water from a bucket (`bucket`), turned toward its roof.
  */
-export type FolkPose = "work" | "stand" | "stuck" | "rest" | "wait" | "leave";
+export type FolkPose = "work" | "bucket" | "stand" | "stuck" | "rest" | "wait" | "leave";
 /** One of the town's folk: its costume, its lead (itself for a lead), its house's folder and colour, its pose and spot. */
-type Folk = Costume & { id: string; lead: string; cwd: string; colour: string; pose: FolkPose; at: Spot; facing: number };
+type Folk = Costume & { id: string; lead: string; cwd: string; colour: string; pose: FolkPose; at: Spot; facing: number; stars: boolean };
 export type Placed =
-  | { kind: "building"; cwd: string; colour: string; at: Spot; facing: number; variant: Variant; busy: boolean; marked: boolean }
+  | { kind: "building"; cwd: string; colour: string; at: Spot; facing: number; variant: Variant; busy: boolean; fire: FireForm; marked: boolean }
   | ({ kind: "lead" } & Folk)
   | ({ kind: "hat" } & Folk)
   | { kind: "parcel"; cwd: string; number: number; at: Spot }
@@ -87,15 +88,16 @@ function queueSpot(i: number): Spot {
  * (urgency) order, where only a character's key finds a place; open parcels sit at the door; the lead marked `steward` stands by the desk. Done
  * subagents are not placed.
  * A building also says which way its lot faces, its feature, whether anyone of the house works (`busy`: its chimney puffs) and
- * whether `marked`, the marked house's folder, is its own.
- * `now` is the page's clock in ms and `lost` whether the page has lost the server (`townFog(...)?.why === "lost"`);
- * the places don't depend on either yet.
+ * whether `marked`, the marked house's folder, is its own, and its fire (see `fire.ts`).
+ * `now` is the page's clock in ms and `lost` whether the page has lost the server (`townFog(...)?.why === "lost"`),
+ * which leaves nothing loud; the places don't depend on either.
  * Pure: the same Town, waiting order, clock, `lost` and mark always give the same places.
  */
-export function layout(town: Town, waiting: Pick<Entry, "key">[], now: number, lost: boolean, marked: string | null = null): Placed[] {
+export function layout(town: Town, waiting: Head[], now: number, lost: boolean, marked: string | null = null): Placed[] {
   const steward = town.houses.flatMap((h) => h.leads).find((l) => l.steward)?.id;
   // The steward's own house gets no building unless the user added it or another lead works there.
   const houses = town.houses.filter((h) => h.added || !h.leads.some((l) => l.id === steward) || h.leads.some((l) => l.id !== steward));
+  const loud = loudOf(waiting, lost);
   const placed: Placed[] = [];
   const queue: { key: string; place: (at: Spot) => Placed }[] = [];
 
@@ -105,11 +107,16 @@ export function layout(town: Town, waiting: Pick<Entry, "key">[], now: number, l
    */
   const settle = (house: House, lot: Lot, leads: House["leads"], colour: string, asLeads: boolean, inYard = false) => {
     const count = { work: 0, rest: 0, stuck: 0 };
+    const handled = fireOf(house, now, loud) === "handled";
     const spotOf = (pose: FolkPose): Spot =>
       inYard ? yardSpot(count.work++) : pose === "rest" ? porch(lot, count.rest++) : pose === "stuck" ? step(lot, count.stuck++) : workSpot(lot, count.work++);
     const put = (kind: "lead" | "hat", c: Character, lead: string) => {
-      const pose = folkPose(c);
-      const make = (spot: Spot): Placed => ({ kind, id: c.id, lead, cwd: house.cwd, colour, ...costumeOf(c.role, kind === "lead"), pose, at: spot, facing: lot.facing });
+      const worked = folkPose(c);
+      const pose = worked === "work" && kind === "lead" && handled && !inYard ? "bucket" : worked;
+      // The bucket's thrower faces the house; everyone else faces away from it. A loud stuck one shows its stars.
+      const facing = pose === "bucket" ? lot.facing + Math.PI : lot.facing;
+      const stars = pose === "stuck" && loudStuck(loud, `${lead}/${c.id}`);
+      const make = (spot: Spot): Placed => ({ kind, id: c.id, lead, cwd: house.cwd, colour, ...costumeOf(c.role, kind === "lead"), pose, at: spot, facing, stars });
       if (pose === "wait") queue.push({ key: `${lead}/${c.id}`, place: make });
       else placed.push(make(spotOf(pose)));
     };
@@ -122,7 +129,7 @@ export function layout(town: Town, waiting: Pick<Entry, "key">[], now: number, l
   houses.forEach((house, i) => {
     const lot = { at: lotOf(i), facing: facingOf(i) };
     const colour = colourFor(house.project);
-    placed.push({ kind: "building", cwd: house.cwd, colour, ...lot, variant: variantOf(house.cwd), busy: isBusy(house, steward), marked: house.cwd === marked });
+    placed.push({ kind: "building", cwd: house.cwd, colour, ...lot, variant: variantOf(house.cwd), busy: isBusy(house, steward), fire: fireOf(house, now, loud), marked: house.cwd === marked });
     settle(house, lot, house.leads.filter((l) => l.id !== steward), colour, true);
     (house.parcels ?? []).forEach((parcel, k) => placed.push({ kind: "parcel", cwd: house.cwd, number: parcel.number, at: doorstep(lot, k) }));
   });
