@@ -129,12 +129,14 @@ describe("each parcel's checks, read the way gh reads them", () => {
     expect((await parcelWith(mix.filter((i) => i.__typename !== "StatusContext"))).checks).toBe("running");
   });
 
-  it("an_item_of_an_unknown_shape_counts_as_running_so_an_odd_item_never_puts_a_fire_out_nor_makes_one", async () => {
-    for (const odd of [{}, { __typename: "Other" }, "x", null, 7, { status: "COMPLETED", conclusion: "SURPRISE" }]) {
-      expect((await parcelWith([checkRun("SUCCESS"), odd])).checks, JSON.stringify(odd)).toBe("running");
-      expect((await parcelWith([checkRun("FAILURE"), odd])).checks, JSON.stringify(odd)).toBe("red");
-    }
-  });
+  // One test per odd item: each item starts two servers, so one test for all of them ran close to the 5 s limit.
+  it.each([{}, { __typename: "Other" }, "x", null, 7, { status: "COMPLETED", conclusion: "SURPRISE" }].map((odd) => [JSON.stringify(odd), odd]))(
+    "an_item_of_an_unknown_shape_counts_as_running_so_an_odd_item_never_puts_a_fire_out_nor_makes_one: %s",
+    async (_name, odd) => {
+      expect((await parcelWith([checkRun("SUCCESS"), odd])).checks).toBe("running");
+      expect((await parcelWith([checkRun("FAILURE"), odd])).checks).toBe("red");
+    },
+  );
 
   it("a_rollup_that_is_not_a_list_makes_the_list_invalid_so_the_house_keeps_its_last_parcels_and_logs_once", async () => {
     const cwd = realDir();
