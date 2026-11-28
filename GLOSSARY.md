@@ -169,3 +169,69 @@ _Avoid_: idle, done
 The one ordered list of what needs you, in strict tiers (asks, stuck, burning, quiet); Space walks
 it.
 _Avoid_: queue, desk order
+
+**Island**:
+The whole town: one walkable landmass in open sea. A new project's house is added to it.
+
+**Harbour village**:
+The village round the cove, with its quay, pier and square: the centre of the island and of the
+default view.
+
+**Castle**:
+Your own house on the island, on its hill apart from the village. The older code calls it the hall.
+
+**Castle hill**:
+The higher, all-grass hill the castle stands on.
+
+**Grand stair**:
+The one broad, straight stone stair from the village square up the castle hill.
+
+**Forecourt**:
+The walled, paved place at the top of the grand stair, in front of the castle door, where the
+table and the two thrones stand.
+
+**Your throne, the Queen's seat**:
+The two seats side by side behind the table: yours on the left, hers on your right. Hers is never
+yours.
+
+**The table**:
+The stone table in front of the two thrones, where the head of the line lays its slip.
+_Avoid_: desk (the Desk is the card panel in the page)
+
+**Animal folk**:
+The town's characters. The role sets the animal (lead cat, implementer beaver, explorer hare,
+tester hedgehog, reviewer owl) and each wears its role's hat; you and the Queen are clay people
+instead.
+
+**Slip**:
+An ask (a question, a permission or a plan) as a character carries it: a white card sealed in its
+project's colour.
+_Avoid_: letter (a letter is a finished turn)
+
+**Parcel**:
+An open PR as the town draws it: a box tied in its project's colour. Finished (green or no checks),
+it lies on the pile beside the Queen's seat until merged or closed; otherwise at its house's door.
+
+**The walk**:
+A character's way from its door, across the square and up the grand stair to the castle, or back.
+Drawn only; it never delays a card.
+
+**The line**:
+The characters waiting with an ask, oldest first: the head at the table, the next at the stair
+head, the rest down the left half of the grand stair.
+_Avoid_: queue (the Queen's request queue)
+
+**The ask flag**:
+The white-and-red signal flag a character in the line carries. Only the loud thing waves it; the
+rest hold theirs still.
+_Avoid_: banner (the castle's banners are your colours)
+
+**The house flag**:
+The small, still ask flag on a house while one of its characters is in the line.
+
+**Quiet sign**:
+A state drawn at or below the eaves, still, in project or neutral colours: a parcel, a resting
+lead, a handled fire, the marked house.
+
+**Last seen**:
+How a fire under fog shows: the quiet fire, frozen, never loud.
