@@ -69,6 +69,10 @@ export type Parcel = {
   title: string;
   url: string;
   draft: boolean;
+  /** The state of its checks as gh reads them: red (any failed), running, green, or none (it has no checks). */
+  checks: "red" | "running" | "green" | "none";
+  /** When its earliest failed check finished, in ms; only on a red parcel, and only when a failed check carries a time. */
+  redAt?: number;
   /** The steward's review of the current head commit; absent for a draft or with reviews off. "idle": not asked for. */
   review?: {
     state: "idle" | "queued" | "reviewing" | "ready";

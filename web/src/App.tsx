@@ -4,7 +4,7 @@ import { AnswerCard, LetterById } from "./AnswerCard.tsx";
 import { askOf } from "./brief.ts";
 import { MorningButton } from "./Morning.tsx";
 import { LazyBoundary } from "./LazyBoundary.tsx";
-import { NeedsList, NotifyButton, Toasts, useAlerts, useLetterKey, useMute, urgencyList, type Lettered, type Waiting } from "./needs.tsx";
+import { NeedsList, NotifyButton, Toasts, useAlerts, useLetterKey, useMute, urgencyList, useNow, waited, type Lettered, type Waiting } from "./needs.tsx";
 import { useKey, useLayer, useWalk } from "./keys.ts";
 import { KeySheet, useKeySheet } from "./KeySheet.tsx";
 import { funtownToken } from "./token.ts";
@@ -112,10 +112,19 @@ export function askReview(cwd: string, number: number): Promise<Failure | null> 
 /** A ready review to show in the steward's panel: the PR's number and her review letter's id. */
 export type Review = { pr: number; letter: string };
 
-/** An open PR: number, title, draft mark, a link, and its review: a button to ask for one, or (when ready) the steward's panel with it. */
+const CHECK_WORDS = { red: "checks failed", running: "checks running", green: "checks passed", none: "no checks" } as const;
+
+/** What a PR's checks say in words: "checks failed 12m ago" (plain "checks failed" without a time), "checks running", "checks passed", "no checks". */
+function checkWords(parcel: Pick<Parcel, "checks" | "redAt">, now: number): string {
+  const words = CHECK_WORDS[parcel.checks];
+  return parcel.checks === "red" && parcel.redAt !== undefined ? `${words} ${waited(parcel.redAt, now)} ago` : words;
+}
+
+/** An open PR: number, title, draft mark, its checks in words, a link, and its review: a button to ask for one, or (when ready) the steward's panel with it. */
 function ParcelItem({ parcel, cwd, onOpen }: { parcel: Parcel; cwd: string; onOpen: (steward: string, review?: Review) => void }) {
   const { review } = parcel;
   const [error, setError] = useState<string | null>(null);
+  const now = useNow(15_000);
   async function ask() {
     setError((await askReview(cwd, parcel.number))?.message ?? null);
   }
@@ -123,6 +132,7 @@ function ParcelItem({ parcel, cwd, onOpen }: { parcel: Parcel; cwd: string; onOp
     <li className="parcel">
       <a href={parcel.url} target="_blank" rel="noreferrer">#{parcel.number} {parcel.title}</a>
       {parcel.draft && <span className="badge">draft</span>}
+      <span className="checks" data-checks={parcel.checks}>{checkWords(parcel, now)}</span>
       {review &&
         (review.state === "idle" || review.steward ? (
           <button

@@ -243,7 +243,7 @@ export async function startServer(opts: {
     for (const house of state.houses) {
       for (const lead of house.leads) if (lead.id === stewardId) lead.steward = true;
       const prs = prLists.get(house.cwd);
-      if (prs) house.parcels = prs.map((pr) => ({ number: pr.number, title: pr.title, url: pr.url, draft: pr.draft, review: steward?.review(pr) }));
+      if (prs) house.parcels = prs.map((pr) => ({ number: pr.number, title: pr.title, url: pr.url, draft: pr.draft, checks: pr.checks, ...(pr.redAt === undefined ? {} : { redAt: pr.redAt }), review: steward?.review(pr) }));
     }
     return state;
   };

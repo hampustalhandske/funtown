@@ -17,13 +17,24 @@ export const listed = (sessionId: string, cwd: string, over: Partial<Listed> = {
 export const listedBg = (sessionId: string, cwd: string, over: Partial<Listed> = {}): Listed =>
   listed(sessionId, cwd, { kind: "background", id: sessionId.slice(0, 8), ...over });
 
-/** One entry of `gh pr list --json number,title,url,isDraft,headRefOid`. */
-export type Pr = { number: number; title: string; url: string; isDraft: boolean; headRefOid: string };
+/** One entry of `gh pr list --json number,title,url,isDraft,headRefOid,statusCheckRollup`; the rollup is whatever gh would print (a list, or anything for a bad one). */
+export type Pr = { number: number; title: string; url: string; isDraft: boolean; headRefOid: string; statusCheckRollup: unknown };
 
-/** An open, ready PR with a fixed title, url and head commit unless given. */
+/** An open, ready PR with a fixed title, url and head commit and no checks unless given. */
 export const pr = (number: number, over: Partial<Pr> = {}): Pr => ({
-  number, title: `PR ${number}`, url: `https://github.com/example/repo/pull/${number}`, isDraft: false, headRefOid: `head-${number}`, ...over,
+  number, title: `PR ${number}`, url: `https://github.com/example/repo/pull/${number}`, isDraft: false, headRefOid: `head-${number}`, statusCheckRollup: [], ...over,
 });
+
+/** A finished check run in a rollup, as gh prints it: `conclusion` and the time it `completedAt`. */
+export const checkRun = (conclusion: string, completedAt = "2026-11-28T05:02:42Z") => ({
+  __typename: "CheckRun", name: "test", workflowName: "test", status: "COMPLETED", conclusion, startedAt: "2026-11-28T04:54:46Z", completedAt,
+});
+/** A check run that has not finished: its `status` (QUEUED, IN_PROGRESS...) and no conclusion. */
+export const checkRunAt = (status: string) => ({
+  __typename: "CheckRun", name: "test", workflowName: "test", status, conclusion: "", startedAt: "2026-11-28T04:54:46Z", completedAt: "0001-01-01T00:00:00Z",
+});
+/** A commit status in a rollup: its `state` and the time it `startedAt`. */
+export const statusContext = (state: string, startedAt = "2026-11-28T05:00:00Z") => ({ __typename: "StatusContext", context: "ci/old", state, startedAt });
 
 /** The e2e web server's port: `FUNTOWN_E2E_PORT`, so two checkouts can run their browser tests side by side; 4799 by default. */
 export const E2E_PORT = process.env.FUNTOWN_E2E_PORT ?? "4799";

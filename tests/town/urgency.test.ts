@@ -89,7 +89,7 @@ describe("urgencyList", () => {
     const t = town([
       house("alpha", [lead("rest", needs("turn ended", 1), [char("hat")]), lead("worker")]),
     ]);
-    t.houses[0].parcels = [{ number: 1, title: "PR", url: "https://example.test/1", draft: false }];
+    t.houses[0].parcels = [{ number: 1, title: "PR", url: "https://example.test/1", draft: false, checks: "none" }];
     const all = layout(t, urgencyList(t));
     const building = all.find((p) => p.kind === "building")!.at;
     const door = { x: building.x, z: building.z + 0.6 };

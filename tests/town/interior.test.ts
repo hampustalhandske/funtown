@@ -8,7 +8,7 @@ const char = (id: string, over: Partial<Character> = {}): Character => ({ id, na
 const lead = (id: string, over: Partial<Lead> = {}, subagents: Character[] = []): Lead => ({
   ...char(id), tty: null, termProgram: null, kind: "terminal", shortId: null, subagents, ...over,
 });
-const parcel = (number: number): Parcel => ({ number, title: `PR ${number}`, url: `https://example.test/${number}`, draft: false });
+const parcel = (number: number): Parcel => ({ number, title: `PR ${number}`, url: `https://example.test/${number}`, draft: false, checks: "none" });
 const house = (leads: Lead[], over: Partial<House> = {}): House => ({ project: "alpha", cwd: "/work/alpha", leads, ...over });
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
 

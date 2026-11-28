@@ -9,7 +9,7 @@ const lead = (id: string, over: Partial<Lead> = {}, subagents: Character[] = [])
   ...char(id), tty: null, termProgram: null, kind: "terminal", shortId: null, subagents, ...over,
 });
 const house = (project: string, leads: Lead[], parcels?: Parcel[]): House => ({ project, cwd: `/work/${project}`, leads, parcels });
-const parcel = (number: number): Parcel => ({ number, title: `PR ${number}`, url: `https://example.test/${number}`, draft: false });
+const parcel = (number: number): Parcel => ({ number, title: `PR ${number}`, url: `https://example.test/${number}`, draft: false, checks: "none" });
 const town = (houses: House[]): Town => ({ houses, cards: [], started: 1, claude: { version: "2.1.325", problems: [] } });
 const needs = (since: number, over: Partial<Character> = {}): Partial<Character> => ({ stage: "needs_you", needs: "permission", since, ...over });
 

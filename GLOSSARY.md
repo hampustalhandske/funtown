@@ -108,6 +108,12 @@ _Avoid_: intent, mission
 What the town says about a character or a house before you lean in: working, asking, stuck,
 resting, done.
 
+**Check state**:
+What a PR's checks say, as gh's buckets read them: red (any check failed, a workflow that never
+started included), running (none failed, one still going), green (all settled: passed, neutral,
+skipped or cancelled) or none (the PR has no checks, which is never green).
+_Avoid_: CI status, build status
+
 **Resting**:
 A lead whose turn ended: it stays at its house with its letter, last in the urgency list, never
 loud.

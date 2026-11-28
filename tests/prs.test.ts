@@ -1,10 +1,10 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { errorLines, fakeClaude, houseAt, leadsOf, listed, pr, realDir, sleep, start, townWhere, until } from "./helpers.ts";
+import { checkRun, checkRunAt, errorLines, fakeClaude, houseAt, leadsOf, listed, pr, realDir, sleep, start, statusContext, townWhere, until } from "./helpers.ts";
 import { FakeClaude, type Pr } from "./fake-claude.ts";
 
-const GH_ARGS = ["pr", "list", "--state", "open", "--json", "number,title,url,isDraft,headRefOid", "--limit", "50", "--author", "@me"];
+const GH_ARGS = ["pr", "list", "--state", "open", "--json", "number,title,url,isDraft,headRefOid,statusCheckRollup", "--limit", "50", "--author", "@me"];
 
 /**
  * A server with no steward listing lead s1 in `cwd` (default: a fresh real folder), polling PRs
@@ -28,9 +28,9 @@ describe("parcels from gh pr list", () => {
     s.gh.prs(cwd, [pr(3, { isDraft: true, title: "Try an idea" }), pr(12, { title: "Fix the parser" }), pr(5)]);
     const t = await townWhere(s.url, (x) => (houseAt(x, cwd)?.parcels?.length ?? 0) === 3);
     expect(houseAt(t, cwd)!.parcels).toEqual([
-      { number: 12, title: "Fix the parser", url: "https://github.com/example/repo/pull/12", draft: false },
-      { number: 5, title: "PR 5", url: "https://github.com/example/repo/pull/5", draft: false },
-      { number: 3, title: "Try an idea", url: "https://github.com/example/repo/pull/3", draft: true },
+      { number: 12, title: "Fix the parser", url: "https://github.com/example/repo/pull/12", draft: false, checks: "none" },
+      { number: 5, title: "PR 5", url: "https://github.com/example/repo/pull/5", draft: false, checks: "none" },
+      { number: 3, title: "Try an idea", url: "https://github.com/example/repo/pull/3", draft: true, checks: "none" },
     ]);
 
     s.gh.prs(cwd, [pr(13), pr(5)]);
@@ -63,6 +63,91 @@ describe("parcels from gh pr list", () => {
     await until(() => s.prLines().length === 2);
     await sleep(500); // about five more failing gh polls
     expect(s.prLines()).toHaveLength(2);
+    expect(houseAt(await townWhere(s.url, () => true), cwd)!.parcels!.map((p) => p.number)).toEqual([7]);
+  });
+});
+
+describe("each parcel's checks, read the way gh reads them", () => {
+  /** The parcel #1 as the State shows it once gh answers with `rollup` for it. */
+  async function parcelWith(rollup: unknown) {
+    const cwd = realDir();
+    const s = await withProject({ cwd, prs: [pr(1, { statusCheckRollup: rollup })] });
+    const t = await townWhere(s.url, (x) => houseAt(x, cwd)?.parcels?.length === 1);
+    return houseAt(t, cwd)!.parcels![0];
+  }
+  const T = (iso: string) => Date.parse(iso);
+
+  it("a_failed_check_makes_the_parcel_red_with_the_time_it_finished_so_a_red_pr_never_looks_green", async () => {
+    const p = await parcelWith([checkRun("SUCCESS"), checkRun("FAILURE", "2026-11-28T05:02:42Z")]);
+    expect(p).toMatchObject({ checks: "red", redAt: T("2026-11-28T05:02:42Z") });
+  });
+
+  it("each_of_gh_failed_conclusions_is_red_and_a_startup_failure_too_so_a_workflow_that_never_started_is_not_running_for_ever", async () => {
+    for (const c of ["FAILURE", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"]) {
+      expect((await parcelWith([checkRun(c)])).checks, c).toBe("red");
+    }
+  });
+
+  it("the_earliest_failed_finish_is_redAt_and_a_failed_item_without_a_time_leaves_it_out", async () => {
+    const early = await parcelWith([checkRun("FAILURE", "2026-11-28T06:00:00Z"), checkRun("TIMED_OUT", "2026-11-28T05:00:00Z"), checkRun("SUCCESS", "2026-11-28T01:00:00Z")]);
+    expect(early.redAt).toBe(T("2026-11-28T05:00:00Z"));
+    const none = await parcelWith([{ ...checkRun("FAILURE"), completedAt: undefined }]);
+    expect(none.checks).toBe("red");
+    expect(none).not.toHaveProperty("redAt");
+  });
+
+  it("a_pending_check_makes_the_parcel_running_and_a_parcel_with_only_passed_checks_green", async () => {
+    for (const status of ["QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED"]) {
+      const p = await parcelWith([checkRun("SUCCESS"), checkRunAt(status)]);
+      expect(p.checks, status).toBe("running");
+      expect(p).not.toHaveProperty("redAt");
+    }
+    const green = await parcelWith([checkRun("SUCCESS"), checkRun("NEUTRAL")]);
+    expect(green.checks).toBe("green");
+    expect(green).not.toHaveProperty("redAt");
+  });
+
+  it("cancelled_and_skipped_checks_are_settled_so_fire_means_only_that_a_check_failed", async () => {
+    expect((await parcelWith([checkRun("CANCELLED"), checkRun("SKIPPED")])).checks).toBe("green");
+  });
+
+  it("an_empty_rollup_is_none_never_green_so_the_town_does_not_look_calm_when_nothing_checked_the_pr", async () => {
+    expect(await parcelWith([])).toMatchObject({ checks: "none" });
+  });
+
+  it("a_status_context_is_read_by_its_state_and_its_start_time_is_redAt", async () => {
+    expect(await parcelWith([statusContext("SUCCESS")])).toMatchObject({ checks: "green" });
+    expect(await parcelWith([statusContext("PENDING")])).toMatchObject({ checks: "running" });
+    expect(await parcelWith([statusContext("EXPECTED")])).toMatchObject({ checks: "running" });
+    expect(await parcelWith([statusContext("ERROR", "2026-11-28T05:00:00Z")])).toMatchObject({ checks: "red", redAt: T("2026-11-28T05:00:00Z") });
+    expect(await parcelWith([statusContext("FAILURE")])).toMatchObject({ checks: "red" });
+  });
+
+  it("red_beats_running_and_running_beats_passed_in_a_mix", async () => {
+    const mix = [checkRun("SUCCESS"), checkRunAt("IN_PROGRESS"), statusContext("FAILURE", "2026-11-28T05:00:00Z"), checkRun("SKIPPED")];
+    expect(await parcelWith(mix)).toMatchObject({ checks: "red", redAt: T("2026-11-28T05:00:00Z") });
+    expect((await parcelWith(mix.filter((i) => i.__typename !== "StatusContext"))).checks).toBe("running");
+  });
+
+  it("an_item_of_an_unknown_shape_counts_as_running_so_an_odd_item_never_puts_a_fire_out_nor_makes_one", async () => {
+    for (const odd of [{}, { __typename: "Other" }, "x", null, 7, { status: "COMPLETED", conclusion: "SURPRISE" }]) {
+      expect((await parcelWith([checkRun("SUCCESS"), odd])).checks, JSON.stringify(odd)).toBe("running");
+      expect((await parcelWith([checkRun("FAILURE"), odd])).checks, JSON.stringify(odd)).toBe("red");
+    }
+  });
+
+  it("a_rollup_that_is_not_a_list_makes_the_list_invalid_so_the_house_keeps_its_last_parcels_and_logs_once", async () => {
+    const cwd = realDir();
+    const s = await withProject({ cwd, prs: [pr(7)] });
+    await townWhere(s.url, (x) => houseAt(x, cwd)?.parcels?.length === 1);
+    for (const bad of [{ state: "SUCCESS" }, "SUCCESS", null]) {
+      s.gh.prs(cwd, [pr(8, { statusCheckRollup: bad })]);
+      await until(() => s.prLines().length >= 1);
+    }
+    const lines = s.prLines().length;
+    await sleep(300);
+    expect(s.prLines()).toHaveLength(lines);
+    expect(s.prLines()[0].message).toContain("not a list of PRs");
     expect(houseAt(await townWhere(s.url, () => true), cwd)!.parcels!.map((p) => p.number)).toEqual([7]);
   });
 });
