@@ -25,15 +25,15 @@ jobs:
     # A passing run takes about 7.5 minutes; a slow macOS runner has taken over 10.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - name: Cache Playwright's Chromium
         id: chromium
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/Library/Caches/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -43,7 +43,7 @@ jobs:
       # Playwright writes test-results/ only for the tests that failed.
       - name: Keep the failed browser tests' output
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: failed-tests
           path: test-results/
