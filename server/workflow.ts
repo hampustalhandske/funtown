@@ -69,9 +69,21 @@ export function parsePhase(text: string): PhaseFile {
 }
 
 /**
+ * The three things gh says on stderr, found on gh 2.103.3, when a folder has no GitHub repo: not a git
+ * repository, no remotes, and no remote that points to a GitHub host. They are matched by text, so a
+ * gh that words one differently puts that house in fog, never on fire.
+ */
+const NO_GITHUB = [
+  "not a git repository",
+  "no git remotes found",
+  "none of the git remotes configured for this repository point to a known GitHub host",
+];
+
+/**
  * The open PRs the user opened (`--author @me`) in the repository in `cwd`, newest number first,
- * from `gh pr list` (run as `gh`, never through a shell, with `cwd` as its working folder). Rejects with gh's error output, or
- * when its output isn't a list of PRs; `signal` kills gh, and the promise settles once it has exited.
+ * from `gh pr list` (run as `gh`, never through a shell, with `cwd` as its working folder); `[]` when gh says
+ * the folder has no GitHub repo. Rejects with gh's error output, or when its output isn't a list of PRs;
+ * `signal` kills gh, and the promise settles once it has exited.
  */
 export async function listPrs(gh: string, cwd: string, signal: AbortSignal): Promise<Pr[]> {
   const args = ["pr", "list", "--state", "open", "--json", "number,title,url,isDraft,headRefOid,statusCheckRollup", "--limit", "50", "--author", "@me"];
@@ -80,6 +92,7 @@ export async function listPrs(gh: string, cwd: string, signal: AbortSignal): Pro
     out = (await execFileAsync(gh, args, { cwd, timeout: 30_000, signal })).stdout;
   } catch (err) {
     const { stderr, message } = err as { stderr?: string; message: string };
+    if (NO_GITHUB.some((text) => stderr?.includes(text))) return [];
     throw new Error(stderr?.trim() || message, { cause: err });
   }
   type Raw = { number: number; title: string; url: string; isDraft: boolean; headRefOid: string; statusCheckRollup: unknown[] };

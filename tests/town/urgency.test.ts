@@ -14,7 +14,7 @@ const needs = (need: string, since: number, over: Partial<Character> = {}): Part
 const NOW = 1_000_000;
 const ids = (t: Town) => urgencyList(t, NOW).map((w) => (w.kind === "pr" ? w.key : w.id));
 const parcel = (number: number, over: Partial<Parcel> = {}): Parcel => ({ number, title: `PR ${number}`, url: `https://example.test/${number}`, draft: false, checks: "green", ...over });
-const withParcels = (h: House, parcels: Parcel[]): House => ({ ...h, parcels });
+const withParcels = (h: House, parcels: Parcel[], over: Partial<House> = {}): House => ({ ...h, parcels, parcelsAt: NOW - 1000, ...over });
 
 /** Every tier at once; each id says its tier, `since` is the order inside it. */
 const mixed = () =>
@@ -156,6 +156,36 @@ describe("urgencyList", () => {
       { kind: "pr", key: "/work/alpha#12", project: "alpha", cwd: "/work/alpha", number: 12, title: "Fix it", need: "burning: checks failed", since: 900, tier: 3 },
       { kind: "pr", key: "/work/beta#13", project: "beta", cwd: "/work/beta", number: 13, title: "Ship it", need: "waits for you", since: Infinity, tier: 4 },
     ]);
+  });
+
+  test("a_fire_in_a_house_under_fog_is_quiet_first_in_tier_4_before_a_rate_limit_and_says_it_failed_when_last_read", async () => {
+    // Catches a fire on a stale list shouting in tier 3, sorted behind a rate limit, or worded as a live failure.
+    const fog = { parcelsAt: NOW - 4 * 60_000 };
+    const t = withPrs();
+    t.houses.push(
+      withParcels(house("foggy", []), [parcel(1, { checks: "red", redAt: 900 }), parcel(2, { checks: "red", redAt: 100 })], fog),
+      withParcels(house("never", []), [parcel(3, { checks: "red" })], { parcelsAt: undefined }),
+    );
+    expect(ids(t)).toEqual([
+      "ask-oldest", "question-old", "plan-sub", "ask-new", "waiting-mid", // tier 1
+      "stuck-mid", // tier 2
+      "/work/gamma#8", // tier 3: only the house whose list is fresh
+      "/work/foggy#2", "/work/never#3", // tier 4: a fire under fog first, the oldest failure first, an unknown last
+      "limit-old", "limit-new", "/work/gamma#9", "/work/delta#4", "rest-old", "rest-g", "rest-d",
+    ]);
+    const entry = urgencyList(t, NOW).find((e) => e.kind === "pr" && e.key === "/work/foggy#2");
+    expect(entry).toMatchObject({ tier: 4, need: "failed when last read", since: 100 });
+  });
+
+  test("a_house_under_fog_has_no_waiting_prs_and_the_page_judges_the_age_by_its_own_clock", async () => {
+    const stale = { parcelsAt: NOW - 4 * 60_000 };
+    const t = town([withParcels(house("a", []), [parcel(1)], stale)]);
+    expect(ids(t)).toEqual([]);
+    expect(ids(town([withParcels(house("a", []), [parcel(1)])]))).toEqual(["/work/a#1"]);
+    // The page judges by its own clock: the same state is clear just inside the limit and foggy just outside.
+    const h = town([withParcels(house("a", []), [parcel(1)], { parcelsAt: NOW - 3 * 60_000 })]);
+    expect(urgencyList(h, NOW).map((e) => e.key)).toEqual(["/work/a#1"]);
+    expect(urgencyList(h, NOW + 1)).toEqual([]);
   });
 
   test("the_castle_queue_and_morning_read_only_the_characters_so_a_pr_entry_changes_no_place", async () => {

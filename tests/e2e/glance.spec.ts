@@ -24,8 +24,8 @@ const stubs = `
 `;
 
 const pr = (number: number, over: Record<string, unknown> = {}) => ({ number, title: `PR ${number}`, url: `https://example.test/${number}`, draft: false, checks: "green", ...over });
-/** A house in `/work/<project>` with `parcels`. */
-const withPrs = (project: string, leads: unknown[], parcels: unknown[]) => ({ ...house(project, leads), parcels });
+/** A house in `/work/<project>` with `parcels`, whose PR list was read just now. */
+const withPrs = (project: string, leads: unknown[], parcels: unknown[]) => ({ ...house(project, leads), parcels, parcelsAt: NOW });
 const red = (number: number, minutesAgo = 12) => pr(number, { checks: "red", redAt: NOW - minutesAgo * 60_000 });
 
 async function open(page: Page, initial: unknown) {
@@ -115,4 +115,51 @@ test("a_house_that_starts_burning_toasts_sounds_and_notifies_and_a_pr_that_start
   expect(await popups(page)).toEqual([{ title: "alpha is burning: #12 checks failed", body: "PR 12" }]);
   await expect(page.getByRole("status")).not.toContainText("beta");
   await expect(rows(page).filter({ hasText: "waits for you" })).toHaveCount(1);
+});
+
+/** The clock time the page shows for `at`, in the machine's own zone: two digits each. */
+const clock = (at: number) => new Date(at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+/** A house under fog since `at` (its PR list last worked then); leave `at` out for one never read. */
+const foggy = (project: string, leads: unknown[], parcels: unknown[], at?: number) => ({ ...house(project, leads), parcels, ...(at === undefined ? {} : { parcelsAt: at }) });
+
+test("a_house_whose_prs_were_last_read_long_ago_or_never_says_so_beside_its_name_and_a_fresh_house_says_nothing", async ({ page }) => {
+  // Catches fog with no words, the wrong time, and a house read a minute ago called foggy.
+  const old = NOW - 10 * 60_000;
+  await open(
+    page,
+    town([
+      foggy("alpha", [waiting("s1", "rester", NOW - 1000, { needs: "turn ended" })], [pr(1)], old),
+      foggy("beta", [], [pr(2)]),
+      withPrs("gamma", [], [pr(3)]),
+      { ...withPrs("delta", [], [pr(4)]), parcelsAt: NOW - 60_000 },
+    ]),
+  );
+  await expect(houseOf(page, "alpha").getByRole("heading")).toContainText(`PRs last read ${clock(old)}`);
+  await expect(houseOf(page, "beta").getByRole("heading")).toContainText("PRs not read yet");
+  await expect(houseOf(page, "gamma").getByRole("heading")).not.toContainText("PRs");
+  await expect(houseOf(page, "delta").getByRole("heading")).not.toContainText("PRs");
+  // No PR waits for you where the list may be old.
+  await expect(houseOf(page, "alpha").locator("li.parcel", { hasText: "#1 " })).not.toContainText("waits for you");
+  await expect(houseOf(page, "gamma").locator("li.parcel", { hasText: "#3 " })).toContainText("waits for you");
+});
+
+test("a_fire_in_a_house_under_fog_is_the_first_quiet_entry_and_raises_no_toast_sound_or_notification", async ({ page }) => {
+  // Catches a fire seen on an old list shouting like a live one, and a rate limit sorted before it.
+  const limited = waiting("s1", "limited", NOW - 600_000, { needs: "stuck", reason: "rate limit" });
+  const stream = await open(page, town([withPrs("alpha", [limited], []), withPrs("beta", [], [pr(13)])]));
+  await page.waitForTimeout(400);
+  expect(await sounds(page)).toBe(0);
+
+  // Beta's list is now 10 minutes old and shows a failed PR.
+  stream.send(town([withPrs("alpha", [limited], []), foggy("beta", [], [red(12), pr(13)], NOW - 10 * 60_000)]));
+  await expect(rows(page).first()).toContainText("failed when last read");
+  await expect(rows(page)).toHaveCount(2);
+  const text = await rows(page).allInnerTexts();
+  expect(text[0]).toMatch(/beta.*#12.*failed when last read/s);
+  expect(text[1]).toMatch(/alpha.*limited.*rate limit/s);
+  await expect(queue(page)).not.toContainText("waits for you");
+  await page.waitForTimeout(400);
+  expect(await sounds(page)).toBe(0);
+  expect(await popups(page)).toEqual([]);
+  await expect(page.getByRole("status")).not.toContainText("beta");
 });

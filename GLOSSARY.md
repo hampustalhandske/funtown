@@ -136,6 +136,13 @@ A fire while any lead of the house works, a run in its worktree included. Not in
 **Who holds the bucket**:
 Any lead of the house that is working: it decides burning from handled.
 
+**Fog**:
+A house whose PRs Funtown could not look at lately: its PR list never worked since the server
+started, or last worked over 3 minutes ago. Its fire is quiet (first in tier 4, "failed when last
+read") and no PR waits for you there. The steward's own house, which has no PR list, is never in
+fog. Fog is not a state of the house's work: Funtown could not look.
+_Avoid_: neglect, stale, idle
+
 **The loud thing**:
 The one entry the town makes noise for: the head of the urgency list when it is in tiers 1 to 3.
 
@@ -145,7 +152,7 @@ a resting lead) leave the town calm.
 
 **A PR waiting for you**:
 A PR with nothing failed and nothing running (green, or no checks), in a house where no lead
-works. A quiet entry, tier 4, never alerting.
+works and which is not in fog. A quiet entry, tier 4, never alerting.
 
 **Check state**:
 What a PR's checks say, as gh's buckets read them: red (any check failed, a workflow that never

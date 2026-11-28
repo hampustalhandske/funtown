@@ -6,7 +6,7 @@ import { MorningButton } from "./Morning.tsx";
 import { LazyBoundary } from "./LazyBoundary.tsx";
 import { characterEntries, NeedsList, NotifyButton, Toasts, useAlerts, useLetterKey, useMute, urgencyList, useNow, waited, type Entry, type Lettered, type PrEntry, type Waiting } from "./needs.tsx";
 import { useKey, useLayer, useWalk } from "./keys.ts";
-import { glanceOf } from "./glance.ts";
+import { fogWords, glanceOf } from "./glance.ts";
 import { KeySheet, useKeySheet } from "./KeySheet.tsx";
 import { funtownToken } from "./token.ts";
 import { SwitchButton } from "./Switch.tsx";
@@ -314,6 +314,7 @@ function HouseCard({
       <h2>
         🏠 {house.project}
         {glance.fire !== "none" && <span className={`badge fire ${glance.fire}`}>{glance.fire}</span>}
+        {glance.fog && <span className="badge fog">{fogWords(house)}</span>}
         {house.phase && <span className="badge phase">{house.phase.phase}</span>}
         {house.phase?.note && <span className="phase-note">{house.phase.note}</span>}
         {house.phase?.goal && <span className="phase-line">goal: {house.phase.goal}</span>}

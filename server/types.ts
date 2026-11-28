@@ -92,8 +92,10 @@ export type House = {
   leads: Lead[];
   /** From .claude/phase.json; absent when there is none or it is unreadable. */
   phase?: { phase: string; note?: string; steps?: string[]; goal?: string; spec?: string };
-  /** Open PRs, newest number first; absent until the first gh list succeeds. */
+  /** Open PRs, newest number first; absent until the first gh list succeeds. `[]` for a folder with no GitHub repo. */
   parcels?: Parcel[];
+  /** When its PR list last worked, or gh said there is no GitHub repo here (server clock, ms); absent until the first, and always absent on the steward's house, which is never polled. */
+  parcelsAt?: number;
   /** True when the user added this folder in the app (it stays with no sessions). */
   added?: boolean;
   /** True once a session has been listed here since the server started. */

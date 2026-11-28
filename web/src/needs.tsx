@@ -11,7 +11,8 @@ export type Waiting = { kind: "character"; key: string; lead: string; id: string
 
 /**
  * One PR of a house on the urgency list: a burning house's oldest failed PR (tier 3, `since` the time it failed, or
- * Infinity when unknown) or a PR waiting for the user (tier 4, no time). `key` is `<cwd>#<number>`.
+ * Infinity when unknown), a fire under fog ("failed when last read", tier 4, the same time) or a PR waiting for the
+ * user (tier 4, no time). `key` is `<cwd>#<number>`.
  */
 export type PrEntry = { kind: "pr"; key: string; project: string; cwd: string; number: number; title: string; need: string; since: number; tier: 3 | 4 };
 
@@ -35,6 +36,9 @@ const rateLimited = (c: Character) => c.needs === "stuck" && c.reason === "rate 
 /** The tier of a needs_you character: a turn ended or a rate limit is quiet (4), other stuck is 2, everything else asks (1). */
 const tierOf = (c: Character): Tier => (c.needs === "turn ended" || rateLimited(c) ? 4 : c.needs === "stuck" ? 2 : 1);
 
+/** The place of a fire under fog inside the quiet tier: before everything else, rate limits (0) included. */
+const FOG_FIRE_RANK = -1;
+
 /** The place of a PR waiting for the user inside the quiet tier: after the rate limits (0), before the resting leads (3). */
 const WAITING_PR_RANK = 1;
 
@@ -49,8 +53,8 @@ function* characters(town: Town | null): Generator<{ c: Character; house: House;
 
 /**
  * Everything of `town` that needs the user, as one list in strict tiers (ADR 0006): 1 asks (cards, then other
- * asks), 2 stuck, 3 burning houses (one entry each, for its oldest failed PR), 4 quiet (stuck on a rate limit, then
- * PRs waiting for the user, those with a ready review first, then resting leads, whose turn ended). Oldest first
+ * asks), 2 stuck, 3 burning houses not under fog (one entry each, for its oldest failed PR), 4 quiet (a fire under
+ * fog, which may be out of date; stuck on a rate limit, then PRs waiting for the user, those with a ready review first, then resting leads, whose turn ended). Oldest first
  * within each tier (for a burning house, the time its check failed; unknown last). Handled fires and working
  * characters are not listed. `now` is the page's clock. The castle queue, the plain list, the next key and the
  * alerts all read it.
@@ -67,7 +71,15 @@ export function urgencyList(town: Town | null, now: number): Entry[] {
     const glance = glanceOf(house, now);
     const entry = (p: Parcel, tier: 3 | 4, need: string, since: number): PrEntry =>
       ({ kind: "pr", key: `${house.cwd}#${p.number}`, project: house.project, cwd: house.cwd, number: p.number, title: p.title, need, since, tier });
-    if (glance.fire === "burning") list.push({ w: entry(glance.red[0], 3, "burning: checks failed", glance.red[0].redAt ?? Infinity), rank: 0 });
+    // A fire under fog may be out of date: it is quiet, and the first of the quiet.
+    if (glance.fire === "burning") {
+      const oldest = glance.red[0];
+      list.push(
+        glance.fog
+          ? { w: entry(oldest, 4, "failed when last read", oldest.redAt ?? Infinity), rank: FOG_FIRE_RANK }
+          : { w: entry(oldest, 3, "burning: checks failed", oldest.redAt ?? Infinity), rank: 0 },
+      );
+    }
     // Among the waiting PRs a ready review goes first; the rest keep house order and the house's PR order.
     for (const p of glance.waiting) list.push({ w: entry(p, 4, "waits for you", Infinity), rank: WAITING_PR_RANK + (p.review?.state === "ready" ? 0 : 1) });
   }

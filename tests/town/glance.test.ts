@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Character, House, Lead, Parcel } from "../../server/types.ts";
-import { glanceOf } from "../../web/src/glance.ts";
+import { FOG_AFTER_MS, fogWords, glanceOf } from "../../web/src/glance.ts";
 
 const NOW = 1_000_000;
 const char = (id: string, over: Partial<Character> = {}): Character => ({ id, name: id, stage: "working", activity: null, step: null, ...over });
@@ -9,7 +9,7 @@ const lead = (id: string, over: Partial<Lead> = {}, subagents: Character[] = [])
 });
 const resting = (id: string) => lead(id, { stage: "needs_you", needs: "turn ended", since: 1 });
 const parcel = (number: number, over: Partial<Parcel> = {}): Parcel => ({ number, title: `PR ${number}`, url: `https://example.test/${number}`, draft: false, checks: "green", ...over });
-const house = (leads: Lead[], parcels?: Parcel[]): House => ({ project: "alpha", cwd: "/work/alpha", leads, parcels });
+const house = (leads: Lead[], parcels?: Parcel[], over: Partial<House> = {}): House => ({ project: "alpha", cwd: "/work/alpha", leads, parcels, parcelsAt: NOW - 1000, ...over });
 const numbers = (ps: Parcel[]) => ps.map((p) => p.number);
 
 describe("glanceOf", () => {
@@ -58,6 +58,46 @@ describe("glanceOf", () => {
   });
 
   test("a_house_without_parcels_has_nothing_to_say", async () => {
-    expect(glanceOf(house([]), NOW)).toEqual({ fire: "none", red: [], waiting: [] });
+    expect(glanceOf(house([]), NOW)).toEqual({ fire: "none", red: [], waiting: [], fog: false });
+  });
+});
+
+describe("fog on a house", () => {
+  test("a_house_is_in_fog_when_its_pr_list_never_worked_or_last_worked_more_than_the_constant_ago_by_the_pages_clock", async () => {
+    // Catches fog by a different age than the one constant, and a house never read passing for clear.
+    expect(FOG_AFTER_MS).toBe(3 * 60_000);
+    expect(glanceOf(house([], [], { parcelsAt: undefined }), NOW).fog).toBe(true);
+    expect(glanceOf(house([], [], { parcelsAt: NOW - FOG_AFTER_MS }), NOW).fog).toBe(false);
+    expect(glanceOf(house([], [], { parcelsAt: NOW - FOG_AFTER_MS - 1 }), NOW).fog).toBe(true);
+    // The same house, judged later by the page's clock, goes into fog without a new frame.
+    const h = house([], [], { parcelsAt: NOW });
+    expect(glanceOf(h, NOW + FOG_AFTER_MS).fog).toBe(false);
+    expect(glanceOf(h, NOW + FOG_AFTER_MS + 1).fog).toBe(true);
+  });
+
+  test("the_stewards_house_is_never_in_fog_though_it_has_no_parcelsAt", async () => {
+    const mine = house([lead("steward", { steward: true, kind: "background" })], undefined, { parcelsAt: undefined });
+    expect(glanceOf(mine, NOW).fog).toBe(false);
+    // Another lead in the same house does not make it the steward's.
+    expect(glanceOf(house([lead("other")], undefined, { parcelsAt: undefined }), NOW).fog).toBe(true);
+  });
+
+  test("a_house_in_fog_has_no_waiting_prs_but_keeps_its_fire", async () => {
+    // Catches "waits for you" on a list that may be 10 minutes old, and a fire dropped because its list is old.
+    const h = house([resting("a")], [parcel(1), parcel(2, { checks: "red" })], { parcelsAt: NOW - FOG_AFTER_MS - 1 });
+    const g = glanceOf(h, NOW);
+    expect(g.waiting).toEqual([]);
+    expect(g.fire).toBe("burning");
+    expect(numbers(g.red)).toEqual([2]);
+    expect(numbers(glanceOf({ ...h, parcelsAt: NOW }, NOW).waiting)).toEqual([1]);
+  });
+});
+
+describe("fogWords", () => {
+  test("a_house_never_read_says_not_read_yet_and_one_read_before_says_the_local_clock_time", async () => {
+    expect(fogWords(house([], [], { parcelsAt: undefined }))).toBe("PRs not read yet");
+    const at = new Date(2026, 10, 28, 14, 2, 31).getTime();
+    expect(fogWords(house([], [], { parcelsAt: at }))).toBe("PRs last read 14:02");
+    expect(fogWords(house([], [], { parcelsAt: new Date(2026, 10, 28, 9, 5).getTime() }))).toBe("PRs last read 09:05");
   });
 });

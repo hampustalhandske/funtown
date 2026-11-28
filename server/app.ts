@@ -195,6 +195,8 @@ export async function startServer(opts: {
   const prMs = opts.prMs ?? 60_000;
   // cwd -> its open PRs, from the last gh list that worked
   const prLists = new Map<string, Pr[]>();
+  // cwd -> when its last gh list worked, or said there is no GitHub repo (the server's clock)
+  const prAt = new Map<string, number>();
   // cwd -> when its last gh list started
   const prAsked = new Map<string, number>();
   // cwd -> its gh list still running
@@ -243,6 +245,8 @@ export async function startServer(opts: {
     for (const house of state.houses) {
       for (const lead of house.leads) if (lead.id === stewardId) lead.steward = true;
       const prs = prLists.get(house.cwd);
+      const parcelsAt = prAt.get(house.cwd);
+      if (parcelsAt !== undefined) house.parcelsAt = parcelsAt;
       if (prs) house.parcels = prs.map((pr) => ({ number: pr.number, title: pr.title, url: pr.url, draft: pr.draft, checks: pr.checks, ...(pr.redAt === undefined ? {} : { redAt: pr.redAt }), review: steward?.review(pr) }));
     }
     return state;
@@ -280,7 +284,7 @@ export async function startServer(opts: {
 
   /** Starts `gh pr list` for each of `cwds` whose last list is `prMs` old or that has none; forgets the PRs of other folders. */
   const pollPrs = (cwds: string[]) => {
-    for (const map of [prLists, prAsked, prFailing]) for (const cwd of map.keys()) if (!cwds.includes(cwd)) map.delete(cwd);
+    for (const map of [prLists, prAsked, prAt, prFailing]) for (const cwd of map.keys()) if (!cwds.includes(cwd)) map.delete(cwd);
     for (const cwd of cwds) {
       if (prRunning.has(cwd) || Date.now() - (prAsked.get(cwd) ?? -Infinity) < prMs) continue;
       prAsked.set(cwd, Date.now());
@@ -289,6 +293,7 @@ export async function startServer(opts: {
           (prs) => {
             if (closed || !prAsked.has(cwd)) return;
             prLists.set(cwd, prs);
+            prAt.set(cwd, Date.now());
             prFailing.delete(cwd);
             steward?.pump();
             broadcast();

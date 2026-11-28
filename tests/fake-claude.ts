@@ -221,11 +221,18 @@ export class FakeClaude {
   sessions(): Listed[] {
     return JSON.parse(readFileSync(join(this.dir, "list.json"), "utf8"));
   }
-  /** Sets what `pr list` prints when run in `cwd`; null makes it fail there. */
+  /** Sets what `pr list` prints when run in `cwd`; null makes it fail there with a network error. */
   prs(cwd: string, prs: Pr[] | null): this {
+    return this.setPrs(cwd, prs);
+  }
+  /** Makes `pr list` run in `cwd` fail with `text` on stderr and exit 1, as gh does. */
+  prsFail(cwd: string, text: string): this {
+    return this.setPrs(cwd, { fail: text });
+  }
+  private setPrs(cwd: string, entry: Pr[] | null | { fail: string }): this {
     const f = join(this.dir, "prs.json");
     const all = existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : {};
-    this.put("prs.json", JSON.stringify({ ...all, [cwd]: prs }));
+    this.put("prs.json", JSON.stringify({ ...all, [cwd]: entry }));
     return this;
   }
   /** The `pr list` calls so far: the folder each ran in and its arguments. */

@@ -67,6 +67,52 @@ describe("parcels from gh pr list", () => {
   });
 });
 
+const NO_GITHUB = [
+  "failed to run git: fatal: not a git repository (or any of the parent directories): .git",
+  "no git remotes found",
+  "none of the git remotes configured for this repository point to a known GitHub host. To tell gh about a new GitHub host, please use `gh auth login`",
+];
+
+describe("a house with no GitHub repo, and when its PR list last worked", () => {
+  it.each(NO_GITHUB)("gh_saying_%s_gives_the_house_no_prs_and_a_parcelsAt_and_logs_nothing", async (text) => {
+    // Catches a project with no GitHub repo left in fog forever, or filling the log every minute.
+    const cwd = realDir();
+    const s = await withProject({ cwd });
+    s.gh.prsFail(cwd, text);
+    const before = Date.now();
+    const t = await townWhere(s.url, (x) => houseAt(x, cwd)?.parcelsAt !== undefined);
+    expect(houseAt(t, cwd)!.parcels).toEqual([]);
+    expect(houseAt(t, cwd)!.parcelsAt!).toBeGreaterThanOrEqual(before - 1000);
+    await sleep(400); // about four more polls
+    expect(s.prLines()).toEqual([]);
+  });
+
+  it("a_good_list_sets_parcelsAt_each_poll_and_another_failure_keeps_the_list_and_parcelsAt_and_logs_once", async () => {
+    // Catches a failed poll moving parcelsAt (it would hide the fog) or dropping the last list.
+    const cwd = realDir();
+    const s = await withProject({ cwd, prs: [pr(7)] });
+    const first = houseAt(await townWhere(s.url, (x) => houseAt(x, cwd)?.parcelsAt !== undefined), cwd)!.parcelsAt!;
+    const later = houseAt(await townWhere(s.url, (x) => (houseAt(x, cwd)?.parcelsAt ?? 0) > first), cwd)!.parcelsAt!;
+    expect(later).toBeGreaterThan(first);
+
+    s.gh.prsFail(cwd, "HTTP 502: Bad Gateway (https://api.github.com/graphql)");
+    await until(() => s.prLines().length === 1);
+    const kept = houseAt(await townWhere(s.url, () => true), cwd)!.parcelsAt!;
+    await sleep(400);
+    const t = await townWhere(s.url, () => true);
+    expect(houseAt(t, cwd)!.parcelsAt).toBe(kept);
+    expect(houseAt(t, cwd)!.parcels!.map((p) => p.number)).toEqual([7]);
+    expect(s.prLines()).toHaveLength(1);
+  });
+
+  it("a_house_gh_has_never_answered_for_has_no_parcelsAt", async () => {
+    const cwd = realDir();
+    const s = await withProject({ cwd, prs: null });
+    await until(() => s.prLines().length === 1);
+    expect(houseAt(await townWhere(s.url, (x) => leadsOf(x).length === 1), cwd)!.parcelsAt).toBeUndefined();
+  });
+});
+
 describe("each parcel's checks, read the way gh reads them", () => {
   /** The parcel #1 as the State shows it once gh answers with `rollup` for it. */
   async function parcelWith(rollup: unknown) {

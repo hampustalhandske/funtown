@@ -26,7 +26,8 @@ note's Reproduce before relying on it.
 Contracts (source of truth: this list)
 - Event: POST `/events`, hook JSON + `funtown: { tty, term_program, at }`; stale ones ignored.
 - State (`server/types.ts`, SSE `state`): leads only while listed; a house's `cwd` is its added project's
-  folder and each lead carries its own `cwd`; the steward's lead has `steward:
+  folder and each lead carries its own `cwd`; a house has `parcelsAt`, when its PR list last worked
+  (absent until the first); a house with no GitHub repo has `parcels: []`; the steward's lead has `steward:
   true`; `cards` oldest first, each with `severity: { level low|medium|high|unstated, reason, source
   rule|agent|kind }` (`server/severity.ts`) and, on a question card, `questions: [{ level, pick }]`, one per
   question in order, `pick` the index of the " (Recommended)" option or null, on a permission card

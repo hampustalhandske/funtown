@@ -11,7 +11,7 @@
 //   listed session whose short id is <id> (exit 1 with a message when none is listed, or always with stop-fail).
 //   With attach-exit (its first line the exit code, the rest a line to print) `attach` prints that line after its first and exits with that code.
 // It also stands in for `gh`: `pr list ...` appends (cwd, argv) to pr-calls.jsonl and prints
-//   prs.json's list for its cwd, each PR as given, `statusCheckRollup` included (`[]` when none is set; a null entry fails like gh outside a repo).
+//   prs.json's list for its cwd, each PR as given, `statusCheckRollup` included (`[]` when none is set; a null entry fails with a network error, `{ fail: text }` fails with `text` on stderr, both exit 1).
 const fs = process.getBuiltinModule("fs");
 const path = process.getBuiltinModule("path");
 const crypto = process.getBuiltinModule("crypto");
@@ -69,8 +69,8 @@ if (argv[0] === "--version") {
 } else if (argv[0] === "pr" && argv[1] === "list") {
   fs.appendFileSync(file("pr-calls.jsonl"), JSON.stringify({ cwd: process.cwd(), argv }) + "\n");
   const prs = JSON.parse(read("prs.json", "{}"))[process.cwd()];
-  if (prs === null) {
-    process.stderr.write("no git remotes found\n");
+  if (prs === null || (prs && prs.fail !== undefined)) {
+    process.stderr.write((prs === null ? "error connecting to api.github.com" : prs.fail) + "\n");
     process.exit(1);
   }
   out(JSON.stringify(prs ?? []));
