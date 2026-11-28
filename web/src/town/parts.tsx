@@ -21,7 +21,7 @@ function prism(): BufferGeometry {
 }
 
 /** Every part kind, unit-sized: a part's size comes from its scale. Cones and pyramids stand on y = 0; the rest are centred. */
-const GEOMETRIES = {
+export const GEOMETRIES = {
   box: new RoundedBoxGeometry(1, 1, 1, 2, 0.08),
   cyl: new CylinderGeometry(0.5, 0.5, 1, 24),
   cone: new ConeGeometry(0.5, 1, 24).translate(0, 0.5, 0),
@@ -33,7 +33,7 @@ const GEOMETRIES = {
 export type PartKind = keyof typeof GEOMETRIES;
 
 /** The clay every part is made of: white, tinted per part by its instance colour. Window panes keep their own dark glass. */
-const CLAY = new MeshToonMaterial({ color: "#ffffff", gradientMap: STEPS });
+export const CLAY = new MeshToonMaterial({ color: "#ffffff", gradientMap: STEPS });
 const GLASS = new MeshToonMaterial({ color: "#4f5f78", gradientMap: STEPS });
 /** Kinds that neither cast a shadow nor take the clay. */
 const OWN: Partial<Record<PartKind, MeshToonMaterial>> = { pane: GLASS };

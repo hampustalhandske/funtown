@@ -14,7 +14,7 @@ const CASTLE_FRONT = 2.2;
 export const CASTLE_HEIGHT = 5.9;
 
 /** A street lamp at (x, z) on the ground: a post, a lantern and its cap. */
-function lamp(list: PartList, x: number, z: number) {
+export function lamp(list: PartList, x: number, z: number) {
   list.at(x, groundHeight(x, z), z);
   list.put("cyl", [0, 0.6, 0], { s: [0.11, 1.2, 0.11], c: "#6b5444" });
   list.put("pane", [0, 1.3, 0], { s: [0.22, 0.26, 0.22] });

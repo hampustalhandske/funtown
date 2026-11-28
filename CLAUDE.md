@@ -20,7 +20,8 @@ note's Reproduce before relying on it.
   `island.ts` pure `landHeight`, `groundHeight` (what things stand on), `groundColour`, `SQUARE`, `lotOf(i)` (house i's lot), `hill.ts` the
   castle hill's numbers, its frame (`castleAt`), stair and plateau, `noise.ts`, `shaders.ts` the four GLSL shaders (sea, sky, ink, tilt-shift)
   and no other module any, `World.tsx` terrain, sea, sky, sun, fog and post passes, `parts.tsx` instanced parts (one mesh per kind),
-  `castle.ts` the castle, stair and forecourt as parts; `TownPage.tsx` icons, Settings (the avatar row), hidden list; `mark.ts` `nextHouse`, where an arrow moves the mark; `kit/` the clay parts (`avatars.ts` the eight presets: the king in a crown, the rest hatless, since every other hat is an agent's); no visible words on the
+  `castle.ts` the castle, stair and forecourt as parts; `houses.ts` pure toy-harbour house numbers (variant by folder, facing per lot, `doorOf`, `pennantOf`, `chimneyOf`, `isBusy`),
+  `houseParts.ts` a house's parts, `village.ts` pure village dressing (quay, pier, square, lanes, lighthouse, `treesFor` groves clear of houses), `VillageFx.tsx` boats, chimney puffs and the mark ring; `TownPage.tsx` icons, Settings (the avatar row), hidden list; `mark.ts` `nextHouse`, where an arrow moves the mark; `kit/` the clay parts (`avatars.ts` the eight presets: the king in a crown, the rest hatless, since every other hat is an agent's); no visible words on the
   town). A building opens its classroom at `#in=<cwd>`: `interior.ts` pure places and the whiteboard model,
   `Classroom.tsx` the room, the lead at the front, you the observer at the back, wearing the chosen avatar; words only on the board;
   `drawn()` keeps a departed figure at the door for 2.5 s so it walks out.

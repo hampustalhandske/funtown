@@ -4,6 +4,7 @@ import { colourFor, hatFor, type HatKind } from "./kit/palette.ts";
 import type { InPlaced } from "./interior.ts";
 import { castleAt, HILL } from "./hill.ts";
 import { lotOf } from "./island.ts";
+import { facingOf, isBusy, variantOf, type Variant } from "./houses.ts";
 import { queenOf, QUEEN_SEAT_AT, TABLE_AT, YARD_AT, yardSpot, YOUR_THRONE_AT, type QueenState } from "./court.ts";
 import { avatarFor } from "./kit/avatars.ts";
 
@@ -11,7 +12,7 @@ import { avatarFor } from "./kit/avatars.ts";
 export type Spot = { x: number; z: number };
 export type Pose = "work" | "idle" | "queue" | "stuck";
 export type Placed =
-  | { kind: "building"; cwd: string; colour: string; at: Spot }
+  | { kind: "building"; cwd: string; colour: string; at: Spot; facing: number; variant: Variant; busy: boolean; marked: boolean }
   | { kind: "lead"; id: string; lead: string; cwd: string; colour: string; pose: Pose; at: Spot }
   | { kind: "hat"; id: string; lead: string; cwd: string; colour: string; hat: HatKind; pose: Pose; at: Spot }
   | { kind: "parcel"; cwd: string; number: number; at: Spot }
@@ -67,12 +68,13 @@ function queueSpot(i: number): Spot {
  * subagents are hats on its rack; stuck ones sit there too; everyone who asks you queues on the castle's forecourt in `waiting`
  * (urgency) order, where only a character's key finds a place; open parcels sit at the door; the lead marked `steward` stands by the desk. Done
  * subagents are not placed.
+ * A building also says which way its lot faces, its feature, whether anyone of the house works (`busy`: its chimney puffs) and
+ * whether `marked`, the marked house's folder, is its own.
  * `now` is the page's clock in ms and `lost` whether the page has lost the server (`townFog(...)?.why === "lost"`);
  * the places don't depend on either yet.
- * Pure: the same Town, waiting order, clock and `lost` always give the same places.
+ * Pure: the same Town, waiting order, clock, `lost` and mark always give the same places.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function layout(town: Town, waiting: Pick<Entry, "key">[], now: number, lost: boolean): Placed[] {
+export function layout(town: Town, waiting: Pick<Entry, "key">[], now: number, lost: boolean, marked: string | null = null): Placed[] {
   const steward = town.houses.flatMap((h) => h.leads).find((l) => l.steward)?.id;
   // The steward's own house gets no building unless the user added it or another lead works there.
   const houses = town.houses.filter((h) => h.added || !h.leads.some((l) => l.id === steward) || h.leads.some((l) => l.id !== steward));
@@ -104,7 +106,7 @@ export function layout(town: Town, waiting: Pick<Entry, "key">[], now: number, l
   houses.forEach((house, i) => {
     const at = lotOf(i);
     const colour = colourFor(house.project);
-    placed.push({ kind: "building", cwd: house.cwd, colour, at });
+    placed.push({ kind: "building", cwd: house.cwd, colour, at, facing: facingOf(i), variant: variantOf(house.cwd), busy: isBusy(house, steward), marked: house.cwd === marked });
     settle(house, at, house.leads.filter((l) => l.id !== steward), colour, true);
     (house.parcels ?? []).forEach((parcel, k) => placed.push({ kind: "parcel", cwd: house.cwd, number: parcel.number, at: doorstep(at, k) }));
   });

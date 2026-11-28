@@ -134,10 +134,10 @@ export function Pennant() {
   );
 }
 
-type PickProps = { id: string; height: number; plate: string | null; disabled?: boolean; onPick: () => void; onHover: (id: string | null) => void; children: ReactNode };
+type PickProps = { id: string; height: number; plate: string | null; /** Where the plate floats instead of `height` above the middle: [across, up, forward]. */ offset?: [number, number, number]; disabled?: boolean; onPick: () => void; onHover: (id: string | null) => void; children: ReactNode };
 
-/** Makes its children hoverable and clickable as `id` (not when `disabled`); shows `plate`, when given, as a name plate `height` above them that moves with them. */
-export function Pick({ id, height, plate, disabled = false, onPick, onHover, children }: PickProps) {
+/** Makes its children hoverable and clickable as `id` (not when `disabled`); shows `plate`, when given, as a name plate `height` above them (or at `offset`) that moves with them. */
+export function Pick({ id, height, plate, offset, disabled = false, onPick, onHover, children }: PickProps) {
   const stop = (e: ThreeEvent<PointerEvent | MouseEvent>) => e.stopPropagation();
   return (
     <group
@@ -152,7 +152,7 @@ export function Pick({ id, height, plate, disabled = false, onPick, onHover, chi
       onPointerOut={disabled ? undefined : () => onHover(null)}>
       {children}
       {plate !== null && (
-        <Html center portal={plates} zIndexRange={[100, 1]} className="plate" position={[0, height, 0]}>
+        <Html center portal={plates} zIndexRange={[100, 1]} className="plate" position={offset ?? [0, height, 0]}>
           {plate}
         </Html>
       )}

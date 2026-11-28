@@ -1,5 +1,5 @@
 /** A seeded random in [0, 1), so every load draws the same world. */
-function rng(seed: number): () => number {
+export function rng(seed: number): () => number {
   let s = seed >>> 0;
   return () => {
     s = (s + 0x6d2b79f5) >>> 0;

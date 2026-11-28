@@ -15,8 +15,6 @@ type Props = {
   /** The id of the king's chosen preset (`Town.avatar`); absent or unknown shows the default. */
   avatar?: string;
   placed: Placed[];
-  /** The folder of the marked house, whose name plate shows as a hover's does. */
-  marked?: string | null;
   /** The words a thing's hover plate shows. */
   name: (p: Placed) => string;
   onPick: (p: Placed) => void;
@@ -27,7 +25,7 @@ type Props = {
 };
 
 /** The canvas and its camera, with the town on its island or, when `inside` is set, a house's classroom in its own light on its own floor. */
-export function Village({ index, avatar, placed, marked, name, onPick, inside, doors }: Props) {
+export function Village({ index, avatar, placed, name, onPick, inside, doors }: Props) {
   const look = avatarFor(avatar);
   const bounds = useMemo(() => (inside ? roomBounds(inside.placed) : boundsOf(placed)), [inside?.placed, placed]);
   const [hover, setHover] = useHover(inside ? inside.placed.filter((p) => p.kind !== "observer").map(keyOf) : placed.map(keyOf));
@@ -45,7 +43,7 @@ export function Village({ index, avatar, placed, marked, name, onPick, inside, d
           <Classroom key={inside.house.cwd} {...inside} look={look} hover={hover} onHover={setHover} />
         </>
       ) : (
-        <TownScene index={index} placed={placed} marked={marked} name={name} onPick={onPick} hover={hover} onHover={setHover} doors={doors} />
+        <TownScene index={index} placed={placed} name={name} onPick={onPick} hover={hover} onHover={setHover} doors={doors} />
       )}
       <Rig bounds={bounds} />
     </Canvas>

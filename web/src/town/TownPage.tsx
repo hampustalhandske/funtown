@@ -175,11 +175,11 @@ export function TownPage() {
   const [settings, setSettings] = useState(false);
   const closeSettings = useCallback(() => setSettings(false), []);
   const lost = fog?.why === "lost";
-  // `waiting` follows from the town and the clock, so these two are all it changes with.
-  const placed = useMemo(() => (town ? layout(town, waiting, now, lost) : []), [town, now, lost]);
-  const index = useMemo(() => indexOf(town), [town]);
   // The house the keys last reached: it shows its name plate, as a hover does. Gone with its house.
   const [marked, setMarked] = useState<string | null>(null);
+  // `waiting` follows from the town and the clock, so these are all it changes with.
+  const placed = useMemo(() => (town ? layout(town, waiting, now, lost, marked) : []), [town, now, lost, marked]);
+  const index = useMemo(() => indexOf(town), [town]);
   // Where the mark last landed, kept after Esc clears it: the first arrow returns there, and the way back follows it.
   const [last, setLast] = useState<Move | null>(null);
   const doors = useRef<(() => Door[]) | null>(null);
@@ -271,7 +271,7 @@ export function TownPage() {
   return (
     <>
       <div className="village" aria-hidden="true">
-        <Village index={index} avatar={town?.avatar} marked={marked} placed={placed} name={name} onPick={pick} inside={inside} doors={doors} />
+        <Village index={index} avatar={town?.avatar} placed={placed} name={name} onPick={pick} inside={inside} doors={doors} />
       </div>
       <ul className="town-list" aria-label="Town">
         {inside
