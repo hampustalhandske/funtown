@@ -2,6 +2,8 @@
 
 One line per change, newest first.
 
+- 2026-11-28 07:49 · What the town knows: one house per project (a run's worktree stands in its project's house), each PR says whether its checks failed, are running, passed or there are none, a house with a failed PR and nobody working is burning and joins the urgency list after asks and stuck agents, a ready PR waits for you, Space opens a small PR pane inside Funtown, and the plain list says when Funtown could not look (PRs last read, could not list sessions, lost the server) instead of showing old facts as fresh.
+
 - 2026-11-28 09:00 · CI gives its test job 20 minutes instead of 10: a passing run takes about 7.5, and on a slow macOS runner main timed out at 10 with every test that had run passing.
 - 2026-11-27 18:30 · CLAUDE.md now says where each ask is held: a question or plan before the terminal shows it, a permission while its dialog shows, so only a permission can be answered outside Funtown while its card waits.
 - 2026-11-27 16:25 · The Desk: every ask comes as a brief (who asks and where, how heavy it is and why, the ask, the goal it serves, the agent's pick chosen), the Queen gives her word on a card when asked, the keyboard answers (Space walks what needs you, Enter sends after a second with 1.5 s to undo, 1 to 4, D, Q, M, L, R, the arrows and Enter in the town, ? for the key sheet), and a resting lead stands by its door.
