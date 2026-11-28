@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
-import { useFrame, useThree } from "@react-three/fiber";
-import { Vector3, type Group } from "three";
-import { Body, Mover, Pennant, Pick } from "./kit/actors.tsx";
-import { Clay, TONES } from "./kit/clay.tsx";
+import { useEffect, useMemo, useRef, type MutableRefObject, type ReactNode } from "react";
+import { useThree } from "@react-three/fiber";
+import { Vector3 } from "three";
+import { actOf } from "./acts.ts";
+import { Animal, FolkLayer, seedOf, useDeparted } from "./Folk.tsx";
+import { LANE, LEAVE_MS, type Drawn } from "./folk.ts";
+import { Mover, Pennant, Pick } from "./kit/actors.tsx";
 import { avatarFor } from "./kit/avatars.ts";
-import { Hat } from "./kit/hats.tsx";
-import type { HatKind } from "./kit/palette.ts";
 import { Parcel } from "./kit/parts.tsx";
 import { CASTLE_HEIGHT, castleHill } from "./castle.ts";
 import { CASTLE, CASTLE_TURN, HILL, castleAt } from "./hill.ts";
@@ -57,34 +57,6 @@ export function boundsOf(placed: Placed[]): Bounds {
   return { minX, maxX, minZ, maxZ, tops, margin: [0.92, 0.84], rise: 1, key: [minX, maxX, minZ, maxZ].join() };
 }
 
-/** A working subagent: its hat on a rack peg, nodding as it works. */
-function RackHat({ hat, colour }: { hat: HatKind; colour: string }) {
-  const ref = useRef<Group>(null);
-  const [phase] = useState(() => Math.random() * Math.PI * 2);
-  useFrame(({ clock }) => {
-    const t = clock.elapsedTime * 2.5 + phase;
-    ref.current!.rotation.set(Math.sin(t) * 0.08, Math.sin(t * 0.5) * 0.3, 0);
-  });
-  return <group ref={ref} position={[0, 0.88, 0]} scale={0.72}><Hat kind={hat} colour={colour} /></group>;
-}
-
-/** One rail of a hat rack: posts at each end and a peg under each hat spot in `pegs` (all at one z). */
-function Rail({ pegs }: { pegs: Spot[] }) {
-  const xs = pegs.map((p) => p.x);
-  const [from, to] = [Math.min(...xs) - 0.22, Math.max(...xs) + 0.22];
-  return (
-    <group position={[0, groundHeight((from + to) / 2, pegs[0].z), pegs[0].z]}>
-      <Clay colour={TONES.wood} position={[(from + to) / 2, 0.7, 0]}><boxGeometry args={[to - from, 0.08, 0.08]} /></Clay>
-      {[from, to].map((x) => (
-        <Clay key={x} colour={TONES.wood} position={[x, 0.35, 0]}><cylinderGeometry args={[0.04, 0.05, 0.7, 8]} /></Clay>
-      ))}
-      {xs.map((x) => (
-        <Clay key={x} colour={TONES.wood} position={[x, 0.8, 0]}><cylinderGeometry args={[0.025, 0.025, 0.16, 8]} /></Clay>
-      ))}
-    </group>
-  );
-}
-
 /** How high above the ground a house's door is read on the screen. */
 const DOOR_HEIGHT = 0.3;
 
@@ -113,7 +85,7 @@ function Doors({ placed, where }: { placed: Placed[]; where: MutableRefObject<((
 
 /** How high above its spot a thing's name plate floats. */
 const plateHeight = (p: Placed) =>
-  p.kind === "building" ? 2.3 : p.kind === "parcel" ? 0.9 : p.kind === "queen" || p.kind === "you" ? 2.7 : p.pose === "work" && p.kind === "hat" ? 1.4 : p.pose === "queue" ? 2.2 : 1.8;
+  p.kind === "building" ? 2.3 : p.kind === "parcel" ? 0.9 : p.kind === "queen" || p.kind === "you" ? 2.7 : p.pose === "wait" ? 2.4 : 2.1;
 
 type Props = {
   /** The town's houses and characters, for the steward's stage and parcels' reviews. */
@@ -135,12 +107,14 @@ type Props = {
  * A marked house wears a white ring and shows its name plate, as a hovered thing does.
  */
 export function TownScene({ index, placed, name, onPick, hover, onHover, doors }: Props) {
-  const pick = (p: Placed, children: ReactNode) => (
+  const shown = useDeparted(placed);
+  const pick = (p: Placed, children: ReactNode, disabled = false) => (
     <Pick
       id={keyOf(p)}
       height={plateHeight(p)}
       offset={p.kind === "building" ? PLATE_BESIDE : undefined}
       plate={keyOf(p) === hover || (p.kind === "building" && p.marked) ? name(p) : null}
+      disabled={disabled}
       onPick={() => onPick(p)}
       onHover={onHover}>
       {children}
@@ -160,15 +134,7 @@ export function TownScene({ index, placed, name, onPick, hover, onHover, doors }
     // `shape` is everything the parts are made from.
   }, [shape]);
 
-  // Hats on racks, one rail per row of pegs (cwd and z).
-  const rails = new Map<string, Spot[]>();
-  for (const p of placed) {
-    if (p.kind !== "hat" || p.pose !== "work") continue;
-    const rail = `${p.cwd}|${p.at.z}`;
-    rails.set(rail, [...(rails.get(rail) ?? []), p.at]);
-  }
-
-  const thing = (p: Placed) => {
+  const thing = (p: Drawn) => {
     switch (p.kind) {
       case "building": {
         // The house itself is instanced parts, which take no clicks; an unseen box round it takes them.
@@ -206,11 +172,12 @@ export function TownScene({ index, placed, name, onPick, hover, onHover, doors }
         );
       case "lead":
       case "hat": {
-        // Queuers turn halfway to the desk, so their faces and slips still show; the stuck sit turned a little, so their legs read as sitting.
-        const facing = p.pose === "queue" ? Math.atan2(DESK.x - p.at.x, DESK.z - p.at.z) / 2 : p.pose === "stuck" ? 0.8 : 0;
+        // Waiters turn halfway to the desk, so their faces and slips still show. A leaver walks its lane in the time it is drawn, out of the pointer's reach.
+        const facing = p.pose === "wait" ? Math.atan2(DESK.x - p.at.x, DESK.z - p.at.z) / 2 : p.facing;
+        const leaving = p.leftAt !== undefined;
         return (
-          <Mover to={p.at} facing={facing} ground={groundHeight}>
-            {pick(p, p.kind === "hat" && p.pose === "work" ? <RackHat hat={p.hat} colour={p.colour} /> : <Body pose={p.pose} colour={p.colour} hat={p.kind === "hat" ? p.hat : "cap"} />)}
+          <Mover to={p.at} facing={facing} ground={groundHeight} speed={leaving ? LANE / (LEAVE_MS / 1000) : undefined}>
+            {pick(p, <Animal costume={p} colour={p.colour} act={actOf(p)} seed={seedOf(p.id)} />, leaving)}
           </Mover>
         );
       }
@@ -225,8 +192,7 @@ export function TownScene({ index, placed, name, onPick, hover, onHover, doors }
       <Puffs mouths={buildings.filter((b) => b.busy).map(chimneyOf)} />
       {buildings.filter((b) => b.marked).map((b) => <MarkRing key={b.cwd} at={b.at} />)}
       {doors && <Doors placed={placed} where={doors} />}
-      {[...rails].map(([rail, pegs]) => <Rail key={rail} pegs={pegs} />)}
-      {placed.map((p) => <group key={keyOf(p)}>{thing(p)}</group>)}
+      <FolkLayer>{shown.map((p) => <group key={keyOf(p)}>{thing(p)}</group>)}</FolkLayer>
     </>
   );
 }

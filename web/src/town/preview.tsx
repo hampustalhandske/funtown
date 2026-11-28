@@ -8,6 +8,22 @@ import { Hat } from "./kit/hats.tsx";
 import { PALETTE, ROLE_HATS, type HatKind } from "./kit/palette.ts";
 import { Door, Floor, SeatedFigure, StudentDesk, Table, TeacherDesk, Wall, Whiteboard } from "./kit/classroom.tsx";
 import { Castle, Desk, Figure, GroundTile, HouseModel, Parcel } from "./kit/parts.tsx";
+import { actOf, type Act } from "./acts.ts";
+import { costumeOf } from "./folk.ts";
+import { Animal, FolkLayer, HatModel } from "./Folk.tsx";
+
+/** Every folk costume: the lead, each named role and the types that borrow an animal, as (label, role, whether a lead). */
+const FOLK: [string, string | undefined, boolean][] = [
+  ["lead", undefined, true], ["implementer", "implementer", false], ["general-purpose", "general-purpose", false], ["any other type", "other", false],
+  ["explorer", "explorer", false], ["Explore", "Explore", false], ["Plan", "Plan", false], ["test-writer", "test-writer", false],
+  ["*review*", "code-reviewer", false], ["ui-reviewer", "ui-reviewer", false],
+];
+/** The lead in each pose that isn't work, and each animal at its work. */
+const ACTS: [string, string | undefined, boolean, Act][] = [
+  ["stuck", undefined, true, "stuck"], ["resting", undefined, true, "rest"], ["waiting", undefined, true, "wait"],
+  ...["implementer", "explorer", "test-writer", "reviewer"].map((role): [string, string, boolean, Act] => [`${role} at work`, role, false, actOf({ pose: "work", animal: costumeOf(role, false).animal })]),
+  ["lead at work", undefined, true, "plane"],
+];
 
 const roles = new Map<HatKind, string[]>();
 for (const [role, hat] of Object.entries(ROLE_HATS)) roles.set(hat, [...(roles.get(hat) ?? []), role]);
@@ -34,9 +50,9 @@ function Row({ z, gap, items }: { z: number; gap: number; items: [string, ReactN
 }
 
 const FOV = 45;
-const TARGET = new Vector3(0, 0.5, -1.5);
+const TARGET = new Vector3(0, 0.5, 0.5);
 // Half the layout's width plus room for the front rows, which perspective draws wider.
-const REACH = 17;
+const REACH = 19;
 
 /** Pulls the camera back far enough that the layout fits the window's width. */
 function FitWidth() {
@@ -70,6 +86,16 @@ function Preview() {
       <Row z={-11.5} gap={7} items={[["whiteboard", <group position={[0, 1.4, 0]}><Whiteboard /></group>, 2.7], ["wall", <Wall length={2} height={1.6} />, 1.6]]} />
       <Row z={1} gap={2.6} items={HATS.map(([hat, role], i) => [role, <Figure colour={PALETTE[i]} hat={hat} />, 1.8])} />
       <Row z={4} gap={2.6} items={HATS.map(([hat]) => [hat, <group scale={1.5}><Hat kind={hat} colour={TONES.ribbon} /></group>, 0.8])} />
+      <FolkLayer>
+        <Row z={6.5} gap={2.4} items={[
+          ...FOLK.map(([label, role, lead], i): [string, ReactNode, number] => {
+            const costume = costumeOf(role, lead);
+            return [`${label}, ${costume.animal}`, <Animal costume={costume} colour={PALETTE[i]} act="stand" seed={i} />, 1.9];
+          }),
+          ["captain's cap", <group scale={2}><HatModel hat="captain" colour={TONES.ribbon} /></group>, 0.7],
+        ]} />
+        <Row z={9} gap={2.4} items={ACTS.map(([label, role, lead, act], i) => [label, <Animal costume={costumeOf(role, lead)} colour={PALETTE[i]} act={act} seed={i} />, 1.9])} />
+      </FolkLayer>
       <OrbitControls autoRotate autoRotateSpeed={0.6} target={TARGET} />
       <FitWidth />
     </Canvas>

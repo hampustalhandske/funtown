@@ -5,6 +5,7 @@ import { layout } from "../../web/src/town/layout.ts";
 import { colourFor, hatFor } from "../../web/src/town/kit/palette.ts";
 import { onHill, onPlateau, onStair } from "../../web/src/town/hill.ts";
 import { landHeight, SQUARE } from "../../web/src/town/island.ts";
+import { doorOf } from "../../web/src/town/houses.ts";
 
 const char = (id: string, over: Partial<Character> = {}): Character => ({ id, name: id, stage: "working", activity: null, step: null, ...over });
 const lead = (id: string, over: Partial<Lead> = {}, subagents: Character[] = []): Lead => ({
@@ -36,7 +37,7 @@ describe("layout", () => {
     }
   });
 
-  test("a_working_subagent_is_the_hat_for_its_role_on_its_leads_rack", async () => {
+  test("a_working_subagent_is_its_roles_animal_in_its_hat_and_clothes_at_its_leads_house", async () => {
     const roles = ["implementer", "Plan", "code-reviewer", "statusline-setup"];
     const subs = roles.map((role, i) => char(`x${i}`, { role }));
     const all = place(town([house("alpha", [lead("a1", {}, [...subs, char("untyped")])])]));
@@ -47,8 +48,11 @@ describe("layout", () => {
       expect(h.cwd).toBe("/work/alpha");
       expect(h.pose).toBe("work");
     }
-    const byId = Object.fromEntries(hats.map((h) => [h.id, h.hat]));
-    expect(byId).toEqual({ x0: hatFor("implementer"), x1: hatFor("Plan"), x2: hatFor("code-reviewer"), x3: hatFor("statusline-setup"), untyped: "cap" });
+    const byId = Object.fromEntries(hats.map((h) => [h.id, [h.animal, h.hat, h.clothes]]));
+    expect(byId).toEqual({
+      x0: ["beaver", "hardhat", ["toolbelt"]], x1: ["hare", "wizard", []], x2: ["owl", "tophat", []], x3: ["beaver", "cap", []], untyped: ["beaver", "cap", []],
+    });
+    expect(of(all, "lead").map((l) => [l.animal, l.hat, l.clothes])).toEqual([["cat", "captain", ["scarf", "apron"]]]);
   });
 
   test("a_done_subagent_is_not_placed_but_its_working_sibling_is", async () => {
@@ -65,7 +69,7 @@ describe("layout", () => {
     expect(of(after, "hat").map((h) => h.id)).toEqual(["x2"]);
   });
 
-  test("needs_you_and_stuck_are_poses_and_a_needs_you_subagent_queues_as_a_figure_wearing_its_hat", async () => {
+  test("needs_you_waits_and_stuck_sits_and_a_waiting_subagent_wears_its_hat", async () => {
     const all = place(town([
       house("alpha", [
         lead("waiter", needs(1)),
@@ -78,7 +82,7 @@ describe("layout", () => {
       ]),
     ]));
     const pose = Object.fromEntries(all.flatMap((p) => (p.kind === "lead" || p.kind === "hat" ? [[p.id, p.pose]] : [])));
-    expect(pose).toEqual({ waiter: "queue", "stuck-lead": "stuck", "q-sub": "queue", "s-sub": "stuck", "w-sub": "work", worker: "work" });
+    expect(pose).toEqual({ waiter: "wait", "stuck-lead": "stuck", "q-sub": "wait", "s-sub": "stuck", "w-sub": "work", worker: "work" });
     expect(of(all, "hat").find((h) => h.id === "q-sub")!.hat).toBe(hatFor("Plan"));
   });
 
@@ -113,9 +117,35 @@ describe("layout", () => {
     expect(of(place(town([folder, reviewed, ended])), "queen").map((s) => s.id)).toEqual([null]);
   });
 
-  test("a_done_lead_gets_the_idle_pose_not_work", async () => {
-    const all = place(town([house("alpha", [lead("finished", { stage: "done" }), lead("busy")])]));
-    expect(Object.fromEntries(of(all, "lead").map((l) => [l.id, l.pose]))).toEqual({ finished: "idle", busy: "work" });
+  test("a_done_lead_stands_and_a_lead_whose_turn_ended_rests_neither_works", async () => {
+    const all = place(town([house("alpha", [lead("finished", { stage: "done" }), lead("ended", needs(3, { needs: "turn ended" })), lead("busy")])]));
+    expect(Object.fromEntries(of(all, "lead").map((l) => [l.id, l.pose]))).toEqual({ finished: "stand", ended: "rest", busy: "work" });
+  });
+
+  test("at_every_house_whichever_way_it_faces_the_stuck_sit_on_its_doorstep_a_resting_lead_stands_by_its_door_and_workers_work_out_front_facing_out", async () => {
+    // Six houses, so the lots that face east (4 and 5) are among them, and "its own" door is told apart from the others'.
+    const all = place(town(Array.from({ length: 6 }, (_, i) => house(`p${i}`, [
+      lead(`stuck${i}`, needs(2, { needs: "stuck", reason: "loop" }), [char(`stuck-sub${i}`, { ...needs(4, { needs: "stuck", reason: "x" }), role: "implementer" })]),
+      lead(`rest${i}`, needs(3, { needs: "turn ended" }), [char(`w${i}a`, { role: "implementer" }), char(`w${i}b`, { role: "explorer" })]),
+      lead(`work${i}`),
+    ], [parcel(i + 1)]))));
+    const folk = [...of(all, "lead"), ...of(all, "hat")];
+    const parcels = of(all, "parcel");
+    for (const b of of(all, "building")) {
+      const door = doorOf(b);
+      // How far in front of the house's middle a spot is, along the way it faces; its front wall is under 1 out.
+      const out = (p: { x: number; z: number }) => (p.x - b.at.x) * Math.sin(b.facing) + (p.z - b.at.z) * Math.cos(b.facing);
+      const mine = folk.filter((f) => f.cwd === b.cwd);
+      for (const f of mine) expect(f.facing, `${f.id} faces out from its house`).toBeCloseTo(b.facing);
+      for (const f of mine.filter((f) => f.pose === "stuck")) expect(dist(f.at, door), `${f.id} on its own doorstep`).toBeLessThan(0.9);
+      for (const f of mine.filter((f) => f.pose === "rest")) expect(dist(f.at, door), `${f.id} by its door`).toBeLessThan(1);
+      for (const f of mine.filter((f) => f.pose === "work")) {
+        expect(dist(f.at, door), `${f.id} works clear of the door`).toBeGreaterThan(1.3);
+        expect(out(f.at), `${f.id} works out in front`).toBeGreaterThan(1.8);
+      }
+      for (const p of parcels.filter((p) => p.cwd === b.cwd)) expect(out(p.at), `parcel ${p.number} outside the front wall`).toBeGreaterThan(1.1);
+      expect(mine.map((f) => f.pose).sort()).toEqual(["rest", "stuck", "stuck", "work", "work", "work"]);
+    }
   });
 
   test("no_two_things_stand_on_one_spot_in_a_crowded_town", async () => {
@@ -175,7 +205,7 @@ describe("layout", () => {
     const askers = Array.from({ length: 12 }, (_, i) => lead(`w${i}`, needs(i + 1)));
     const all = place(town([house("alpha", askers.slice(0, 6)), house("beta", askers.slice(6))]));
     const waiting = of(all, "lead");
-    expect(waiting.map((l) => l.pose)).toEqual(Array(12).fill("queue"));
+    expect(waiting.map((l) => l.pose)).toEqual(Array(12).fill("wait"));
     for (const l of waiting) expect(onPlateau(l.at.x, l.at.z), l.id).toBe(true);
   });
 });

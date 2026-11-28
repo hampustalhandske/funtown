@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { Character, House, Lead, Parcel, Town } from "../../server/types.ts";
 import { characterEntries, urgencyList } from "../../web/src/needs.tsx";
 import { layout } from "../../web/src/town/layout.ts";
+import { doorOf } from "../../web/src/town/houses.ts";
 
 const char = (id: string, over: Partial<Character> = {}): Character => ({ id, name: id, stage: "working", activity: null, step: null, ...over });
 const lead = (id: string, over: Partial<Lead> = {}, subagents: Character[] = []): Lead => ({
@@ -84,7 +85,7 @@ describe("urgencyList", () => {
     ]);
     const all = layout(t, urgencyList(t, NOW), NOW, false);
     const pose = Object.fromEntries(all.flatMap((p) => (p.kind === "lead" ? [[p.id, p.pose]] : [])));
-    expect(pose).toEqual({ rest: "idle", ask: "queue", limit: "stuck" });
+    expect(pose).toEqual({ rest: "rest", ask: "wait", limit: "stuck" });
   });
 
   test("a_resting_lead_stands_by_its_own_door_clear_of_the_parcels_and_the_rack", async () => {
@@ -94,11 +95,10 @@ describe("urgencyList", () => {
     ]);
     t.houses[0].parcels = [{ number: 1, title: "PR", url: "https://example.test/1", draft: false, checks: "none" }];
     const all = layout(t, urgencyList(t, NOW), NOW, false);
-    const building = all.find((p) => p.kind === "building")!.at;
-    const door = { x: building.x, z: building.z + 0.6 };
+    const building = all.find((p) => p.kind === "building")!;
+    const door = doorOf(building);
     const rest = all.find((p) => p.kind === "lead" && p.id === "rest")!.at;
-    expect(Math.hypot(rest.x - door.x, rest.z - door.z)).toBeLessThan(0.6);
-    expect(rest.z).toBeGreaterThan(door.z);
+    expect(Math.hypot(rest.x - door.x, rest.z - door.z)).toBeLessThan(0.7);
     for (const p of all.filter((p) => p.kind === "parcel" || p.kind === "hat" || (p.kind === "lead" && p.id !== "rest"))) {
       expect(Math.hypot(p.at.x - rest.x, p.at.z - rest.z), p.kind).toBeGreaterThanOrEqual(0.55);
     }
