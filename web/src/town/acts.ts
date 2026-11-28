@@ -1,26 +1,35 @@
 import type { Animal } from "./folk.ts";
 import type { Prop } from "./folk-dress.ts";
 import type { FolkPose } from "./layout.ts";
+import type { InLine } from "./line.ts";
 
 /**
  * How a folk is drawn moving or still: the joint angles of each act at a time. Working folk act their role's work (the cat
  * planes at a bench, the beaver hammers, the hedgehog ticks a clipboard, the hare walks its track, the owl reads through a
  * glass) and move, and a lead at a handled fire swings its bucket; every other act is still, whatever the time. A new pose is a new act: a name, its props and its angles.
  */
-export type Act = "plane" | "hammer" | "clipboard" | "track" | "glass" | "bucket" | "stand" | "rest" | "stuck" | "wait" | "walk";
+export type Act = "plane" | "hammer" | "clipboard" | "track" | "glass" | "bucket" | "stand" | "rest" | "stuck" | "wait" | "walk" | "wave" | "tap" | "sit" | "asleep";
 
 /** Each animal's work. */
 const WORK: Record<Animal, Act> = { cat: "plane", beaver: "hammer", hedgehog: "clipboard", hare: "track", owl: "glass" };
 
-/** The act a folk in `pose` draws: working its animal's work, a leaver walking, any other pose as itself. */
-export const actOf = ({ pose, animal }: { pose: FolkPose; animal: Animal }): Act =>
-  pose === "work" ? WORK[animal] : pose === "leave" ? "walk" : pose;
+/**
+ * The act a folk in `pose` draws: working its animal's work, a leaver walking, one in the line waving its flag or acting its
+ * wait (standing is `wait`), any other pose as itself.
+ */
+export const actOf = ({ pose, animal, line }: { pose: FolkPose; animal: Animal; line?: InLine }): Act =>
+  pose === "work" ? WORK[animal] : pose === "leave" ? "walk" : line === undefined ? pose : line.flag === "wave" ? "wave" : line.posture === "stand" ? "wait" : line.posture;
 
 /** What each act holds or works at. */
 export const PROPS: Record<Act, Prop[]> = {
   plane: ["bench", "plane"], hammer: ["hammer", "crate"], clipboard: ["clipboard"], track: ["stick"], glass: ["glass"],
-  bucket: ["bucket"], stand: [], rest: ["letter"], stuck: [], wait: ["slip"], walk: [],
+  bucket: ["bucket"], stand: [], rest: ["letter"], stuck: [], wait: ["slip"], walk: [], wave: [], tap: ["slip"], sit: ["slip"], asleep: ["slip"],
 };
+
+/** The right arm holding a still flag up at the folk's side; the flag turns back by it to stand upright. */
+export const FLAG_ARM = { up: -0.45, out: 0.35 } as const;
+/** The right arm waving the flag: raised high, swinging out from upright to well out to the side and back. */
+const WAVE = { up: -2.75, out: 0.4, swing: 0.42, speed: 2.3 } as const;
 
 /**
  * A folk's joint angles. The root moves the whole folk within its spot (`x`, `y`, `z`, in its own frame), leans it forward
@@ -56,8 +65,25 @@ export function pose(p: Posture, act: Act, t: number, sitDrop: number) {
     case "rest":
       p.armL = { up: -0.9, out: -0.4 };
       return;
+    case "wave":
+      // Stands at the table, its left paw on the table's edge, waving the flag in slow arcs.
+      p.armL = { up: -1.35, out: 0 };
+      p.armR = { up: WAVE.up, out: WAVE.out + WAVE.swing * Math.sin(t * WAVE.speed) };
+      return;
     case "wait":
-      p.armR = { up: -1.5, out: 0.3 };
+    case "tap":
+    case "sit":
+    case "asleep":
+      // Its slip held at its chest, its flag held up and still at its side; the rest is how long it has waited.
+      p.armL = { up: -1.3, out: 0.1 };
+      p.armR = { ...FLAG_ARM };
+      if (act === "tap") p.legR = -Math.max(0, Math.sin(t * 9)) * 0.3;
+      if (act === "sit" || act === "asleep") {
+        p.legL = p.legR = -1.45;
+        p.y = -sitDrop;
+        p.lean = act === "asleep" ? 0.12 : -0.1;
+      }
+      if (act === "asleep") p.nod = 0.5;
       return;
     case "stuck":
       // Sits slumped on the step, head in its paws.

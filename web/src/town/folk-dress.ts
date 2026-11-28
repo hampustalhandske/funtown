@@ -72,13 +72,16 @@ export function hatParts(b: RigBuilder, hat: FolkHat, colour: string, at: Vector
 }
 
 /** Something a folk holds or works at. */
-export type Prop = "hammer" | "crate" | "plane" | "bench" | "clipboard" | "glass" | "stick" | "letter" | "slip" | "bucket";
+export type Prop = "hammer" | "crate" | "plane" | "bench" | "clipboard" | "glass" | "stick" | "letter" | "slip" | "note" | "bucket";
+
+/** The Queen's teal, which seals her note. */
+export const QUEEN_TEAL = "#3f7a76";
 
 /** Starts parts held in the `side` hand of `rig`, at `pos` turned by `r` in the hand's frame. */
 const hold = (b: RigBuilder, rig: Pick<Rig, "hands">, side: "L" | "R", pos: Vec, r: Vec) =>
   b.at(`arm${side}`, pos, r, new Matrix4().makeTranslation(rig.hands[side]));
 
-/** Puts `prop` in a hand of `rig`, or on the ground before it; `colour` seals a slip. */
+/** Puts `prop` in a hand of `rig`, or on the ground before it; `colour` seals a slip. A note lies on the held slip, so it goes with one. */
 export function propParts(b: RigBuilder, prop: Prop, rig: Pick<Rig, "hands">, colour: string) {
   switch (prop) {
     case "hammer":
@@ -129,9 +132,15 @@ export function propParts(b: RigBuilder, prop: Prop, rig: Pick<Rig, "hands">, co
       b.put("ring", [0, 0.12, 0], { r: [0, 0, HALF], s: [0.15, 0.15, 0.15], c: "#5f6872" });
       return;
     case "slip":
-      hold(b, rig, "R", [0, 0.02, 0.1], [1.4, 0, 0]);
+      hold(b, rig, "L", [0, 0.02, 0.1], [1.4, 0, 0]);
       b.put("box", [0, 0, 0], { s: [0.36, 0.46, 0.025], c: "#fbf6ea" });
       b.put("cyl", [0, -0.12, 0.018], { r: [HALF, 0, 0], s: [0.07, 0.02, 0.07], c: colour });
+      return;
+    case "note":
+      // The Queen's ready note on the slip's face, sealed in her teal.
+      hold(b, rig, "L", [0.03, 0.02, 0.14], [1.4, 0, 0.15]);
+      b.put("box", [0, 0.06, 0], { s: [0.26, 0.22, 0.02], c: "#fffdf6" });
+      b.put("cyl", [0, 0.03, 0.014], { r: [HALF, 0, 0], s: [0.055, 0.02, 0.055], c: QUEEN_TEAL });
       return;
   }
 }

@@ -9,8 +9,11 @@ import type { Placed } from "./layout.ts";
 import { hatRig, rigOf } from "./rig.ts";
 import { hullOf, inkMaterial } from "./shaders.ts";
 
-/** One folk the layer draws: the group that places it, its parts and act, its own phase in time, and where it stood last frame. */
-type Entry = { group: Object3D; rig: Rig; act: Act; phase: number; last: Vector3 | null };
+/**
+ * One folk the layer draws: the group that places it, its parts and act, its own phase in time, where it stood last frame,
+ * and the group that follows its right hand (inside `group`) when it holds something drawn apart.
+ */
+type Entry = { group: Object3D; rig: Rig; act: Act; phase: number; last: Vector3 | null; hand: Object3D | null };
 /** A part kind's instanced mesh and, for an inked kind, its outline sharing the same instance matrices. */
 type Mesh = { clay: InstancedMesh; ink: InstancedMesh | null; capacity: number };
 
@@ -37,7 +40,7 @@ function meshOf(kind: FolkKind, capacity: number): Mesh {
   return { clay, ink, capacity };
 }
 
-const scratch = { posture: restPosture(), root: new Matrix4(), turn: new Matrix4(), part: new Matrix4(), at: new Vector3(), euler: new Euler(0, 0, 0, "YXZ") };
+const scratch = { posture: restPosture(), root: new Matrix4(), turn: new Matrix4(), part: new Matrix4(), inverse: new Matrix4(), at: new Vector3(), euler: new Euler(0, 0, 0, "YXZ") };
 const joints = Object.fromEntries((["root", "head", "armL", "armR", "legL", "legR"] as Joint[]).map((j) => [j, new Matrix4()])) as Record<Joint, Matrix4>;
 
 /** Sets `out` to `root` turned by `euler` about the point `o`. */
@@ -108,6 +111,10 @@ export function FolkLayer({ children }: { children: ReactNode }) {
         m.clay.setMatrixAt(i, scratch.part.multiplyMatrices(joints[p.joint], p.local));
         m.clay.setColorAt(i, p.colour);
       }
+      if (e.hand) {
+        e.hand.matrix.copy(scratch.inverse.copy(e.group.matrixWorld).invert()).multiply(joints.armR).multiply(scratch.part.makeTranslation(e.rig.hands.R));
+        e.hand.matrixWorldNeedsUpdate = true;
+      }
     }
     for (const [kind, m] of meshes.current) {
       const n = next.get(kind)!;
@@ -126,19 +133,23 @@ export function FolkLayer({ children }: { children: ReactNode }) {
   );
 }
 
-/** Adds the folk `rig` showing `act` to the layer for as long as it is mounted; gives the group that places it. */
-function useEntry(rig: Rig, act: Act, phase: number) {
+/**
+ * Adds the folk `rig` showing `act` to the layer for as long as it is mounted; gives the group that places it and the group
+ * that follows its right hand, which the layer moves when `holds` says it is drawn.
+ */
+function useEntry(rig: Rig, act: Act, phase: number, holds = false) {
   const layer = useContext(Layer);
   if (!layer) throw new Error("a folk must be drawn inside a FolkLayer");
   const group = useRef<Group>(null);
+  const hand = useRef<Group>(null);
   useLayoutEffect(() => {
-    const entry: Entry = { group: group.current!, rig, act, phase, last: null };
+    const entry: Entry = { group: group.current!, rig, act, phase, last: null, hand: hand.current };
     layer.add(entry);
     return () => {
       layer.delete(entry);
     };
-  }, [layer, rig, act, phase]);
-  return group;
+  }, [layer, rig, act, phase, holds]);
+  return [group, hand] as const;
 }
 
 /** The pointer's target for a folk: an unseen box about its size, as tall as one standing in its hat. */
@@ -152,18 +163,28 @@ export function seedOf(id: string): number {
   return hash >>> 0;
 }
 
-type AnimalProps = { costume: Costume; colour: string; act: Act; seed: number };
+type AnimalProps = {
+  costume: Costume; colour: string; act: Act; seed: number;
+  /** The Queen's note lies on the slip it holds. */
+  note?: boolean;
+  /** Drawn in its right hand, moving with the arm: a flag. */
+  held?: ReactNode;
+};
 
 /** One of the animal folk in `costume` (the lead's clothes in `colour`) acting `act`, at its parent's place; drawn by the layer. */
-export function Animal({ costume, colour, act, seed }: AnimalProps) {
+export function Animal({ costume, colour, act, seed, note = false, held }: AnimalProps) {
   const { animal, hat, clothes } = costume;
   // The clothes come as a fresh list with each layout, so the rig is rebuilt only when what they name changes.
   const wear = clothes.join();
-  const rig = useMemo(() => rigOf({ animal, hat, clothes: wear === "" ? [] : (wear.split(",") as Costume["clothes"]) }, colour, seed, PROPS[act]), [animal, hat, wear, colour, seed, act]);
-  const group = useEntry(rig, act, (seed % 1000) / 100);
+  const rig = useMemo(
+    () => rigOf({ animal, hat, clothes: wear === "" ? [] : (wear.split(",") as Costume["clothes"]) }, colour, seed, note && PROPS[act].includes("slip") ? [...PROPS[act], "note"] : PROPS[act]),
+    [animal, hat, wear, colour, seed, act, note],
+  );
+  const [group, hand] = useEntry(rig, act, (seed % 1000) / 100, held !== undefined);
   return (
     <group ref={group}>
       <mesh visible={false} geometry={HIT} material={UNSEEN} />
+      {held !== undefined && <group ref={hand} matrixAutoUpdate={false}>{held}</group>}
     </group>
   );
 }
@@ -171,7 +192,7 @@ export function Animal({ costume, colour, act, seed }: AnimalProps) {
 /** A hat on its own, its base at its parent's place, scaled as the folk wear it; for the kit page. */
 export function HatModel({ hat, colour }: { hat: Costume["hat"]; colour: string }) {
   const rig = useMemo(() => hatRig(hat, colour), [hat, colour]);
-  const group = useEntry(rig, "stand", 0);
+  const [group] = useEntry(rig, "stand", 0);
   return <group ref={group} />;
 }
 

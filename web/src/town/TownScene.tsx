@@ -17,7 +17,9 @@ import { World } from "./World.tsx";
 import { houseParts } from "./houseParts.ts";
 import { chimneyOf, doorOf, planOf } from "./houses.ts";
 import { groundHeight } from "./island.ts";
-import { DESK, keyOf, type Placed, type Spot } from "./layout.ts";
+import { keyOf, type Placed, type Spot } from "./layout.ts";
+import { HandFlag } from "./Flag.tsx";
+import { houseFlagParts, tableSlipParts } from "./flag.ts";
 import { PartList, Parts } from "./parts.tsx";
 import { Boats, MarkRing, Puffs } from "./VillageFx.tsx";
 import { Fires, Stars, Water, type Blaze, type Throw } from "./Fire.tsx";
@@ -138,6 +140,19 @@ export function TownScene({ index, placed, name, onPick, hover, onHover, doors }
     // `shape` is everything the parts are made from.
   }, [shape]);
 
+  // The line's still things, which change only when the line does: each flagged house's flag and the head's slip on the table.
+  const head = placed.find((p): p is Extract<Placed, { kind: "lead" | "hat" }> => (p.kind === "lead" || p.kind === "hat") && p.line?.place === 0);
+  const note = placed.find((p): p is Extract<Placed, { kind: "queen" }> => p.kind === "queen")?.note ?? null;
+  const flagged = buildings.filter((b) => b.flag);
+  const lineKey = [...flagged.map((b) => `${b.at.x}|${b.at.z}|${b.facing}|${b.variant}`), head ? `${head.colour}|${note === head.id}` : ""].join("\n");
+  const lineParts = useMemo(() => {
+    const list = new PartList();
+    for (const b of flagged) houseFlagParts(list, b);
+    if (head) tableSlipParts(list, head.colour, note === head.id);
+    return list.parts;
+    // `lineKey` is everything the parts are made from.
+  }, [lineKey]);
+
   // Fire on each burning house's roof, the water its lead throws at it, and the stars over a loud stuck character's head.
   const blazes: Blaze[] = buildings.flatMap((b) => (b.fire === "none" ? [] : [{ key: b.cwd, form: b.fire, at: roofOf(b), facing: b.facing }]));
   const throws: Throw[] = placed.flatMap((p) => {
@@ -184,12 +199,12 @@ export function TownScene({ index, placed, name, onPick, hover, onHover, doors }
         );
       case "lead":
       case "hat": {
-        // Waiters turn halfway to the desk, so their faces and slips still show. A leaver walks its lane in the time it is drawn, out of the pointer's reach.
-        const facing = p.pose === "wait" ? Math.atan2(DESK.x - p.at.x, DESK.z - p.at.z) / 2 : p.facing;
+        // A leaver walks its lane in the time it is drawn, out of the pointer's reach. One in the line holds its flag and slip.
         const leaving = p.leftAt !== undefined;
+        const held = p.line && <HandFlag mode={p.line.flag} />;
         return (
-          <Mover to={p.at} facing={facing} ground={groundHeight} speed={leaving ? LANE / (LEAVE_MS / 1000) : undefined}>
-            {pick(p, <Animal costume={p} colour={p.colour} act={actOf(p)} seed={seedOf(p.id)} />, leaving)}
+          <Mover to={p.at} facing={p.facing} ground={groundHeight} speed={leaving ? LANE / (LEAVE_MS / 1000) : undefined}>
+            {pick(p, <Animal costume={p} colour={p.colour} act={actOf(p)} seed={seedOf(p.id)} note={note === p.id} held={held} />, leaving)}
           </Mover>
         );
       }
@@ -200,6 +215,7 @@ export function TownScene({ index, placed, name, onPick, hover, onHover, doors }
     <>
       <World light={light} />
       <Parts parts={parts} />
+      <Parts parts={lineParts} />
       <Glows parts={parts} lamps={light.lamps} />
       <Boats boats={HARBOUR.boats} />
       <Puffs mouths={buildings.filter((b) => b.busy).map(chimneyOf)} />

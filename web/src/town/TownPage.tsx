@@ -10,6 +10,7 @@ import { needOf, NotifyButton, Toasts, type Entry, type Lettered } from "../need
 import { boardOf, interior, type Board, type InPlaced } from "./interior.ts";
 import { AVATARS, avatarFor } from "./kit/avatars.ts";
 import { keyOf, layout, type Placed } from "./layout.ts";
+import type { InLine } from "./line.ts";
 import { nextHouse, type Direction, type Door, type Move } from "./mark.ts";
 import { Village } from "./Village.tsx";
 
@@ -17,6 +18,12 @@ const REVIEW_WORDS = { idle: "review not asked", queued: "review queued", review
 
 /** What the Queen is doing, in words for the town list. */
 const QUEEN_WORDS = { idle: "sitting still", asked: "writing your word", busy: "reading a parcel", ready: "her word is ready" } as const;
+
+/** "2nd", "3rd", "11th": `n` as an ordinal. */
+const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th")}`;
+
+/** Where a character in the line stands, in words: at the table or its place in the line, and whether it waves the flag. */
+const lineWords = ({ place, flag }: InLine) => [place === 0 ? "at the table" : `in the line, ${ordinal(place + 1)}`, ...(flag === "wave" ? ["waving the flag"] : [])];
 
 /** A character's stage in words: working, done, stuck with its reason, or what it needs from you. */
 const stageWords = (c: Character) => (c.stage !== "needs_you" ? c.stage : c.needs === "stuck" ? needOf(c) : `needs you: ${needOf(c)}`);
@@ -83,7 +90,8 @@ function labelOf(p: Placed | InPlaced, index: TownIndex, now: number): string {
   const { character, house } = found;
   const role = p.kind === "queen" ? "steward" : p.kind === "lead" ? "lead" : (character.role ?? "subagent");
   const [queen, doing] = p.kind === "queen" ? ["Queen, ", `, ${QUEEN_WORDS[p.state]}`] : ["", ""];
-  return `${queen}${character.name}, ${house.project}, ${role}, ${stageWords(character)}${doing}`;
+  const where = "line" in p && p.line ? lineWords(p.line).map((w) => `, ${w}`).join("") : "";
+  return `${queen}${character.name}, ${house.project}, ${role}, ${stageWords(character)}${doing}${where}`;
 }
 
 /** The whiteboard's lines as the hidden list shows them: project, phase, note, then each step with its state. */

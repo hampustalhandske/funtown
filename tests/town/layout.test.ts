@@ -3,7 +3,7 @@ import type { Character, House, Lead, Parcel, Town } from "../../server/types.ts
 import { characterEntries, urgencyList } from "../../web/src/needs.tsx";
 import { layout } from "../../web/src/town/layout.ts";
 import { colourFor, hatFor } from "../../web/src/town/kit/palette.ts";
-import { onHill, onPlateau, onStair } from "../../web/src/town/hill.ts";
+import { onHill, onStair } from "../../web/src/town/hill.ts";
 import { landHeight, SQUARE } from "../../web/src/town/island.ts";
 import { doorOf } from "../../web/src/town/houses.ts";
 
@@ -199,13 +199,5 @@ describe("layout", () => {
     expect(named(Array.from({ length: 31 }, (_, i) => `b${i}`)).slice(0, 30)).toEqual(first);
     // The first house of any town stands on the island's first lot, on the slope above the quay.
     expect(first[0]).toEqual({ x: -1, z: 4.2 });
-  });
-
-  test("a_dozen_characters_asking_for_you_wait_up_on_the_castles_forecourt", async () => {
-    const askers = Array.from({ length: 12 }, (_, i) => lead(`w${i}`, needs(i + 1)));
-    const all = place(town([house("alpha", askers.slice(0, 6)), house("beta", askers.slice(6))]));
-    const waiting = of(all, "lead");
-    expect(waiting.map((l) => l.pose)).toEqual(Array(12).fill("wait"));
-    for (const l of waiting) expect(onPlateau(l.at.x, l.at.z), l.id).toBe(true);
   });
 });

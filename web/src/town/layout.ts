@@ -2,10 +2,11 @@ import type { Character, House, Town } from "../../../server/types.ts";
 import { colourFor } from "./kit/palette.ts";
 import { costumeOf, type Costume } from "./folk.ts";
 import type { InPlaced } from "./interior.ts";
-import { castleAt, CASTLE_TURN, HILL } from "./hill.ts";
+import { CASTLE_TURN } from "./hill.ts";
 import { lotOf } from "./island.ts";
 import { DOOR, facingOf, houseToWorld, isBusy, variantOf, type Variant } from "./houses.ts";
-import { queenOf, QUEEN_SEAT_AT, TABLE_AT, YARD_AT, yardSpot, YOUR_THRONE_AT, type QueenState } from "./court.ts";
+import { queenOf, QUEEN_SEAT_AT, YARD_AT, yardSpot, YOUR_THRONE_AT, type QueenState } from "./court.ts";
+import { LINE_FACING, lineUp, type InLine } from "./line.ts";
 import { avatarFor } from "./kit/avatars.ts";
 import { fireOf, loudOf, loudStuck, type FireForm, type Head } from "./fire.ts";
 
@@ -19,10 +20,11 @@ export type Pose = "work" | "idle" | "queue" | "stuck";
  * lead of a house whose fire is handled throws water from a bucket (`bucket`), turned toward its roof.
  */
 export type FolkPose = "work" | "bucket" | "stand" | "stuck" | "rest" | "wait" | "leave";
-/** One of the town's folk: its costume, its lead (itself for a lead), its house's folder and colour, its pose and spot. */
-type Folk = Costume & { id: string; lead: string; cwd: string; colour: string; pose: FolkPose; at: Spot; facing: number; stars: boolean };
+/** One of the town's folk: its costume, its lead (itself for a lead), its house's folder and colour, its pose and spot, and while it waits its place in the line. */
+type Folk = Costume & { id: string; lead: string; cwd: string; colour: string; pose: FolkPose; at: Spot; facing: number; stars: boolean; line?: InLine };
 export type Placed =
-  | { kind: "building"; cwd: string; colour: string; at: Spot; facing: number; variant: Variant; busy: boolean; fire: FireForm; marked: boolean }
+  /** A house; `flag` while one of its characters is in the line. */
+  | { kind: "building"; cwd: string; colour: string; at: Spot; facing: number; variant: Variant; busy: boolean; fire: FireForm; marked: boolean; flag: boolean }
   | ({ kind: "lead" } & Folk)
   | ({ kind: "hat" } & Folk)
   | { kind: "parcel"; cwd: string; number: number; at: Spot }
@@ -35,15 +37,6 @@ export type Placed =
 export const keyOf = (p: Placed | InPlaced): string =>
   p.kind === "building" ? `building:${p.cwd}` : p.kind === "parcel" ? `parcel:${p.cwd}#${p.number}` : p.kind === "observer" ? "observer" : p.kind === "you" ? "you" : p.kind === "queen" && p.id === null ? "queen" : `character:${p.id}`;
 
-/** A place in the castle's frame (see `hill.ts`) as a spot on the ground. */
-const court = (u: number, w: number): Spot => {
-  const [x, z] = castleAt(u, w);
-  return { x, z };
-};
-/** The stone table on the forecourt, in front of the thrones: the queue turns toward it. */
-export const DESK = TABLE_AT;
-/** The queue: rows across the forecourt in front of the desk, then rows on the square at the stair's foot. */
-const QUEUE = { across: 9, step: 0.9, rows: [4.9, 5.75], below: 7, foot: HILL.stair.foot + 1 };
 /** The gap between two folk standing side by side. */
 const GAP = 0.9;
 
@@ -74,23 +67,17 @@ const step = (lot: Lot, k: number) => inFront(lot, DOOR.across, DOOR.forward + 0
 /** The k-th parcel at a house's door: three in a row on the other side of the door, the rest in rows in front of them. */
 const doorstep = (lot: Lot, k: number) =>
   k < 3 ? inFront(lot, DOOR.across - 0.6 - 0.55 * k, DOOR.forward - 0.1) : inFront(lot, DOOR.across - 0.6 - 0.55 * ((k - 3) % 3), DOOR.forward + 0.45 + 0.55 * Math.floor((k - 3) / 3));
-/** The i-th place in the queue: across the forecourt's rows from the left, then in rows on the square below the stair. */
-function queueSpot(i: number): Spot {
-  const upper = QUEUE.across * QUEUE.rows.length;
-  if (i < upper) return court((-(QUEUE.across - 1) / 2 + (i % QUEUE.across)) * QUEUE.step, QUEUE.rows[Math.floor(i / QUEUE.across)]);
-  const k = i - upper;
-  return court((-(QUEUE.below - 1) / 2 + (k % QUEUE.below)) * QUEUE.step, QUEUE.foot + QUEUE.step * Math.floor(k / QUEUE.below));
-}
 
 /**
  * Where everything in `town` stands. Buildings stand on the island's lots in house order (house i on `lotOf(i)`); working and done leads stand in front of their building, resting ones by its door, and working
- * subagents are hats on its rack; stuck ones sit there too; everyone who asks you queues on the castle's forecourt in `waiting`
- * (urgency) order, where only a character's key finds a place; open parcels sit at the door; the lead marked `steward` stands by the desk. Done
+ * subagents work beside it; stuck ones sit on its doorstep; everyone who asks you waits in the line (`lineUp`) in `waiting`
+ * (urgency) order, where only a character's key finds a place; open parcels sit at the door; the lead marked `steward` is the Queen. Done
  * subagents are not placed.
- * A building also says which way its lot faces, its feature, whether anyone of the house works (`busy`: its chimney puffs) and
- * whether `marked`, the marked house's folder, is its own, and its fire (see `fire.ts`).
- * `now` is the page's clock in ms and `lost` whether the page has lost the server (`townFog(...)?.why === "lost"`),
- * which leaves nothing loud; the places don't depend on either.
+ * A building also says which way its lot faces, its feature, whether anyone of the house works (`busy`: its chimney puffs),
+ * whether `marked`, the marked house's folder, is its own, its fire (see `fire.ts`), and whether it flies its flag (one of
+ * its characters is in the line).
+ * `now` is the page's clock in ms, which sets the fires and the line's postures, and `lost` whether the page has lost the
+ * server (`townFog(...)?.why === "lost"`), which leaves nothing loud: no flag waves.
  * Pure: the same Town, waiting order, clock, `lost` and mark always give the same places.
  */
 export function layout(town: Town, waiting: Head[], now: number, lost: boolean, marked: string | null = null): Placed[] {
@@ -99,7 +86,7 @@ export function layout(town: Town, waiting: Head[], now: number, lost: boolean, 
   const houses = town.houses.filter((h) => h.added || !h.leads.some((l) => l.id === steward) || h.leads.some((l) => l.id !== steward));
   const loud = loudOf(waiting, lost);
   const placed: Placed[] = [];
-  const queue: { key: string; place: (at: Spot) => Placed }[] = [];
+  const queue: { key: string; since: number | undefined; place: (at: Spot, line: InLine) => Extract<Placed, { kind: "lead" | "hat" }> }[] = [];
 
   /**
    * Places `leads` (unless `asLeads` is false: the steward keeps its own spot) and their subagents about `lot`, facing the way
@@ -113,12 +100,12 @@ export function layout(town: Town, waiting: Head[], now: number, lost: boolean, 
     const put = (kind: "lead" | "hat", c: Character, lead: string) => {
       const worked = folkPose(c);
       const pose = worked === "work" && kind === "lead" && handled && !inYard ? "bucket" : worked;
-      // The bucket's thrower faces the house; everyone else faces away from it. A loud stuck one shows its stars.
+      // The bucket's thrower faces the house; everyone else faces away from it, and the line faces up the stair. A loud stuck one shows its stars.
       const facing = pose === "bucket" ? lot.facing + Math.PI : lot.facing;
       const stars = pose === "stuck" && loudStuck(loud, `${lead}/${c.id}`);
-      const make = (spot: Spot): Placed => ({ kind, id: c.id, lead, cwd: house.cwd, colour, ...costumeOf(c.role, kind === "lead"), pose, at: spot, facing, stars });
-      if (pose === "wait") queue.push({ key: `${lead}/${c.id}`, place: make });
-      else placed.push(make(spotOf(pose)));
+      const make = (spot: Spot, facing: number): Extract<Placed, { kind: "lead" | "hat" }> => ({ kind, id: c.id, lead, cwd: house.cwd, colour, ...costumeOf(c.role, kind === "lead"), pose, at: spot, facing, stars });
+      if (pose === "wait") queue.push({ key: `${lead}/${c.id}`, since: c.since, place: (spot, line) => ({ ...make(spot, LINE_FACING), line }) });
+      else placed.push(make(spotOf(pose), facing));
     };
     for (const lead of leads) {
       if (asLeads) put("lead", lead, lead.id);
@@ -129,7 +116,7 @@ export function layout(town: Town, waiting: Head[], now: number, lost: boolean, 
   houses.forEach((house, i) => {
     const lot = { at: lotOf(i), facing: facingOf(i) };
     const colour = colourFor(house.project);
-    placed.push({ kind: "building", cwd: house.cwd, colour, ...lot, variant: variantOf(house.cwd), busy: isBusy(house, steward), fire: fireOf(house, now, loud), marked: house.cwd === marked });
+    placed.push({ kind: "building", cwd: house.cwd, colour, ...lot, variant: variantOf(house.cwd), busy: isBusy(house, steward), fire: fireOf(house, now, loud), marked: house.cwd === marked, flag: false });
     settle(house, lot, house.leads.filter((l) => l.id !== steward), colour, true);
     (house.parcels ?? []).forEach((parcel, k) => placed.push({ kind: "parcel", cwd: house.cwd, number: parcel.number, at: doorstep(lot, k) }));
   });
@@ -141,11 +128,8 @@ export function layout(town: Town, waiting: Head[], now: number, lost: boolean, 
     settle(stewardHouse, { at: YARD_AT, facing: CASTLE_TURN }, stewardHouse.leads.filter((l) => l.id === steward), colourFor(stewardHouse.project), false, true);
   }
 
-  const order = new Map(waiting.map((w, i) => [w.key, i]));
-  const rank = (key: string) => order.get(key) ?? waiting.length;
-  queue
-    .map((q, i) => ({ ...q, i }))
-    .sort((a, b) => rank(a.key) - rank(b.key) || a.i - b.i)
-    .forEach((q, i) => placed.push(q.place(queueSpot(i))));
-  return placed;
+  const line = lineUp(queue, waiting, loud, now).map((q) => q.place(q.at, q.line));
+  const flying = new Set(line.map((f) => f.cwd));
+  for (const p of placed) if (p.kind === "building") p.flag = flying.has(p.cwd);
+  return [...placed, ...line];
 }
